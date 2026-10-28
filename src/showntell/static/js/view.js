@@ -1,11 +1,12 @@
 // Bring the screen in line with the state for the current time (timeline.js): the slide, its
 // step reveal and code version, the pointer, per-frame animation, the caption and the clock.
 
-import { stateAt } from "./timeline.js";
+import { SCENE_LEAD, stateAt } from "./timeline.js";
 import { fit, READABLE_PX } from "./draw.js";
 import { kindOf, layoutOf, renderSlide } from "./render.js";
 import { $, emit, FRAMES, host, LIVE, now, pointer, reducedMotion, report, S, scale, stage } from "./state.js";
-import { camera, cueTarget, placePointer, scrollCode } from "./pointer.js";
+import { cueTarget, placePointer, scrollCode } from "./pointer.js";
+import { applyCamera } from "./camera.js";
 import { announce, applyCaption, markChapter, updateTime } from "./chrome.js";
 
 export function layoutStage() {
@@ -34,8 +35,15 @@ export function render(force) {
   }
   const entering = applyEntrance(st);
   if (entering && st.cue) S.lastCueKey = ""; // the slide is still moving in: place the pointer where the target is now
-  applyVisual(st, slide, force);
-  liveFrame(st, slide, entering);
+  const cam = applyCamera(st, slide);
+  const landed = S.camMoving && !cam.moving;
+  S.camMoving = cam.moving;
+  S.zoomed = cam.zoomed;
+  S.camShot = cam.shot;
+  if (landed) S.lastCueKey = ""; // a move ended: the pointer appears on the new subject
+  applyVisual(st, slide, force, landed);
+  if (cam.changed && !cam.moving && !landed && st.cue && !pointer.hidden) follow(st, slide);
+  liveFrame(st, slide, `${entering}${cam.key ? `|c${cam.key}` : ""}`);
   applyCaption(st, slide, force);
   updateTime(st);
 }
@@ -45,14 +53,16 @@ function showSlide(i, since = Infinity) {
   const slide = W.slides[i];
   const was = S.shown.slide;
   S.shown = { slide: i, rev: slide.rev, id: slide.id };
-  S.lastCueKey = S.lastReveal = S.zoomFor = "";
+  S.lastCueKey = S.lastReveal = "";
+  S.cam = null;
+  S.camMoving = S.zoomed = false;
   clearMarks();
   const v = renderSlide(slide, { frame: W.frame, report, prev: W.slides[i - 1], ...placeOf(W, i) });
   // Moving on by one slide, the old one stays for the transition; any other jump cuts, unless it
   // lands inside the transition (a seek, or an export worker starting its share of the video):
   // then the slide before is drawn again, as it ended, so the frame matches playing through.
   let old = was === i - 1 ? host.querySelector(".slide:not(.leaving)") : null;
-  const redrawn = !old && i > 0 && since < ENTER_S && !reducedMotion()
+  const redrawn = !old && i > 0 && since + SCENE_LEAD < ENTER_S && !reducedMotion()
     ? renderSlide(W.slides[i - 1], { frame: W.frame, report, prev: W.slides[i - 2], ...placeOf(W, i - 1) }) : null;
   if (redrawn) old = redrawn.root;
   host.querySelectorAll(".slide").forEach((e) => { if (e !== old) e.remove(); });
@@ -67,10 +77,10 @@ function showSlide(i, since = Infinity) {
     if (view.root !== S.view.root) return;
     for (const p of panes) (p.kind.layout || fit)(p.body, p.parts);
     if (redrawn) {
-      const end = stateAt(W, S.TL, now() - since - 0.05);
+      const end = stateAt(W, S.TL, now() - since - SCENE_LEAD - 0.05);
       (redrawn.panes || []).forEach((p, k, all) => {
         (p.kind.layout || fit)(p.body, p.parts);
-        p.kind.frame?.(all.length > 1 ? paneState(end, k) : end, p.slide, p.parts, now() - since - 0.05);
+        p.kind.frame?.(all.length > 1 ? paneState(end, k) : end, p.slide, p.parts, now() - since - SCENE_LEAD - 0.05);
       });
     }
     view.done = true;
@@ -127,9 +137,10 @@ function placeOf(W, i) {
 }
 
 // How a slide comes in. Driven by the clock (seconds since the slide began), so seeking and frame
-// capture land on the same in-between picture, and MP4 export shows the same motion.
-const ENTER_S = 0.6;
-const STAGGER_S = 0.07, ITEM_S = 0.4;
+// capture land on the same in-between picture, and MP4 export shows the same motion. It starts
+// SCENE_LEAD before the first word, so it has landed as that word is heard.
+const ENTER_S = 0.5;
+const STAGGER_S = 0.1, ITEM_S = 0.4; // cards and items arrive left to right, a tenth of a second apart
 const easeOut = (p) => 1 - (1 - p) ** 3;
 const clamp = (x) => Math.max(0, Math.min(1, x));
 
@@ -146,7 +157,7 @@ function entranceFor(W, i, slide) {
 function applyEntrance(st) {
   const e = S.enter;
   if (!e || e.done || e.root !== S.view?.root) return "";
-  const t = st.sinceSlide;
+  const t = st.sinceSlide + SCENE_LEAD;
   const p = e.type === "none" ? 1 : clamp(t / ENTER_S), k = easeOut(p);
   const r = e.root.style, o = e.old?.style;
   if (e.type === "push") {
@@ -199,7 +210,7 @@ function clearMarks() {
   if (window.CSS?.highlights) CSS.highlights.clear();
 }
 
-function applyVisual(st, slide, force) {
+function applyVisual(st, slide, force, landed = false) {
   const { view } = S;
   if (!view?.done) return;
   if (view.parts.setStep && view.parts.step !== st.step) {
@@ -221,13 +232,18 @@ function applyVisual(st, slide, force) {
   host.querySelectorAll(".ln.hl").forEach((e) => e.classList.remove("hl"));
   if (window.CSS?.highlights) CSS.highlights.delete("ptr");
   if (scrollCode(st, cueKey)) return; // the pointer is placed once the code has scrolled
-  if (!st.cue) { pointer.hidden = true; camera(null, cueKey); return; }
+  const target = st.cue && cueTarget(st.cue, slide);
+  // While the camera moves the pointer waits, and a zoom onto a large part needs no pointer: the
+  // framing points.
+  const framed = (st.cue?.style || "").trim() === "zoom" && S.camShot?.large;
+  if (!target || S.camMoving || framed) { pointer.hidden = true; return; }
+  placePointer(target.rects, target.wide, st.cue.style, landed);
+}
+
+// The camera crept or breathed: keep the pointer on its target.
+function follow(st, slide) {
   const target = cueTarget(st.cue, slide);
-  if (!target) { pointer.hidden = true; camera(null, cueKey); return; }
-  if (camera((st.cue.style || "").includes("zoom") ? target.rects : null, cueKey)) return;
-  // The camera may have just jumped: measure the target where it is now.
-  const here = cueTarget(st.cue, slide) || target;
-  placePointer(here.rects, here.wide, st.cue.style);
+  if (target) placePointer(target.rects, target.wide, st.cue.style);
 }
 
 // Tell screen readers what only moves on screen: the route a travelling dot takes, and what the

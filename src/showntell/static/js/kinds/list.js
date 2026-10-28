@@ -77,7 +77,7 @@ function quizFrame(st, slide, parts) {
   const shown = st.cues.some(answers) || (!aimed && st.revealAll);
   list.classList.toggle("revealed", shown);
   const say = slide.says[st.say];
-  const think = !shown && say?.pause ? Math.min(1, st.local / say.pause) : -1;
+  const think = !shown && say?.pause ? Math.min(1, Math.max(0, st.local) / say.pause) : -1;
   list.classList.toggle("thinking", think >= 0);
   if (think >= 0) list.style.setProperty("--think", (1 - think).toFixed(3));
   return `${shown}|${think >= 0 ? Math.round(think * 30) : ""}`;

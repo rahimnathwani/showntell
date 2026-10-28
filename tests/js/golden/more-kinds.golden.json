@@ -53,9 +53,9 @@
   },
   {
    "t": 1.25,
-   "slide": 0,
-   "seg": 0,
-   "inAudio": false,
+   "slide": 1,
+   "seg": 1,
+   "inAudio": true,
    "cue": null,
    "reveal": null
   },
@@ -149,17 +149,17 @@
   },
   {
    "t": 4.25,
-   "slide": 1,
-   "seg": 1,
-   "inAudio": false,
+   "slide": 2,
+   "seg": 2,
+   "inAudio": true,
    "cue": null,
    "reveal": null
   },
   {
    "t": 4.5,
-   "slide": 1,
-   "seg": 1,
-   "inAudio": false,
+   "slide": 2,
+   "seg": 2,
+   "inAudio": true,
    "cue": null,
    "reveal": null
   },
@@ -356,28 +356,18 @@
   },
   {
    "t": 8.75,
-   "slide": 2,
-   "seg": 2,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 2,
-    "l1": 2,
-    "side": "new"
-   },
+   "slide": 3,
+   "seg": 3,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
    "t": 9,
-   "slide": 2,
-   "seg": 2,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 2,
-    "l1": 2,
-    "side": "new"
-   },
+   "slide": 3,
+   "seg": 3,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -486,28 +476,18 @@
   },
   {
    "t": 11.25,
-   "slide": 3,
-   "seg": 3,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 140,
-    "l1": 140,
-    "side": "new"
-   },
+   "slide": 4,
+   "seg": 4,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
    "t": 11.5,
-   "slide": 3,
-   "seg": 3,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 140,
-    "l1": 140,
-    "side": "new"
-   },
+   "slide": 4,
+   "seg": 4,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -643,24 +623,18 @@
   },
   {
    "t": 15,
-   "slide": 4,
-   "seg": 4,
-   "inAudio": false,
-   "cue": {
-    "kind": "node",
-    "id": "g"
-   },
+   "slide": 5,
+   "seg": 5,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
    "t": 15.25,
-   "slide": 4,
-   "seg": 4,
-   "inAudio": false,
-   "cue": {
-    "kind": "node",
-    "id": "g"
-   },
+   "slide": 5,
+   "seg": 5,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -863,24 +837,18 @@
   },
   {
    "t": 20,
-   "slide": 5,
-   "seg": 5,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "p95-latency"
-   },
+   "slide": 6,
+   "seg": 6,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
    "t": 20.25,
-   "slide": 5,
-   "seg": 5,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "p95-latency"
-   },
+   "slide": 6,
+   "seg": 6,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -965,22 +933,18 @@
   },
   {
    "t": 22.5,
-   "slide": 6,
-   "seg": 6,
-   "inAudio": false,
-   "cue": {
-    "kind": "region"
-   },
+   "slide": 7,
+   "seg": 7,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
    "t": 22.75,
-   "slide": 6,
-   "seg": 6,
-   "inAudio": false,
-   "cue": {
-    "kind": "region"
-   },
+   "slide": 7,
+   "seg": 7,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {

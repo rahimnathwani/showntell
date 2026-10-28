@@ -45,7 +45,7 @@ export const S = {
   holdSince: 0, // waiting for a slide to finish drawing before its narration starts
   playPressed: 0,
   seekingAudio: false,
-  zoomFor: "", // the cue the camera is zoomed onto
+  cam: null, camMoving: false, zoomed: false, camShot: null, // the camera (camera.js): its plan for the slide, and where it is
   failedAudio: new Set(), // audio URLs that failed to load; played silently instead
 };
 

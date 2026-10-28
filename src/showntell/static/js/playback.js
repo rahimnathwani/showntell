@@ -2,7 +2,7 @@
 // wall time during pauses between paragraphs. Also play, pause, seek, stalls while the writer or
 // the voice catches up, the wait for a slide to finish drawing, and playing a range of slides.
 
-import { segmentAt, slideEnd, slideStart } from "./timeline.js";
+import { rangeEnd, segmentAt, slideStart } from "./timeline.js";
 import { $, audio, AUDIENCE, currentSeg, emit, EMBEDDED, metrics, now, prefetch, PRESENT, report, S, sayOf } from "./state.js";
 import { render } from "./view.js";
 import { setPlayIcon, showEnd, showOverlay } from "./chrome.js";
@@ -199,7 +199,7 @@ export function setRange(fromId, toId) {
   const a = idx(fromId, 0), b = Math.max(a, idx(toId, W.slides.length - 1));
   const start = slideStart(TL, a);
   if (start === null) return;
-  S.range = { start, end: slideEnd(TL, b) ?? TL.total, from: a, to: b };
+  S.range = { start, end: rangeEnd(TL, b), from: a, to: b };
   seek(start);
 }
 

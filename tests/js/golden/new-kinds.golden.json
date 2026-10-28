@@ -66,11 +66,13 @@
   },
   {
    "t": 1.25,
-   "slide": 0,
-   "seg": 0,
-   "inAudio": false,
+   "slide": 1,
+   "seg": 1,
+   "inAudio": true,
    "cue": null,
-   "reveal": null
+   "reveal": {
+    "items": 0
+   }
   },
   {
    "t": 1.5,
@@ -241,13 +243,10 @@
   },
   {
    "t": 4.75,
-   "slide": 1,
-   "seg": 1,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "list"
-   },
+   "slide": 2,
+   "seg": 2,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -307,13 +306,10 @@
   },
   {
    "t": 6.25,
-   "slide": 2,
-   "seg": 2,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "database-queries"
-   },
+   "slide": 3,
+   "seg": 3,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -439,14 +435,13 @@
   },
   {
    "t": 9.25,
-   "slide": 3,
-   "seg": 3,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "p50"
-   },
-   "reveal": null
+   "slide": 4,
+   "seg": 4,
+   "inAudio": true,
+   "cue": null,
+   "reveal": {
+    "line": 0
+   }
   },
   {
    "t": 9.5,
@@ -583,16 +578,13 @@
   },
   {
    "t": 11.75,
-   "slide": 4,
-   "seg": 4,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 4,
-    "l1": 4,
-    "side": "new"
-   },
-   "reveal": null
+   "slide": 5,
+   "seg": 5,
+   "inAudio": true,
+   "cue": null,
+   "reveal": {
+    "items": 0
+   }
   },
   {
    "t": 12,
@@ -776,14 +768,13 @@
   },
   {
    "t": 15.5,
-   "slide": 5,
-   "seg": 5,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "src/showntell/static/js/render.js"
-   },
-   "reveal": null
+   "slide": 6,
+   "seg": 6,
+   "inAudio": true,
+   "cue": null,
+   "reveal": {
+    "items": 0
+   }
   },
   {
    "t": 15.75,

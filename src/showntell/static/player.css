@@ -408,8 +408,8 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 #pointer[data-kind="highlight"] { background: var(--accent-soft); border-radius: 4px; transform: skew(-4deg); }
 @keyframes ink { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 
-/* camera: zooming onto a cue, scrolling long code */
-.slide-body { transform-origin: 0 0; transition: transform 0.7s var(--ease); }
+/* camera: zooming onto a cue (camera.js sets the transform every frame), scrolling long code */
+.slide-body { transform-origin: 0 0; }
 .codebox.scroll { overflow: hidden; }
 .codebox.scroll .code { transition: transform 0.6s var(--ease); }
 .codebox.scroll.focusing .ln:not(.hl) { opacity: 0.38; }

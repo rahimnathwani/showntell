@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { build, CUE_LEAD, firedCues, revealLevel, segmentAt, slideEnd, slideSpans, slideStart, stateAt, steps, wordAt } from "../../src/showntell/static/js/timeline.js";
+import { build, CAMERA, cameraPlan, CUE_LEAD, firedCues, revealLevel, SCENE_LEAD, segmentAt, slideCues, slideEnd, slideSpans, slideStart, stateAt, steps, wordAt } from "../../src/showntell/static/js/timeline.js";
 
 const say = (id, dur, cues = [], extra = {}) => ({ id, status: "ready", text: "one two three", duration: dur, cues, words: [], ...extra });
 const W = {
@@ -119,4 +119,61 @@ test("fired cues carry the time they fired on the walkthrough's clock", () => {
   const st = stateAt(W, tl, 2.6 + 2.5);
   assert.deepEqual(st.cues.map((c) => +c._at.toFixed(2)), [3.1, 4.6]);
   assert.ok(Math.abs(st.sinceSlide - 2.5) < 1e-9);
+});
+
+test("the next slide comes in during the silence before its first word", () => {
+  const tl = build(W); // the list slide starts at 2.6, after the title's 2 s and its 0.6 s gap
+  assert.equal(stateAt(W, tl, 2.6 - SCENE_LEAD - 0.01).slide, 0);
+  const early = stateAt(W, tl, 2.6 - SCENE_LEAD + 0.01);
+  assert.equal(early.slide, 1);
+  assert.ok(early.local < 0 && early.sinceSlide < 0);
+  assert.deepEqual(early.cues, []);
+  assert.deepEqual(early.reveal, { items: 0 });
+  assert.equal(stateAt(W, tl, 1.9).slide, 0); // never during speech
+});
+
+// A slide whose words are timed, one every half second.
+function camSlide(styles) {
+  const text = "We start here. Then over on the far left panel, and the right panel. Back out.";
+  let pos = 0;
+  const words = text.split(" ").map((w, i) => { const c0 = text.indexOf(w, pos); pos = c0 + w.length; return { s: i * 0.5, c0, c1: pos }; });
+  const at = (word) => words.find((w) => text.slice(w.c0, w.c1) === word).s;
+  const cues = [
+    { at: 0, kind: "item", id: "left", t: at("left"), style: styles[0] },
+    { at: 0, kind: "item", id: "right", t: at("right"), style: styles[1] },
+    { at: 0, kind: "whole", t: at("Back"), style: "" },
+  ];
+  return { slides: [{ id: "s", kind: "svg", classes: [], visual: {}, says: [say("s.1", 8, cues, { text, words })] }] };
+}
+
+test("slide cues know when their sentence starts", () => {
+  const w = camSlide(["zoom", "zoom"]);
+  const cues = slideCues(w, build(w), 0);
+  assert.deepEqual(cues.map((c) => c._at), [4, 6, 7]);
+  assert.deepEqual(cues.map((c) => c._sentence), [1.5, 1.5, 7]);
+});
+
+test("the camera moves in before its word, holds, moves across and pulls back out quickly", () => {
+  const w = camSlide(["zoom", "zoom"]);
+  const plan = cameraPlan(w, build(w), 0);
+  assert.deepEqual(plan.map((m) => m.kind), ["in", "in", "out"]);
+  const [a, b, c] = plan;
+  // In: starts at least 0.4 s into its sentence, settles as "left" is heard.
+  assert.ok(a.start >= 1.5 + CAMERA.AFTER_SENTENCE - 1e-9);
+  assert.ok(Math.abs(a.start + a.dur - (4 + CAMERA.SETTLE)) < 1e-9);
+  // Across: never overlaps the last move, and gives the last cue its moment.
+  assert.ok(b.start >= a.start + a.dur + CAMERA.HOLD - 1e-9 && b.start >= 4 + CUE_LEAD - 1e-9);
+  assert.ok(b.start + b.dur <= 6 + CAMERA.LATE + 1e-9);
+  // Out: quicker, starting just before "Back".
+  assert.equal(c.dur, CAMERA.OUT_S);
+  assert.ok(c.start < 7 && c.start > 6.5);
+  assert.equal(c.shot, null);
+});
+
+test("no zoom cue, no camera plan; a repeated shot does not move", () => {
+  let w = camSlide(["", "circle"]);
+  assert.deepEqual(cameraPlan(w, build(w), 0), []);
+  w = camSlide(["zoom", "zoom"]);
+  w.slides[0].says[0].cues[1].id = "left";
+  assert.deepEqual(cameraPlan(w, build(w), 0).map((m) => m.kind), ["in", "out"]);
 });

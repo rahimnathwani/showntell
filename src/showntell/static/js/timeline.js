@@ -8,6 +8,9 @@ export const WORDS_PER_SECOND = 2.7;
 // Cues fire this long before their word is spoken: the pointer takes about as long to glide
 // over, so it lands as the word is heard instead of after it.
 export const CUE_LEAD = 0.3;
+// A new slide starts coming in this long before its first word, so the change has landed by the
+// time the word is heard.
+export const SCENE_LEAD = 0.45;
 
 export function estimate(say) {
   if (say.pause) return say.pause;
@@ -73,10 +76,14 @@ export function firedCues(w, tl, segIndex, local) {
 
 // Everything the screen should show at global time t.
 export function stateAt(w, tl, t) {
-  const i = segmentAt(tl, t);
+  let i = segmentAt(tl, t);
   if (i < 0) return { seg: -1, slide: -1 };
+  // In the silence after a slide, the next slide comes in early (SCENE_LEAD): its state, with a
+  // local time below zero, so nothing in it has fired yet.
+  const after = tl.segs[i + 1];
+  if (after && after.slide !== tl.segs[i].slide && t >= after.start - SCENE_LEAD && t >= tl.segs[i].start + tl.segs[i].dur) i += 1;
   const seg = tl.segs[i];
-  const local = Math.max(0, t - seg.start);
+  const local = t <= 0 ? 0 : t - seg.start;
   const inAudio = local < seg.dur;
   const cues = firedCues(w, tl, i, local);
   const slide = w.slides[seg.slide];
@@ -158,6 +165,13 @@ export function slideEnd(tl, slideIndex) {
   return end;
 }
 
+// Where playing a range of slides stops: before the slide after it starts coming in.
+export function rangeEnd(tl, slideIndex) {
+  const end = slideEnd(tl, slideIndex);
+  if (end === null) return tl.total;
+  return tl.segs.some((s) => s.slide > slideIndex) ? end - SCENE_LEAD : end;
+}
+
 // Steps for presenting by hand: the start of every slide, plus, on step-reveal slides, the
 // moment each cue reveals another part, and the end where everything shows. [{t, slide, say}]
 export function steps(w, tl) {
@@ -208,4 +222,64 @@ export function slideSpans(tl, nSlides) {
 export function mmss(s) {
   s = Math.max(0, Math.round(s || 0));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Every cue on a slide, fired or not, in firing order, with `_at` (when its word is heard) and
+// `_sentence` (when the sentence holding it starts) on the walkthrough's clock.
+export function slideCues(w, tl, slideIndex) {
+  const slide = w.slides[slideIndex];
+  const out = [];
+  for (const s of tl.segs) {
+    if (s.slide !== slideIndex || s.say < 0) continue;
+    const say = slide.says[s.say];
+    for (const c of say.cues || []) {
+      const t = c.t ?? 0;
+      out.push({ ...c, _say: s.say, _at: s.start + t, _sentence: s.start + sentenceStart(say, t) });
+    }
+  }
+  return out.sort((a, b) => a._at - b._at);
+}
+
+// Local time of the first word of the sentence that is being spoken at local time t.
+function sentenceStart(say, t) {
+  const words = say.words || [], text = say.text || "";
+  let j = wordAt(say, t);
+  while (j > 0 && !/[.!?:;]["'”’)\]]*\s*$/.test(text.slice(words[j - 1].c0, words[j].c0))) j--;
+  return j > 0 ? words[j].s : 0;
+}
+
+// The camera on one slide: a cue styled `zoom` moves it onto its target, any other cue after
+// one pulls it back to the whole visual. Each move is placed against the speech: a move in starts
+// soon after its sentence does and settles as the cue's word is heard; a move out is quicker and
+// starts just before its word. Moves never overlap, and each leaves the last shot a moment.
+// Returns [{start, dur, kind: "in"|"out", shot, cue}], `shot` a key for the target (null: whole).
+export const CAMERA = { IN_S: 1.6, OUT_S: 1.0, MIN_IN_S: 0.9, AFTER_SENTENCE: 0.4, SETTLE: 0.15, LATE: 0.6, HOLD: 0.4 };
+
+export function shotOf(cue) {
+  if (!(cue.style || "").split(/\s+/).includes("zoom")) return null;
+  return [cue.kind, cue.id ?? "", cue.l0 ?? "", cue.l1 ?? "", cue.side ?? "", cue.text ?? "", (cue.box || []).join(","), cue.pane ?? ""].join(":");
+}
+
+export function cameraPlan(w, tl, slideIndex) {
+  const C = CAMERA;
+  const moves = [];
+  let shot = null, free = slideStart(tl, slideIndex) ?? 0, lastCue = -Infinity;
+  for (const c of slideCues(w, tl, slideIndex)) {
+    const to = shotOf(c);
+    if (to === shot) { lastCue = c._at; continue; }
+    const after = Math.max(free + C.HOLD, lastCue + CUE_LEAD);
+    let start, dur;
+    if (to) {
+      start = Math.max(c._at + C.SETTLE - C.IN_S, c._sentence + C.AFTER_SENTENCE, after);
+      dur = Math.max(C.MIN_IN_S, Math.min(C.IN_S, c._at + C.LATE - start));
+    } else {
+      start = Math.max(c._at - 0.35, after);
+      dur = C.OUT_S;
+    }
+    moves.push({ start, dur, kind: to ? "in" : "out", shot: to, cue: c });
+    shot = to;
+    free = start + dur;
+    lastCue = c._at;
+  }
+  return moves.some((m) => m.kind === "in") ? moves : [];
 }

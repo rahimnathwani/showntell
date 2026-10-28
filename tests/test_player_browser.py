@@ -681,15 +681,16 @@ def test_newer_visuals_follow_the_narration(daemon, browser):
     early = at("numbers", 0, 0.2, "document.querySelector('.stat .num').textContent")
     late = at("numbers", 0, 3.0, "document.querySelector('.stat .num').textContent")
     assert late == "100 ms" and early not in ("100 ms", "400 ms")
-    inside, zoomed = at(
+    # The camera moves in over about a second, then frames the region: a zoom onto a large part
+    # needs no pointer.
+    framed, zoomed = at(
         "screen",
         0,
-        0.4,
-        """(() => { const p = document.querySelector('#pointer').getBoundingClientRect();
-        const i = document.querySelector('.device img').getBoundingClientRect();
-        return [p.left >= i.left - 12 && p.top >= i.top - 12, !!document.querySelector('.slide:not(.leaving) .slide-body').style.transform]; })()""",
+        1.6,
+        """[document.querySelector('#pointer').hidden,
+        parseFloat(document.querySelector('.slide:not(.leaving) .slide-body').style.transform.split('scale(')[1]) > 1.2]""",
     )
-    assert inside and zoomed
+    assert framed and zoomed
     ticked = at("ship", 1, 0.3, "[...document.querySelectorAll('.entry.ticked')].map((e) => e.dataset.id)")
     assert ticked == ["tests"]
     assert not errors, errors
@@ -1013,7 +1014,8 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
              .then((r) => r.json()).then((w) => { const tl = m.build(w); return w.slides.map((_, i) => [m.slideStart(tl, i), m.slideEnd(tl, i)]); }))"""
     )
     for i, sid in enumerate(ids):
-        page.goto(f"{url}?at={min(starts[i][0] + 2.5, starts[i][1] - 0.1):.2f}")  # settled, before the next slide
+        # settled, before the next slide starts coming in (SCENE_LEAD, 0.45 s, ahead of its first word)
+        page.goto(f"{url}?at={min(starts[i][0] + 2.5, starts[i][1] - 0.6):.2f}")
         page.wait_for_timeout(1000 if sid in ("pair", "title") else 500)
         state = page.evaluate(
             """() => {
@@ -1043,7 +1045,8 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
         if sid == "cards":
             assert state["icons"] == 3
     # A moment into a slide it is still arriving, by the clock, so a paused frame shows it too.
-    page.goto(f"{url}?at={starts[6][0] + 0.15:.2f}")
+    # It starts coming in SCENE_LEAD (0.45 s) before its first word.
+    page.goto(f"{url}?at={starts[6][0] - 0.25:.2f}")
     page.wait_for_timeout(400)
     moving = page.evaluate("() => [...document.querySelectorAll('.slide:not(.leaving) .entering')].length")
     assert moving == 3
@@ -1051,7 +1054,7 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
     page.goto(f"{url}?at={_at(page, 'pair', 2, 0.3):.2f}")
     page.wait_for_timeout(1200)
     assert page.evaluate("() => !!document.querySelector('.slide:not(.leaving) .pane-2 .active')")
-    page.goto(f"{url}?at={starts[6][0] + 0.15:.2f}")
+    page.goto(f"{url}?at={starts[6][0] - 0.25:.2f}")
     page.wait_for_timeout(400)
     # Landing there by a jump still shows the slide before on its way out, as playing through would.
     leaving = page.evaluate("() => [...document.querySelectorAll('.slide.leaving')].map((s) => s.className)")
