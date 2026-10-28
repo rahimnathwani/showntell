@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 (2026-10-28)
 
 - **Camera on the narration clock:** `{.zoom}` moves are worked out from the clock instead of CSS transitions, so seeking lands mid-move and MP4 export shows the move (it used to cut). Moves are planned against the speech: in over about 1.6 s, starting about 0.4 s into the sentence and settling as the cued word is heard; out in 1 s, front-loaded; a move between close-ups at a similar zoom pulls back about 6% on the way. A held close-up creeps about 2% in, a still drawing breathes about 1%; MP4 export leaves this idle motion out so held frames are reused, and `--motion` keeps it. A zoom onto a large part (a panel) fills about 90% of the frame and needs no pointer; small targets still fill about 60%. The pointer waits while the camera moves and appears on the new subject when it lands. Reduced motion cuts and holds still.
 - **Scene changes land on the first word:** a slide starts coming in 0.45 s before its first word, during the silence after the last slide, and has landed (0.5 s) as the word is heard. Cards, numbers and rows arrive 0.1 s apart.
