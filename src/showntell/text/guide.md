@@ -8,7 +8,7 @@ Settle the arc before the next call: a viewer cannot skim back.
 
 - **Open with the point.** The title slide speaks one short sentence, the most concrete fact or the question the piece answers, in plain words without backticked names (`opening_code_names`); then go straight to content.
 - **Arc:** purpose (the problem solved, or what changed and why), then mechanism (in the order control or data flows), then consequences (edge cases, trade-offs, what to check next). The last slide answers the opening's question; those two alone say why it matters.
-- **Close on takeaways:** a teaching piece ends (after its quiz) on a `.cards` slide of three items, each a bold title and one sentence that compresses a point; they arrive left to right. Narrate it in two or three sentences, not a reading of the cards.
+- **Close on takeaways:** a teaching piece ends with its quiz, then a `.cards` slide of three items, each a bold title and one sentence that compresses a point; they arrive left to right. Narrate it in two or three sentences that cue each card as its point is named, not a reading of the cards.
 - **One point per slide,** in one to three short paragraphs: about 8 to 20 seconds of speech. If it needs "and also" or runs longer, split it, or move the eye with cues or `.build`. Viewers follow a screen that changes often: more, lighter slides beat fewer, heavier ones.
 - **Change the picture about every ten seconds:** a new slide, a zoom, a reveal or a new version all count. A short piece needs only two or three kinds of visual; vary layout and framing rather than reaching for a new kind on every slide.
 - **Length by purpose:** a concept or how-X-works piece, 1 to 2 minutes (150 to 300 spoken words); a code change or review, 2 to 4 minutes (300 to 600). Replies give the running length; past four minutes they warn (`too_long`): finish, or save the rest for a second walkthrough.
@@ -156,7 +156,7 @@ Add `.build` to the heading when order matters: parts appear in source order up 
 
 ## Check understanding
 
-End a teaching piece (a concept, onboarding to a codebase) with one quiz on its main point; optional for a change, and a review can quiz its main finding.
+End a teaching piece (a concept, onboarding to a codebase) with one quiz on its main point, just before the takeaway cards; optional for a change, and a review can quiz its main finding.
 
 ````markdown
 ## Which call retries? {.quiz}
