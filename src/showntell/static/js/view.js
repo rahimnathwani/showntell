@@ -7,6 +7,7 @@ import { kindOf, layoutOf, renderSlide } from "./render.js";
 import { $, emit, FRAMES, host, LIVE, now, pointer, reducedMotion, report, S, scale, stage } from "./state.js";
 import { cueTarget, placePointer, scrollCode } from "./pointer.js";
 import { applyCamera } from "./camera.js";
+import { applyDecode, prepareDecode } from "./decode.js";
 import { announce, applyCaption, markChapter, updateTime } from "./chrome.js";
 
 export function layoutStage() {
@@ -72,6 +73,7 @@ function showSlide(i, since = Infinity) {
   S.enter = { type: entranceFor(W, i, slide), root: v.root, old, done: false };
   const bodyEl = v.root.querySelector(".slide-body");
   const view = S.view = { ...v, body: bodyEl, done: false };
+  prepareDecode(view, slide); // withheld labels are scrambled before they are ever seen
   const panes = v.panes || [];
   Promise.all([v.ready, redrawn?.ready]).then(() => document.fonts?.ready).then(() => {
     if (view.root !== S.view.root) return;
@@ -83,6 +85,7 @@ function showSlide(i, since = Infinity) {
         p.kind.frame?.(all.length > 1 ? paneState(end, k) : end, p.slide, p.parts, now() - since - SCENE_LEAD - 0.05);
       });
     }
+    prepareDecode(view, slide); // labels drawn since (diagrams)
     view.done = true;
     S.lastCueKey = S.lastReveal = "";
     render(true);
@@ -207,6 +210,7 @@ function staggered(root) {
 
 function clearMarks() {
   pointer.hidden = true;
+  stage.querySelectorAll(".pointer-trail").forEach((e) => e.remove());
   if (window.CSS?.highlights) CSS.highlights.clear();
 }
 
@@ -279,7 +283,8 @@ function liveFrame(st, slide, entering) {
   if (!S.view?.done) { S.frameKey = entering; return; }
   const panes = S.view.panes || [];
   const keys = panes.map((p, i) => p.kind.frame?.(panes.length > 1 ? paneState(st, i) : st, p.slide, p.parts, now()) || "");
-  S.frameKey = `${keys.join("/")}${entering ? `|${entering}` : ""}`;
+  const decoding = applyDecode(S.view, now());
+  S.frameKey = `${keys.join("/")}${entering ? `|${entering}` : ""}${decoding ? `|d${decoding}` : ""}`;
 }
 
 // The state one pane of a `.pair` slide sees: only the cues that point into it.

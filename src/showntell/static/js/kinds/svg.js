@@ -116,7 +116,7 @@ export default {
     }
     if (cue.kind === "text" && cue.text) {
       const want = norm(cue.text);
-      const t = [...root.querySelectorAll("text")].find((x) => norm(x.textContent).includes(want));
+      const t = textEl(root, cue.text);
       return t ? { rects: [t.getBoundingClientRect()] } : help.wholeVisual();
     }
     if (cue.kind === "region") {
@@ -126,6 +126,15 @@ export default {
       return { rects: [{ left, top, width, height, right: left + width, bottom: top + height }] };
     }
     return undefined;
+  },
+
+  // The element holding a cue's label, for `{.decode}`.
+  element(cue, parts) {
+    const root = parts.shadow;
+    if (!root) return undefined;
+    if (cue.kind === "item") return root.getElementById(cue.id);
+    if (cue.kind === "text" && cue.text) return textEl(root, cue.text);
+    return null;
   },
 
   // Text drawn smaller than the player reads comfortably, once the drawing is scaled to the slide.
@@ -158,6 +167,12 @@ const MORPH_S = 1.2;
 const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 const NUMBER = /-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi;
 const SKIP = new Set(["id", "class", "style"]);
+
+// A <text> whose words include `want`; a scrambled label (decode.js) is matched by its real words.
+function textEl(root, want) {
+  want = norm(want);
+  return [...root.querySelectorAll("text")].find((x) => norm(x.dataset.plain ?? x.textContent).includes(want)) || null;
+}
 
 function parse(svgText) {
   const t = document.createElement("template");

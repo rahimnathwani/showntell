@@ -155,6 +155,7 @@ const MARKS = {
 export function placePointer(rects, wide, style = "", jump = false) {
   rects = rects.filter((r) => r && (r.width || r.height));
   if (!rects.length) { pointer.hidden = true; return; }
+  if (!style.includes("highlight")) pointer.dataset.swept = "";
   if (jump) pointer.style.transition = "none";
   const kind = ["circle", "underline", "arrow", "highlight"].find((s) => style.includes(s)) || "box";
   if (pointer.dataset.kind !== kind || kind !== "box") {
@@ -164,10 +165,10 @@ export function placePointer(rects, wide, style = "", jump = false) {
   const l = Math.min(...rects.map((r) => r.left)), t = Math.min(...rects.map((r) => r.top));
   const r = Math.max(...rects.map((r) => r.right)), b = Math.max(...rects.map((r) => r.bottom));
   const sr = stage.getBoundingClientRect(), k = scale(), pad = wide ? 12 : 6;
-  pointer.style.left = `${(l - sr.left) / k - pad}px`;
-  pointer.style.top = `${(t - sr.top) / k - pad}px`;
-  pointer.style.width = `${(r - l) / k + pad * 2}px`;
-  pointer.style.height = `${(b - t) / k + pad * 2}px`;
+  const box = [(l - sr.left) / k - pad, (t - sr.top) / k - pad, (r - l) / k + pad * 2, (b - t) / k + pad * 2];
+  const was = ["left", "top", "width", "height"].map((p) => parseFloat(pointer.style[p]) || 0);
+  if (kind === "highlight" && box.some((x, i) => Math.abs(x - was[i]) > 8)) sweep(was, !pointer.hidden && pointer.dataset.swept === "1");
+  [pointer.style.left, pointer.style.top, pointer.style.width, pointer.style.height] = box.map((x) => `${x}px`);
   pointer.classList.toggle("wide", !!wide && kind === "box");
   pointer.hidden = false;
   if (jump) { void pointer.offsetWidth; pointer.style.transition = ""; }
@@ -178,4 +179,23 @@ export function placePointer(rects, wide, style = "", jump = false) {
     const id = S.W.slides[S.shown.slide]?.id || "";
     report(`Slide ${id}: a cue points at something partly outside the visible slide.`, "pointer_offstage", id);
   }
+}
+
+// A highlight does not glide: it sweeps across its new target left to right, and the one it
+// leaves stays a moment, fading about a second later. Frame capture shows it in place, unswept.
+function sweep(was, leaving) {
+  const still = body.classList.contains("capture") || reducedMotion();
+  if (leaving && !still) {
+    const trail = document.createElement("div");
+    trail.className = "pointer-trail";
+    [trail.style.left, trail.style.top, trail.style.width, trail.style.height] = was.map((x) => `${x}px`);
+    trail.addEventListener("animationend", () => trail.remove());
+    stage.append(trail);
+  }
+  pointer.style.transition = "none";
+  pointer.classList.remove("sweep");
+  void pointer.offsetWidth;
+  pointer.style.transition = "";
+  if (!still) pointer.classList.add("sweep");
+  pointer.dataset.swept = "1";
 }
