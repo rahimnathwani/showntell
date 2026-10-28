@@ -157,6 +157,6 @@
       ".morph": "on an ```svg slide after another ```svg slide: the drawing glides from the previous slide's (see svg)"
     },
     "icons": "Lucide icon names (lucide.dev), as :name: before a list item, stat label or `>` line, {icon=name} on a title, chapter or statement heading, or <use href=\"icon:name\"/> in a drawing. Unknown names are reported with close ones (icon_unknown).",
-    "motion": "slides start coming in just before their first word; they rise in, alike slides in a row slide across like pages, title and chapter slides zoom in, and cards, numbers, rows and takeaways arrive one after another, a tenth of a second apart. A still drawing breathes slightly and a held close-up creeps in, so a picture never freezes. All of it follows the narration's clock and shows in MP4 export; reduced motion turns it off."
+    "motion": "slides start coming in just before their first word; they rise in, alike slides in a row slide across like pages, title and chapter slides zoom in, and cards, numbers, rows and takeaways arrive one after another, a tenth of a second apart. A still drawing breathes slightly and a held close-up creeps in, so a picture never freezes. All of it follows the narration's clock and shows in MP4 export, except the breathing and creep; reduced motion turns it off."
   }
 }

@@ -6,11 +6,12 @@
 // with half the change in the middle quarter; a move between two close-ups at a similar zoom
 // pulls back a little on the way, an arc rather than a flat slide; moves out are quicker and
 // front-loaded. While a close-up holds, it creeps in about 2% towards the picture's centre; a
-// whole drawing breathes about 1%. Reduced motion cuts instead and holds still.
+// whole drawing breathes about 1%; frame capture leaves both out unless asked (IDLE_MOTION).
+// Reduced motion cuts instead and holds still.
 
 import { cameraPlan, CUE_LEAD, slideEnd, slideStart } from "./timeline.js";
 import { kindOf } from "./render.js";
-import { host, now, reducedMotion, S, scale } from "./state.js";
+import { host, IDLE_MOTION, now, reducedMotion, S, scale } from "./state.js";
 import { cueTarget } from "./pointer.js";
 
 const ARC = 0.065; // how far a move between close-ups pulls back at its midpoint
@@ -40,7 +41,7 @@ export function applyCamera(st, slide) {
   let cam = S.cam;
   if (!cam || cam.root !== view.root) {
     const plan = cameraPlan(S.W, S.TL, st.slide);
-    cam = S.cam = { root: view.root, plan, breathe: breathes(slide) && !kindOf(slide).bare, shots: new Map(), transform: "" };
+    cam = S.cam = { root: view.root, plan, breathe: IDLE_MOTION && breathes(slide) && !kindOf(slide).bare, shots: new Map(), transform: "" };
     if (!plan.length && !cam.breathe) return still;
     measure(cam, slide, bodyEl);
   }
@@ -108,6 +109,7 @@ function at(cam, si, t) {
 function hold(cam, shot, land, until, t) {
   const b = base(cam, shot), w = cam.whole;
   if (shot && cam.shots.get(shot)) {
+    if (!IDLE_MOTION) return { ...b, moving: false };
     const q = smooth(clamp((t - land - CREEP_AFTER) / Math.max(1.5, until - land - CREEP_AFTER)));
     return { cx: b.cx + (w.cx - b.cx) * DRIFT * q, cy: b.cy + (w.cy - b.cy) * DRIFT * q, z: b.z * (1 + CREEP * q), moving: false };
   }

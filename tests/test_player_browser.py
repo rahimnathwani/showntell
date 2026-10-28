@@ -611,7 +611,7 @@ The [p95 latency](#p95-latency) fell by three quarters, which took a lot of pati
 
 ![The demo](docs/media/demo.gif){frame=browser url="example.com"}
 
-The [top left](#@0,0,50,40){.zoom} is where it starts.
+The [top left](#@0,0,50,40){.zoom} is where it starts, and the camera stays on it while the rest of the page waits its turn.
 
 ## Ship {#ship}
 
@@ -691,6 +691,13 @@ def test_newer_visuals_follow_the_narration(daemon, browser):
         parseFloat(document.querySelector('.slide:not(.leaving) .slide-body').style.transform.split('scale(')[1]) > 1.2]""",
     )
     assert framed and zoomed
+    # Frame capture holds a close-up still, so held frames repeat; ?motion=1 keeps the creep.
+    t = _at(page, "screen", 0, 1.4)
+    for extra, alike in (("", True), ("&motion=1", False)):
+        page.goto(f"{url}?capture=1{extra}")
+        page.wait_for_function("window.__showntell?.duration?.() > 0")
+        keys = [page.evaluate("(t) => window.__showntell.seek(t)", t + d) for d in (0.0, 0.4)]
+        assert (keys[0] == keys[1]) == alike and "scale(" in keys[0], keys
     ticked = at("ship", 1, 0.3, "[...document.querySelectorAll('.entry.ticked')].map((e) => e.dataset.id)")
     assert ticked == ["tests"]
     assert not errors, errors

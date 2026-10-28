@@ -114,10 +114,13 @@ class Capturer:
     ratio, so text stays sharp at any output size.
     """
 
-    def __init__(self, url: str, *, short: int = 1080, captions: bool = False, image: str = "png", browser=None) -> None:
+    def __init__(
+        self, url: str, *, short: int = 1080, captions: bool = False, motion: bool = False, image: str = "png", browser=None
+    ) -> None:
         self.url = url
         self.short = short
         self.captions = captions
+        self.motion = motion  # keep the idle motion (breathing, creep), so held frames differ
         self.image = image
         self._browser = browser  # shared by the caller, or launched here
         self._own: list = []
@@ -146,6 +149,8 @@ class Capturer:
         params = {"capture": "1"}
         if self.captions:
             params["captions"] = "1"
+        if self.motion:
+            params["motion"] = "1"
         await self.page.goto(_with_params(self.url, **params))
         try:
             await self.page.wait_for_function("window.__showntell?.duration?.() > 0", timeout=30_000)
