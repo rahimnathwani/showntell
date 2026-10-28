@@ -114,11 +114,13 @@
   },
   {
    "t": 2.75,
-   "slide": 0,
-   "seg": 0,
-   "inAudio": false,
+   "slide": 1,
+   "seg": 1,
+   "inAudio": true,
    "cue": null,
-   "reveal": null
+   "reveal": {
+    "line": 0
+   }
   },
   {
    "t": 3,
@@ -270,15 +272,10 @@
   },
   {
    "t": 5.75,
-   "slide": 1,
-   "seg": 1,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 10,
-    "l1": 10,
-    "side": "new"
-   },
+   "slide": 2,
+   "seg": 2,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -421,16 +418,19 @@
   },
   {
    "t": 8.75,
-   "slide": 2,
-   "seg": 2,
-   "inAudio": false,
-   "cue": {
-    "kind": "lines",
-    "l0": 1,
-    "l1": 1,
-    "side": "new"
-   },
-   "reveal": null
+   "slide": 3,
+   "seg": 3,
+   "inAudio": true,
+   "cue": null,
+   "reveal": {
+    "nodes": 0,
+    "order": [
+     "a",
+     "b",
+     "c",
+     "d"
+    ]
+   }
   },
   {
    "t": 9,
@@ -654,14 +654,13 @@
   },
   {
    "t": 12,
-   "slide": 3,
-   "seg": 3,
-   "inAudio": false,
-   "cue": {
-    "kind": "node",
-    "id": "d"
-   },
-   "reveal": null
+   "slide": 4,
+   "seg": 4,
+   "inAudio": true,
+   "cue": null,
+   "reveal": {
+    "items": 0
+   }
   },
   {
    "t": 12.25,
@@ -777,13 +776,10 @@
   },
   {
    "t": 14.5,
-   "slide": 4,
-   "seg": 4,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "voice"
-   },
+   "slide": 5,
+   "seg": 5,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -898,13 +894,10 @@
   },
   {
    "t": 17.25,
-   "slide": 5,
-   "seg": 5,
-   "inAudio": false,
-   "cue": {
-    "kind": "item",
-    "id": "net"
-   },
+   "slide": 6,
+   "seg": 6,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -1008,13 +1001,10 @@
   },
   {
    "t": 19.75,
-   "slide": 6,
-   "seg": 6,
-   "inAudio": false,
-   "cue": {
-    "kind": "row",
-    "id": "row-1"
-   },
+   "slide": 7,
+   "seg": 7,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {
@@ -1165,12 +1155,10 @@
   },
   {
    "t": 23.75,
-   "slide": 7,
-   "seg": 7,
-   "inAudio": false,
-   "cue": {
-    "kind": "visual"
-   },
+   "slide": 8,
+   "seg": 8,
+   "inAudio": true,
+   "cue": null,
    "reveal": null
   },
   {

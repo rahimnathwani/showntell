@@ -150,3 +150,8 @@ def test_offsets_are_clamped_to_display_length():
 
 def test_inline_plain_strips_markup():
     assert inline_plain("The **`get`** [method](#L1)") == "The get method"
+
+
+def test_cue_styles_keep_known_names_only():
+    n = parse_narration("[the answer](#total){.decode .highlight .sparkle} y")
+    assert n.cues[0].style == "decode highlight"

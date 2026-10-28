@@ -405,11 +405,15 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 #pointer[data-kind="circle"] svg { inset: -12px -16px; width: calc(100% + 32px); height: calc(100% + 24px); }
 #pointer[data-kind="underline"] svg { left: 0; right: 0; bottom: -8px; width: 100%; height: 14px; }
 #pointer[data-kind="arrow"] svg { left: -96px; top: -50px; width: 100px; height: 60px; }
-#pointer[data-kind="highlight"] { background: var(--accent-soft); border-radius: 4px; transform: skew(-4deg); }
+#pointer[data-kind="highlight"], .pointer-trail { background: var(--accent-soft); border-radius: 4px; transform: skew(-4deg); }
+#pointer.sweep[data-kind="highlight"] { transition: opacity 0.25s; animation: sweep 0.3s var(--ease) both; }
+.pointer-trail { position: absolute; pointer-events: none; z-index: 4; animation: trail-out 1.3s linear forwards; }
+@keyframes sweep { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes trail-out { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes ink { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 
-/* camera: zooming onto a cue, scrolling long code */
-.slide-body { transform-origin: 0 0; transition: transform 0.7s var(--ease); }
+/* camera: zooming onto a cue (camera.js sets the transform every frame), scrolling long code */
+.slide-body { transform-origin: 0 0; }
 .codebox.scroll { overflow: hidden; }
 .codebox.scroll .code { transition: transform 0.6s var(--ease); }
 .codebox.scroll.focusing .ln:not(.hl) { opacity: 0.38; }
@@ -489,9 +493,12 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 }
 #caption.off { visibility: hidden; min-height: 8px; height: 8px; padding: 0; overflow: hidden; }
 #caption .inner { max-width: 1000px; }
-#caption .w { border-radius: 4px; transition: background 0.12s, color 0.12s; }
+#caption .page { display: none; }
+#caption .page.on { display: inline; }
+#caption .w { border-radius: 4px; opacity: 0.5; transition: background 0.12s, color 0.12s, opacity 0.12s; }
+#caption .w.said { opacity: 1; }
 #caption .w.code { font-family: var(--mono); font-size: 0.9em; }
-#caption .w.now { color: var(--caption-now); background: var(--accent-soft); }
+#caption .w.now { opacity: 1; color: var(--caption-now); background: var(--accent-soft); }
 
 #controls { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 16px 14px; }
 #controls > button {
@@ -581,7 +588,7 @@ body.audience #app { grid-template-rows: minmax(0, 1fr); }
 
 @media (prefers-reduced-motion: reduce) {
   #pointer, .entry, .ln, #caption .w, .diagram g.node, .diagram path, .slide-body, .codebox .code { transition: none !important; }
-  #pointer svg path, .ln.enter { animation: none !important; }
+  #pointer svg path, .ln.enter, #pointer.sweep, .pointer-trail { animation: none !important; }
   .list.checklist .tick .mark { transition: none; }
   .list.timeline .entry::before { transition: none; }
   #overlay.loading #big-play, .spinner { animation: none; }

@@ -54,6 +54,14 @@ export default {
     return undefined;
   },
 
+  // The element holding a cue's label, for `{.decode}`: a node's label.
+  element(cue, parts) {
+    if (!parts.svg) return undefined;
+    const g = cue.kind === "node" ? diagramNodes(parts.svg).get(cue.id) || findInDiagram(parts.svg, cue.text || cue.id)
+      : cue.kind === "text" ? findInDiagram(parts.svg, cue.text) : null;
+    return g?.querySelector(".nodeLabel, .label, text") || g || null;
+  },
+
   frame(st, slide, parts, t) {
     return parts.svg ? travel(st, parts.svg, t, slide.visual?.order) : "";
   },

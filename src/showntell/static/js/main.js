@@ -10,7 +10,7 @@
 //   present.js   presenter and audience windows, commands from an embedding page
 //   render.js    drawing a slide, through the slide kinds in kinds/
 
-import { build, mmss, slideEnd, slideStart } from "./timeline.js";
+import { build, mmss, rangeEnd, slideStart } from "./timeline.js";
 import { $, AUDIENCE, audio, body, currentSeg, emit, LIVE, now, params, PRESENT, report, S, sayOf, store } from "./state.js";
 import { play, seek, seekSlide, setRange, toggle } from "./playback.js";
 import { layoutStage, render } from "./view.js";
@@ -46,7 +46,7 @@ function setData(w) {
   renderChrome();
   if (!S.started) showOverlay();
   render(true);
-  if (S.range) S.range.end = slideEnd(S.TL, S.range.to) ?? S.TL.total;
+  if (S.range) S.range.end = rangeEnd(S.TL, S.range.to);
   if (PRESENT) presenterSync();
   emit("durationchange", { duration: S.TL.total, slides: W.slides.length, finished: W.status === "finished" });
 }

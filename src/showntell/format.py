@@ -331,7 +331,7 @@ class Narration:
     problems: list[str] = field(default_factory=list)
 
 
-CUE_STYLES = ("box", "circle", "underline", "arrow", "highlight", "zoom")
+CUE_STYLES = ("box", "circle", "underline", "arrow", "highlight", "zoom", "decode")
 LINK_RE = re.compile(r"\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(\s*(#[^\s)]*)?\s*(?:\"([^\"]*)\"|'([^']*)'|\(([^)]*)\))?\s*\)")
 SPAN_RE = re.compile(r"\[([^\[\]]+)\]\{\s*say\s*=\s*(?:\"([^\"]*)\"|'([^']*)')\s*\}")
 OTHER_LINK_RE = re.compile(r"\[([^\[\]]+)\]\((?!\s*#)[^)]*\)")

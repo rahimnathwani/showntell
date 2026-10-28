@@ -215,6 +215,7 @@ class Checks:
         self._check_fit(s)
         self._check_layout(s)
         self._check_quiz(s)
+        self._check_camera(s)
         shown = " ".join([s.shown] + [it.get("body", "") for it in s.visual.get("items", [])])
         spoken = " " + " ".join(re.findall(r"[\w'-]+", " ".join(x.text for x in s.says).lower())) + " "
         for chunk in _phrases(shown, 7):
@@ -227,6 +228,67 @@ class Checks:
                     line=s.line,
                 )
                 break
+
+    def _check_camera(self, s: Slide) -> None:
+        """A drawing or screenshot whose narration names several of its parts with the whole picture
+        on screen, which close-ups would show larger; and a chain whose last part, the one the slide
+        builds to, could stay hidden until it is named. Each is suggested once per walkthrough."""
+        once = self._once()
+        cues = [c for x in s.says for c in x.cues if not c.get("inferred")]
+        styles = [set((c.get("style") or "").split()) for c in cues]
+        words = sum(len(x.text.split()) for x in s.says)
+        # {.decode} scrambles a label the player can find: a drawing part, a diagram node, an item or a row.
+        can = {"svg": ("item", "text"), "diagram": ("node", "text"), "list": ("item",), "table": ("row",)}.get(s.kind, ())
+        for c, st in zip(cues, styles, strict=True):
+            if "decode" in st and c.get("kind") not in can:
+                self._issue(
+                    "cue_wrong_kind",
+                    f"[{c.get('label')}](#{c.get('target')}){{.decode}} on slide `{s.id}` has no label the player can scramble, so it does nothing.",
+                    "Put `{.decode}` on a cue at a drawing part, a diagram node, a list item or a table row.",
+                    slide=s.id,
+                    line=s.line,
+                )
+        if "zoom_unused" not in once and s.kind in ("svg", "drawio", "image") and not any("zoom" in st for st in styles):
+            parts = list(dict.fromkeys(c.get("target") for c in cues if c.get("target") and c.get("kind") in ("item", "region")))
+            if len(parts) >= 3 and words >= 35:
+                once.add("zoom_unused")
+                self._issue(
+                    "zoom_unused",
+                    f"Slide `{s.id}` names {len(parts)} parts of one picture ({', '.join(f'`#{p}`' for p in parts[:4])}) "
+                    "while the whole of it stays on screen.",
+                    "Shoot it as close-ups: add `{.zoom}` to each part's cue as it is named, then cue `#` to pull back. "
+                    "Parts drawn as panels, each with its own heading, fill the frame when zoomed. Apply it to this slide "
+                    "with revise_slide, or to the next drawing.",
+                    slide=s.id,
+                    line=s.line,
+                )
+        # Lists are left out: their items are parallel parts, and the last card is no answer.
+        decoded = any("decode" in (c.get("style") or "") for t in self.w.slides for x in t.says for c in x.cues)
+        if "decode_unused" not in once and not decoded and s.kind in ("diagram", "svg", "drawio", "table"):
+            rank = _source_rank(s)
+            seq = [(rank(c), c) for c in cues]
+            seq = [(r, c) for r, c in seq if r is not None]
+            ids = {c.get("id") for _, c in seq}
+            last = seq[-1][1] if seq else None
+            if (
+                len(ids) >= 3
+                and all(b >= a for (a, _), (b, _) in zip(seq, seq[1:], strict=False))
+                and sum(1 for _, c in seq if c.get("id") == last.get("id")) == 1
+                and (
+                    s.kind in ("diagram", "table")
+                    or any(it.get("id") == last.get("id") and it.get("label") for it in s.visual.get("items", []))
+                )
+            ):
+                once.add("decode_unused")
+                self._issue(
+                    "decode_unused",
+                    f"Slide `{s.id}` walks through its parts in order and ends on `#{last.get('target')}`.",
+                    "If that last part is the answer the slide builds to, add `{.decode}` to its cue: its label stays "
+                    "scrambled until the narration reaches it, then resolves as the word is heard. Apply it to this slide "
+                    "with revise_slide, or to the next slide that builds to an answer.",
+                    slide=s.id,
+                    line=s.line,
+                )
 
     def _check_quiz(self, s: Slide) -> None:
         """A quiz: two to four choices, one right, and the answer pointed at after the question,

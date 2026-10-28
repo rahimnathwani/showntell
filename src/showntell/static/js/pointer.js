@@ -1,10 +1,9 @@
-// The pointer and the camera: where a cue points, the mark drawn around it, scrolling long code
-// to the cued lines, and zooming onto a target.
+// The pointer: where a cue points, the mark drawn around it, and scrolling long code to the cued
+// lines. The camera, which zooms onto a target, is in camera.js.
 
-import { stateAt } from "./timeline.js";
 import { textRange } from "./draw.js";
 import { kindOf } from "./render.js";
-import { body, FRAMES, now, pointer, reducedMotion, report, S, scale, stage } from "./state.js";
+import { body, FRAMES, pointer, reducedMotion, report, S, scale, stage } from "./state.js";
 import { render } from "./view.js";
 import { norm } from "./util.js";
 
@@ -30,37 +29,6 @@ export function scrollCode(st, cueKey) {
     }
   }
   return move(code, `translateY(${-Math.round(y)}px)`, cueKey);
-}
-
-// Zoom the slide onto the cue's target (cue style `zoom`), or back out. Returns true while moving.
-export function camera(rects, cueKey) {
-  const { W, TL, shown } = S;
-  const bodyEl = S.view.body;
-  if (!bodyEl) return false;
-  if (!rects) {
-    S.zoomFor = "";
-    return move(bodyEl, "", cueKey);
-  }
-  if (S.zoomFor === cueKey) return false; // already there
-  S.zoomFor = cueKey;
-  // Measure the target unzoomed, then fit it to about 60% of the slide body.
-  const was = bodyEl.style.transform;
-  bodyEl.style.transition = "none";
-  bodyEl.style.transform = "";
-  const b = bodyEl.getBoundingClientRect();
-  const live = cueTarget(W.slides[shown.slide] && stateAt(W, TL, now()).cue, W.slides[shown.slide]);
-  const rs = (live?.rects || rects).filter((r) => r && (r.width || r.height));
-  bodyEl.style.transform = was;
-  void bodyEl.offsetWidth;
-  bodyEl.style.transition = "";
-  if (!rs.length) return false;
-  const k = scale();
-  const l = Math.min(...rs.map((r) => r.left)), t = Math.min(...rs.map((r) => r.top));
-  const r = Math.max(...rs.map((r) => r.right)), bt = Math.max(...rs.map((r) => r.bottom));
-  const w = (r - l) / k, h = (bt - t) / k, bw = b.width / k, bh = b.height / k;
-  const z = Math.max(1, Math.min(2.6, (0.6 * bw) / Math.max(w, 1), (0.6 * bh) / Math.max(h, 1)));
-  const cx = ((l + r) / 2 - b.left) / k, cy = ((t + bt) / 2 - b.top) / k;
-  return move(bodyEl, `translate(${bw / 2 - cx * z}px, ${bh / 2 - cy * z}px) scale(${z})`, cueKey);
 }
 
 // Apply a transform; animate it while playing, jump when seeking or capturing.
@@ -183,9 +151,12 @@ const MARKS = {
   underline: '<svg viewBox="0 0 100 10" preserveAspectRatio="none"><path pathLength="1" d="M2 6 C20 2 34 9 52 5 S84 3 98 6"/></svg>',
   arrow: '<svg viewBox="0 0 100 60"><path pathLength="1" d="M4 8 C30 10 58 22 84 44 M70 46 L86 46 L84 30"/></svg>',
 };
-export function placePointer(rects, wide, style = "") {
+// `jump` places it without gliding: after a camera move, it appears on the new subject.
+export function placePointer(rects, wide, style = "", jump = false) {
   rects = rects.filter((r) => r && (r.width || r.height));
   if (!rects.length) { pointer.hidden = true; return; }
+  if (!style.includes("highlight")) pointer.dataset.swept = "";
+  if (jump) pointer.style.transition = "none";
   const kind = ["circle", "underline", "arrow", "highlight"].find((s) => style.includes(s)) || "box";
   if (pointer.dataset.kind !== kind || kind !== "box") {
     pointer.dataset.kind = kind;
@@ -194,17 +165,37 @@ export function placePointer(rects, wide, style = "") {
   const l = Math.min(...rects.map((r) => r.left)), t = Math.min(...rects.map((r) => r.top));
   const r = Math.max(...rects.map((r) => r.right)), b = Math.max(...rects.map((r) => r.bottom));
   const sr = stage.getBoundingClientRect(), k = scale(), pad = wide ? 12 : 6;
-  pointer.style.left = `${(l - sr.left) / k - pad}px`;
-  pointer.style.top = `${(t - sr.top) / k - pad}px`;
-  pointer.style.width = `${(r - l) / k + pad * 2}px`;
-  pointer.style.height = `${(b - t) / k + pad * 2}px`;
+  const box = [(l - sr.left) / k - pad, (t - sr.top) / k - pad, (r - l) / k + pad * 2, (b - t) / k + pad * 2];
+  const was = ["left", "top", "width", "height"].map((p) => parseFloat(pointer.style[p]) || 0);
+  if (kind === "highlight" && box.some((x, i) => Math.abs(x - was[i]) > 8)) sweep(was, !pointer.hidden && pointer.dataset.swept === "1");
+  [pointer.style.left, pointer.style.top, pointer.style.width, pointer.style.height] = box.map((x) => `${x}px`);
   pointer.classList.toggle("wide", !!wide && kind === "box");
   pointer.hidden = false;
-  if (S.view?.body?.style.transform) return; // zoomed in: the target may be cropped on purpose
+  if (jump) { void pointer.offsetWidth; pointer.style.transition = ""; }
+  if (S.zoomed) return; // zoomed in: the target may be cropped on purpose
   const [w, h] = FRAMES[S.W.frame] || FRAMES.landscape;
   const x = (l - sr.left) / k, y = (t - sr.top) / k;
   if (x < -4 || y < -4 || x + (r - l) / k > w + 4 || y + (b - t) / k > h + 4) {
     const id = S.W.slides[S.shown.slide]?.id || "";
     report(`Slide ${id}: a cue points at something partly outside the visible slide.`, "pointer_offstage", id);
   }
+}
+
+// A highlight does not glide: it sweeps across its new target left to right, and the one it
+// leaves stays a moment, fading about a second later. Frame capture shows it in place, unswept.
+function sweep(was, leaving) {
+  const still = body.classList.contains("capture") || reducedMotion();
+  if (leaving && !still) {
+    const trail = document.createElement("div");
+    trail.className = "pointer-trail";
+    [trail.style.left, trail.style.top, trail.style.width, trail.style.height] = was.map((x) => `${x}px`);
+    trail.addEventListener("animationend", () => trail.remove());
+    stage.append(trail);
+  }
+  pointer.style.transition = "none";
+  pointer.classList.remove("sweep");
+  void pointer.offsetWidth;
+  pointer.style.transition = "";
+  if (!still) pointer.classList.add("sweep");
+  pointer.dataset.swept = "1";
 }

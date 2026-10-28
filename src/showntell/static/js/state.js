@@ -11,6 +11,9 @@ const REPORT_KEY = body.dataset.reportKey || "";
 export const params = new URLSearchParams(location.search);
 export const PRESENT = params.get("present") === "1"; // no voice; step through with notes
 export const AUDIENCE = params.get("audience") === "1"; // follows a presenter window
+// Frame capture (MP4 export) holds still between moves, so unchanged frames are reused; ?motion=1 keeps
+// the idle motion: a drawing's breathing and a held close-up's creep.
+export const IDLE_MOTION = params.get("capture") !== "1" || params.get("motion") === "1";
 export const EMBEDDED = window.parent !== window;
 export const FRAMES = { landscape: [1280, 720], square: [960, 960], portrait: [720, 1280] };
 
@@ -45,7 +48,7 @@ export const S = {
   holdSince: 0, // waiting for a slide to finish drawing before its narration starts
   playPressed: 0,
   seekingAudio: false,
-  zoomFor: "", // the cue the camera is zoomed onto
+  cam: null, camMoving: false, zoomed: false, camShot: null, // the camera (camera.js): its plan for the slide, and where it is
   failedAudio: new Set(), // audio URLs that failed to load; played silently instead
 };
 

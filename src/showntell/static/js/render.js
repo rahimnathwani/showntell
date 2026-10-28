@@ -8,6 +8,8 @@
 //   bare: true                       render(slide, root, parts) draws the whole slide, no header
 //   layout(body, parts)              size the visual once drawn (default: fit)
 //   reveal(reveal, parts, veil)      step reveals other than items, rows and lines
+//   element(cue, parts)              the element holding a cue's label ({.decode}), null, or undefined
+//                                    to leave it to lists and tables
 //   target(cue, parts, help)         where a cue points ({rects, wide}), or undefined for the
 //                                    generic pointer (lines, items, rows, text)
 //   frame(st, slide, parts, t)       per-frame animation while playing or seeking

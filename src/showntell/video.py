@@ -120,12 +120,14 @@ def _segment_cmd(fps: int, out: Path, image: str) -> list[str]:
     ]
 
 
-async def _render_range(browser, url: str, fps: int, a: int, b: int, out: Path, image: str, captions: bool, progress: list[int]) -> dict:
+async def _render_range(
+    browser, url: str, fps: int, a: int, b: int, out: Path, image: str, captions: bool, motion: bool, progress: list[int]
+) -> dict:
     """Frames a..b-1 into one segment file. Returns counts for the speed report."""
     proc = await asyncio.create_subprocess_exec(*_segment_cmd(fps, out, image), stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     shots = 0
     try:
-        async with Capturer(url, captions=captions, image=image, browser=browser) as c:
+        async with Capturer(url, captions=captions, motion=motion, image=image, browser=browser) as c:
             last_key, last = None, b""
             for i in range(a, b):
                 key = await c.seek(i / fps)
@@ -148,7 +150,7 @@ async def _render_range(browser, url: str, fps: int, a: int, b: int, out: Path, 
 
 
 async def _render_frames(
-    url: str, fps: int, n: int, workers: int, work: Path, image: str, captions: bool, quiet: bool
+    url: str, fps: int, n: int, workers: int, work: Path, image: str, captions: bool, motion: bool, quiet: bool
 ) -> tuple[list[Path], dict]:
     async_playwright = require_playwright()
     bounds = [round(n * k / workers) for k in range(workers + 1)]
@@ -160,7 +162,7 @@ async def _render_frames(
         browsers = await asyncio.gather(*(launch(pw) for _ in ranges))
         try:
             tasks = [
-                asyncio.create_task(_render_range(br, url, fps, a, b, seg, image, captions, progress))
+                asyncio.create_task(_render_range(br, url, fps, a, b, seg, image, captions, motion, progress))
                 for br, (a, b), seg in zip(browsers, ranges, segs, strict=True)
             ]
             pending = set(tasks)
@@ -302,12 +304,14 @@ def render_mp4(
     fps: int = 30,
     workers: int | None = None,
     captions: bool = False,
+    motion: bool = False,
     image: str = IMAGE,
     quiet: bool = False,
     max_bytes: int = 0,
 ) -> dict:
     """Render walkthrough `wid` to an MP4 at `out`. Returns timing and frame counts. With
-    `max_bytes`, a larger file is shrunk to fit (fit_size) or the export fails."""
+    `max_bytes`, a larger file is shrunk to fit (fit_size) or the export fails. `motion` keeps the
+    idle motion (a drawing's breathing, a held close-up's creep), which makes every held frame new."""
     require_ffmpeg()
     try:
         require_playwright()
@@ -327,7 +331,7 @@ def render_mp4(
         workers = max(1, min(workers, n))
         with serve_folder(folder) as url:
             try:
-                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, quiet))
+                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, motion, quiet))
             except CaptureUnavailable as e:
                 raise SystemExit(f"MP4 export: {e}") from e
         if abs(stats["total"] - total) > 0.05:

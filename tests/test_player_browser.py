@@ -213,21 +213,24 @@ BASELINES = Path(__file__).parent / "baselines" / "linux"
 MAX_CHANGED = 0.005  # fraction of pixels allowed to differ noticeably from the baseline
 
 
-def compare_baseline(shot: Path) -> None:
-    """Compare a screenshot with its Linux baseline. Fonts and Chromium builds differ between
-    systems, so baselines exist only for Linux CI; elsewhere, and before baselines are added
-    (scripts/update_baselines.sh), this does nothing."""
+def compare_baseline(shot: Path) -> str | None:
+    """Compare a screenshot with its Linux baseline and return the mismatch, if any. Fonts and
+    Chromium builds differ between systems, so baselines exist only for Linux CI; elsewhere, and
+    before baselines are added (scripts/update_baselines.sh), this does nothing."""
     base = BASELINES / shot.name
     if sys.platform != "linux" or not base.is_file():
-        return
+        return None
     import numpy as np
     from PIL import Image
 
     a = np.asarray(Image.open(shot).convert("RGB"), dtype=np.int16)
     b = np.asarray(Image.open(base).convert("RGB"), dtype=np.int16)
-    assert a.shape == b.shape, f"{shot.name}: size {a.shape} differs from the baseline {b.shape}"
+    if a.shape != b.shape:
+        return f"{shot.name}: size {a.shape} differs from the baseline {b.shape}"
     changed = float((np.abs(a - b).max(axis=2) > 24).mean())
-    assert changed <= MAX_CHANGED, f"{shot.name}: {changed:.2%} of pixels differ from tests/baselines/linux"
+    if changed > MAX_CHANGED:
+        return f"{shot.name}: {changed:.2%} of pixels differ from tests/baselines/linux"
+    return None
 
 
 def _free_port() -> int:
@@ -301,6 +304,9 @@ def test_every_kind_renders(daemon, browser, frame):
     assert [s["kind"] for s in data["slides"]] == KINDS
     page = browser.new_page(viewport={"width": 1440, "height": 900} if frame != "portrait" else {"width": 900, "height": 1400})
     ART.mkdir(exist_ok=True)
+    # Every slide is shot before a baseline mismatch fails the test, so one CI run carries the
+    # full set for scripts/update_baselines.sh.
+    mismatches = []
     for i, slide in enumerate(data["slides"]):
         # a moment after the first cue of the slide, or a second in
         page.goto(url)
@@ -339,7 +345,8 @@ def test_every_kind_renders(daemon, browser, frame):
         page.wait_for_function("document.getAnimations().every((a) => a.playState !== 'running')", timeout=5000)
         page.wait_for_timeout(150)
         page.screenshot(path=str(shot), animations="disabled")
-        compare_baseline(shot)
+        if miss := compare_baseline(shot):
+            mismatches.append(miss)
         assert f"k-{slide['kind']}" in state["cls"]
         assert not state["errors"], state["errors"]
         st = state["stage"]
@@ -352,6 +359,7 @@ def test_every_kind_renders(daemon, browser, frame):
             assert p["left"] >= st["left"] - 20 and p["right"] <= st["right"] + 20
             assert p["top"] >= st["top"] - 20 and p["bottom"] <= st["bottom"] + 20
     page.close()
+    assert not mismatches, "\n".join(mismatches)
 
 
 # -- ranges, presenting, embedding, layout findings -------------------------------------------------
@@ -611,7 +619,7 @@ The [p95 latency](#p95-latency) fell by three quarters, which took a lot of pati
 
 ![The demo](docs/media/demo.gif){frame=browser url="example.com"}
 
-The [top left](#@0,0,50,40){.zoom} is where it starts.
+The [top left](#@0,0,50,40){.zoom} is where it starts, and the camera stays on it while the rest of the page waits its turn.
 
 ## Ship {#ship}
 
@@ -681,15 +689,23 @@ def test_newer_visuals_follow_the_narration(daemon, browser):
     early = at("numbers", 0, 0.2, "document.querySelector('.stat .num').textContent")
     late = at("numbers", 0, 3.0, "document.querySelector('.stat .num').textContent")
     assert late == "100 ms" and early not in ("100 ms", "400 ms")
-    inside, zoomed = at(
+    # The camera moves in over about a second, then frames the region: a zoom onto a large part
+    # needs no pointer.
+    framed, zoomed = at(
         "screen",
         0,
-        0.4,
-        """(() => { const p = document.querySelector('#pointer').getBoundingClientRect();
-        const i = document.querySelector('.device img').getBoundingClientRect();
-        return [p.left >= i.left - 12 && p.top >= i.top - 12, !!document.querySelector('.slide:not(.leaving) .slide-body').style.transform]; })()""",
+        1.6,
+        """[document.querySelector('#pointer').hidden,
+        parseFloat(document.querySelector('.slide:not(.leaving) .slide-body').style.transform.split('scale(')[1]) > 1.2]""",
     )
-    assert inside and zoomed
+    assert framed and zoomed
+    # Frame capture holds a close-up still, so held frames repeat; ?motion=1 keeps the creep.
+    t = _at(page, "screen", 0, 1.4)
+    for extra, alike in (("", True), ("&motion=1", False)):
+        page.goto(f"{url}?capture=1{extra}")
+        page.wait_for_function("window.__showntell?.duration?.() > 0")
+        keys = [page.evaluate("(t) => window.__showntell.seek(t)", t + d) for d in (0.0, 0.4)]
+        assert (keys[0] == keys[1]) == alike and "scale(" in keys[0], keys
     ticked = at("ship", 1, 0.3, "[...document.querySelectorAll('.entry.ticked')].map((e) => e.dataset.id)")
     assert ticked == ["tests"]
     assert not errors, errors
@@ -1013,7 +1029,8 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
              .then((r) => r.json()).then((w) => { const tl = m.build(w); return w.slides.map((_, i) => [m.slideStart(tl, i), m.slideEnd(tl, i)]); }))"""
     )
     for i, sid in enumerate(ids):
-        page.goto(f"{url}?at={min(starts[i][0] + 2.5, starts[i][1] - 0.1):.2f}")  # settled, before the next slide
+        # settled, before the next slide starts coming in (SCENE_LEAD, 0.45 s, ahead of its first word)
+        page.goto(f"{url}?at={min(starts[i][0] + 2.5, starts[i][1] - 0.6):.2f}")
         page.wait_for_timeout(1000 if sid in ("pair", "title") else 500)
         state = page.evaluate(
             """() => {
@@ -1043,7 +1060,8 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
         if sid == "cards":
             assert state["icons"] == 3
     # A moment into a slide it is still arriving, by the clock, so a paused frame shows it too.
-    page.goto(f"{url}?at={starts[6][0] + 0.15:.2f}")
+    # It starts coming in SCENE_LEAD (0.45 s) before its first word.
+    page.goto(f"{url}?at={starts[6][0] - 0.25:.2f}")
     page.wait_for_timeout(400)
     moving = page.evaluate("() => [...document.querySelectorAll('.slide:not(.leaving) .entering')].length")
     assert moving == 3
@@ -1051,7 +1069,7 @@ def test_layouts_render_inside_the_slide(daemon, browser, frame):
     page.goto(f"{url}?at={_at(page, 'pair', 2, 0.3):.2f}")
     page.wait_for_timeout(1200)
     assert page.evaluate("() => !!document.querySelector('.slide:not(.leaving) .pane-2 .active')")
-    page.goto(f"{url}?at={starts[6][0] + 0.15:.2f}")
+    page.goto(f"{url}?at={starts[6][0] - 0.25:.2f}")
     page.wait_for_timeout(400)
     # Landing there by a jump still shows the slide before on its way out, as playing through would.
     leaving = page.evaluate("() => [...document.querySelectorAll('.slide.leaving')].map((s) => s.className)")

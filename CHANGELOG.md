@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Camera on the narration clock:** `{.zoom}` moves are worked out from the clock instead of CSS transitions, so seeking lands mid-move and MP4 export shows the move (it used to cut). Moves are planned against the speech: in over about 1.6 s, starting about 0.4 s into the sentence and settling as the cued word is heard; out in 1 s, front-loaded; a move between close-ups at a similar zoom pulls back about 6% on the way. A held close-up creeps about 2% in, a still drawing breathes about 1%; MP4 export leaves this idle motion out so held frames are reused, and `--motion` keeps it. A zoom onto a large part (a panel) fills about 90% of the frame and needs no pointer; small targets still fill about 60%. The pointer waits while the camera moves and appears on the new subject when it lands. Reduced motion cuts and holds still.
+- **Scene changes land on the first word:** a slide starts coming in 0.45 s before its first word, during the silence after the last slide, and has landed (0.5 s) as the word is heard. Cards, numbers and rows arrive 0.1 s apart.
+- **Captions one line at a time:** five to seven words, paged whole at a clause or sentence break; spoken words light, the current word brightest, the rest of the line dim. The caption no longer grows to three or four lines and squeezes the stage.
+- **`{.highlight}`** sweeps a marker across its target, left to right, and the previous one fades about a second later.
+- **`{.decode}`:** a cue style that keeps its target's label scrambled from the start of the slide until the cue, then resolves it left to right in 0.2 s: for the answer the narration builds to. Works on drawing parts, diagram nodes, list items and table rows.
+- **Findings `zoom_unused` and `decode_unused`** (info, once per walkthrough): a drawing or screenshot whose narration names three or more of its parts with no zoom is pointed at close-ups; a diagram, table or labelled drawing cued in order to its last part is pointed at `{.decode}`. `text_too_small` on a drawing or draw.io diagram also suggests zooming.
+- **Guide:** a section on one picture as many shots (a drawing split into titled panels, named along one axis, with a shared element at the centre), changing the picture about every ten seconds with two or three kinds of visual, and closing a teaching piece on three takeaway cards. It ends on a worked example: a 2×2 drawing of panels round a shared centre, zoomed panel by panel.
+
 ## 0.1.8 (2026-10-27)
 
 - **Memory on Apple silicon:** the MLX voice kept every freed GPU buffer for reuse, and sentences of different lengths leave buffers of different sizes, so the cache grew to most of the Mac's memory (25 GB of 32 after ten sentences) and stayed there while the daemon ran. Macs swapped and froze. It is now cleared after each chunk: the cache stays near zero, about 3 GB at peak, and synthesis is faster (80 sentences in 33 s instead of 92 s on an M1 Max).

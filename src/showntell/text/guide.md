@@ -8,7 +8,9 @@ Settle the arc before the next call: a viewer cannot skim back.
 
 - **Open with the point.** The title slide speaks one short sentence, the most concrete fact or the question the piece answers, in plain words without backticked names (`opening_code_names`); then go straight to content.
 - **Arc:** purpose (the problem solved, or what changed and why), then mechanism (in the order control or data flows), then consequences (edge cases, trade-offs, what to check next). The last slide answers the opening's question; those two alone say why it matters.
+- **Close on takeaways:** a teaching piece ends with its quiz, then a `.cards` slide of three items, each a bold title and one sentence that compresses a point; they arrive left to right. Narrate it in two or three sentences that cue each card as its point is named, not a reading of the cards.
 - **One point per slide,** in one to three short paragraphs: about 8 to 20 seconds of speech. If it needs "and also" or runs longer, split it, or move the eye with cues or `.build`. Viewers follow a screen that changes often: more, lighter slides beat fewer, heavier ones.
+- **Change the picture about every ten seconds:** a new slide, a zoom, a reveal or a new version all count. A short piece needs only two or three kinds of visual; vary layout and framing rather than reaching for a new kind on every slide.
 - **Length by purpose:** a concept or how-X-works piece, 1 to 2 minutes (150 to 300 spoken words); a code change or review, 2 to 4 minutes (300 to 600). Replies give the running length; past four minutes they warn (`too_long`): finish, or save the rest for a second walkthrough.
 - **Chapters:** past about twelve slides, open each part with a `## Title {.chapter}` card; narration optional.
 - **Analogies** only when they do real work: at most one per idea, each part tied to something on screen, never the opening, not revisited once made.
@@ -111,8 +113,8 @@ Every slide with a visual needs at least one cue (`no_cues`). Use only targets i
 - **Density.** One to three cues per paragraph; more makes the pointer jitter.
 - **Prefer `file=`.** Code from disk is never retyped and keeps the editor's numbers; take line numbers from the file, not memory.
 - **Quote when you count.** Quoted text must match exactly, spaces included, and corrects a miscounted line (`cue_moved`); quote every line cue on inline code or a terminal.
-- **Pointer styles.** After a cue, `{.circle}`, `{.underline}`, `{.arrow}` or `{.highlight}` replaces the box; `{.zoom}` holds the camera on the target until the next cue (`{.zoom .circle}` combines). One or two a slide; zoom suits small targets: a screenshot field, a formula term.
-- **Camera on one dense picture.** A busy drawing, draw.io diagram or screenshot: show the whole, `{.zoom}` onto each part as it is named, then cue `#` to pull back: one dense visual becomes readable close-ups.
+- **Pointer styles.** After a cue, `{.circle}`, `{.underline}`, `{.arrow}` or `{.highlight}` replaces the box; `{.highlight}` sweeps a marker across a label and the last one fades a second later, which suits diagram nodes and list items. `{.zoom}` moves the camera onto the target until the next cue (`{.zoom .circle}` combines). One or two a slide.
+- **Withhold the answer.** `{.decode}` keeps the target's label scrambled from the start of the slide until its cue, then resolves it as the word is heard: the last node of a chain, a result value, the one number the slide builds to. Cue it by id on a drawing part, diagram node, list item or table row; once a slide: `…and the resolver finally hands back [the address](#ip){.decode}.`
 
 Targets by visual; a slug is lowercase with hyphens:
 
@@ -134,6 +136,51 @@ Targets by visual; a slug is lowercase with hyphens:
 | **Drawing, draw.io** | element or cell id (`#ray`); a unique `<title>`, label or text, or its slug (`#air-molecule`); region as for images |
 | **Any visual** | `#` the whole visual; `[label](# "text")` finds that text in it: a node label, a cell, a formula term |
 
+## One picture, many shots
+
+The camera turns one dense picture into a run of readable close-ups: show the whole, `{.zoom}` onto each part as it is named, then cue `#` to pull back for the summary. It suits a busy drawing, a draw.io diagram, a screenshot (zoom onto a region, `#@10,5,40,30`) and a formula term.
+
+- **Panels.** For a concept with three or four parts, draw one SVG as a grid of panels, 2×2 or a row of three: each a `<g id>` with its own heading, an icon or two and a few labels, so it reads alone when it fills the frame. A zoom onto a panel fills the frame and needs no pointer.
+- **Order.** Name the panels along a path so each move runs along one axis: across, down, back (clockwise round a 2×2), not corner to corner.
+- **Anchor.** A small shared element where the panels meet (the user, the server, a hub) peeks into every close-up and keeps the viewer oriented.
+- **Timing.** A move in starts shortly after its sentence does and takes about a second and a half, settling as the cued word is heard: put the panel's name late in the sentence and give each panel one or two sentences. Pulling back out is quicker. Such a slide may run 30 to 40 seconds: every shot changes the picture.
+- **One slide,** five shots: whole, each panel, whole. Follow it with a different look, not another grid.
+
+````markdown
+## Four stations, one cup {.full}
+
+```svg
+<svg viewBox="0 0 1150 560">
+  <g id="order"><rect x="20" y="20" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="50" y="80" font-size="36" fill="var(--fg)">1 Order</text>
+    <use href="icon:message-square" x="50" y="120" width="80"/>
+    <text x="150" y="175" font-size="28" fill="var(--muted)">name, size, milk</text></g>
+  <g id="pay"><rect x="590" y="20" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="620" y="80" font-size="36" fill="var(--fg)">2 Pay</text>
+    <use href="icon:credit-card" x="620" y="120" width="80"/>
+    <text x="720" y="175" font-size="28" fill="var(--muted)">card or cash</text></g>
+  <g id="brew"><rect x="590" y="290" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="620" y="350" font-size="36" fill="var(--fg)">3 Brew</text>
+    <use href="icon:flame" x="620" y="390" width="80"/>
+    <text x="720" y="445" font-size="28" fill="var(--muted)">grind, press, steam</text></g>
+  <g id="serve"><rect x="20" y="290" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="50" y="350" font-size="36" fill="var(--fg)">4 Serve</text>
+    <use href="icon:hand" x="50" y="390" width="80"/>
+    <text x="150" y="445" font-size="28" fill="var(--muted)">name called out</text></g>
+  <g id="cup"><circle cx="575" cy="280" r="48" fill="var(--accent)"/>
+    <use href="icon:coffee" x="547" y="252" width="56"/></g>
+</svg>
+```
+
+Every coffee passes four stations, with [the cup](#cup) at the centre of each.
+
+It starts when you tell the barista [your order](#order){.zoom}: a name, a size, the milk. Next comes the moment you [pay](#pay){.zoom}, and only then does the till print a ticket.
+
+The ticket goes behind the bar, where the barista [brews it](#brew){.zoom}. Then the cup comes back round the counter, and they [serve it](#serve){.zoom}.
+
+So one order is [four short stops](#), clockwise round a single cup.
+````
+
 ## Reveal in steps
 
 Add `.build` to the heading when order matters: parts appear in source order up to the latest one cued, edges once both ends show, everything once narration ends.
@@ -144,7 +191,7 @@ Add `.build` to the heading when order matters: parts appear in source order up 
 
 ## Check understanding
 
-End a teaching piece (a concept, onboarding to a codebase) with one quiz on its main point; optional for a change, and a review can quiz its main finding.
+End a teaching piece (a concept, onboarding to a codebase) with one quiz on its main point, just before the takeaway cards; optional for a change, and a review can quiz its main finding.
 
 ````markdown
 ## Which call retries? {.quiz}

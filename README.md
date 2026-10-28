@@ -262,7 +262,7 @@ After [the final attempt](#L55) the error goes back to the caller.
 | **Layouts** | `{.side}` puts `>` takeaways beside the visual, `{.pair}` shows two visuals, `{.full}` one edge to edge; a slide with only a `>` sentence is a statement |
 | **Icons** | Lucide names: `- :database: **Postgres**`, `> :zap: takeaway`, `{icon=rocket}` on a heading, `<use href="icon:cloud"/>` in a drawing |
 
-`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, or `{.zoom}` to move the camera in. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
+`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, `{.zoom}` to move the camera in, or `{.decode}` to keep a label scrambled until its cue. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
 
 ## Commands
 
@@ -273,7 +273,7 @@ After [the final attempt](#L55) the error goes back to the caller.
 | **`showntell play FILE.md`** | voice a Markdown walkthrough and open it |
 | **`showntell export ID\|LINK\|FILE.md OUT.html`** | one self-contained page: player, slides, MP3 narration and only the libraries its slides use; plays offline from a double-click and makes no network requests |
 | **`showntell export ID\|LINK\|FILE.md OUT [--mp3]`** | a static folder that plays from any web server, with WebVTT captions and a `poster.png` |
-| **`showntell export ID\|LINK\|FILE.md OUT.mp4`** | an MP4 video; `--fps`, `--workers`, `--burn-captions`, `--max-mb` to shrink it to fit |
+| **`showntell export ID\|LINK\|FILE.md OUT.mp4`** | an MP4 video; `--fps`, `--workers`, `--burn-captions`, `--motion`, `--max-mb` to shrink it to fit |
 | **`showntell list`** | recent walkthroughs |
 | **`showntell doctor`** | check models, speech speed, port and daemon |
 | **`showntell prune --older-than 60d`** | delete walkthroughs unchanged for that long and cached audio nothing uses; `--dry-run` lists them first |
@@ -295,6 +295,7 @@ uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0
 | **Sound** | AAC, built from the narration clips at their places on the timeline |
 | **Captions** | a mov_text subtitle track; `--burn-captions` also draws them into the picture |
 | **Speed** | `--workers` browsers render frame ranges in parallel (default: up to 4); unchanged frames reuse the last screenshot |
+| **Motion** | camera moves, entrances and reveals as in the player; the idle motion (a drawing breathing, a held close-up creeping in) is left out so held frames repeat, and `--motion` keeps it at the cost of a screenshot per frame |
 | **Size** | `--max-mb 16` lowers the audio bitrate, then the picture to 720p, until the file fits, or fails |
 | **Checks** | the file's duration must match the timeline within 0.2 s, or the export fails |
 

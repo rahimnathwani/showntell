@@ -188,5 +188,38 @@
    "diff"
   ],
   "prompt": "Use showntell to review commit dbb81ae in this repo as a careful code reviewer: is it correct, what could go wrong, and what would you ask the author to change?"
+ },
+ {
+  "id": "engine",
+  "kind": "dense",
+  "prompt": "Use showntell to explain how a four-stroke car engine works: intake, compression, power and exhaust.",
+  "expect": [
+   "svg"
+  ]
+ },
+ {
+  "id": "cell",
+  "kind": "dense",
+  "prompt": "Use showntell to explain the main parts of an animal cell and what each one does.",
+  "expect": [
+   "svg"
+  ]
+ },
+ {
+  "id": "cdn",
+  "kind": "dense",
+  "prompt": "Use showntell to explain how a web page request passes through a CDN, a load balancer, an app server and a database, and where it can be answered early.",
+  "expect": [
+   "svg",
+   "diagram"
+  ]
+ },
+ {
+  "id": "carbon",
+  "kind": "dense",
+  "prompt": "Use showntell to explain the carbon cycle: how carbon moves between the air, plants, animals, oceans and rocks.",
+  "expect": [
+   "svg"
+  ]
  }
 ]

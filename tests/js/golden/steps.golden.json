@@ -87,11 +87,18 @@
   },
   {
    "t": 2.25,
-   "slide": 0,
-   "seg": 0,
-   "inAudio": false,
+   "slide": 1,
+   "seg": 1,
+   "inAudio": true,
    "cue": null,
-   "reveal": null
+   "reveal": {
+    "nodes": 0,
+    "order": [
+     "parse",
+     "build",
+     "voice"
+    ]
+   }
   },
   {
    "t": 2.5,

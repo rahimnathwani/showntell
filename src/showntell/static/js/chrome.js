@@ -4,10 +4,13 @@
 import { mmss, slideSpans, slideStart, wordAt } from "./timeline.js";
 import { $, body, now, reducedMotion, S, sayOf, store } from "./state.js";
 import { seek } from "./playback.js";
-import { esc } from "./util.js";
+import { captionPages, esc } from "./util.js";
 
 // ------------------------------------------------------------------- captions and transcript
 
+// The caption shows one line at a time: the paragraph is cut into pages of five to seven words,
+// and a page is replaced whole when speech reaches its first word. Words already spoken are
+// light, the word being spoken brightest, the rest of the line dim.
 export function applyCaption(st, slide, force) {
   const seg = S.TL.segs[st.seg];
   const say = sayOf(seg);
@@ -19,29 +22,39 @@ export function applyCaption(st, slide, force) {
     cap.innerHTML = say && say.text ? `<div class="inner">${captionHtml(say)}</div>` : "";
     markTranscript(key);
   }
-  if (!say || !st.inAudio) {
-    if (S.lastWord !== -1) { cap.querySelector(".w.now")?.classList.remove("now"); S.lastWord = -1; }
-    return;
-  }
-  const i = wordAt(say, st.local);
+  if (!say) return;
+  // Before the first word, the first line waits, dim; after the last, the last line stays.
+  const n = cap.querySelectorAll(".w").length;
+  const i = st.inAudio ? wordAt(say, st.local) : st.local > 0 ? n : -1;
   if (i === S.lastWord) return;
   S.lastWord = i;
-  cap.querySelector(".w.now")?.classList.remove("now");
-  cap.querySelector(`.w[data-i="${i}"]`)?.classList.add("now");
+  const words = [...cap.querySelectorAll(".w")];
+  const page = words[Math.max(0, Math.min(i, words.length - 1))]?.closest(".page");
+  cap.querySelectorAll(".page.on").forEach((p) => { if (p !== page) p.classList.remove("on"); });
+  page?.classList.add("on");
+  for (const w of page ? page.querySelectorAll(".w") : []) {
+    const k = +w.dataset.i;
+    w.classList.toggle("said", k < i);
+    w.classList.toggle("now", k === i);
+  }
 }
 
 function captionHtml(say) {
   const text = say.text;
   const code = say.code || [];
   const isCode = (a, b) => code.some(([x, y]) => a >= x && b <= y);
-  let html = "", pos = 0;
-  (say.words || []).forEach((w, i) => {
-    if (w.c0 < pos || w.c0 < 0 || w.c1 > text.length) return;
-    html += esc(text.slice(pos, w.c0));
-    html += `<span class="w${isCode(w.c0, w.c1) ? " code" : ""}" data-i="${i}">${esc(text.slice(w.c0, w.c1))}</span>`;
-    pos = w.c1;
-  });
-  return html + esc(text.slice(pos));
+  const words = (say.words || []).map((w, i) => ({ ...w, i })).filter((w, k, all) => w.c0 >= 0 && w.c1 <= text.length && (k === 0 || w.c0 >= all[k - 1].c1));
+  if (!words.length) return `<span class="page on">${esc(text)}</span>`;
+  return captionPages(text, words).map((page) => {
+    let html = "";
+    page.forEach((w, k) => {
+      html += `<span class="w${isCode(w.c0, w.c1) ? " code" : ""}" data-i="${w.i}">${esc(text.slice(w.c0, w.c1))}</span>`;
+      const next = page[k + 1];
+      // Text between words, and a page's closing punctuation; a page's leading text is dropped.
+      html += esc(next ? text.slice(w.c1, next.c0) : text.slice(w.c1, words[words.indexOf(w) + 1]?.c0 ?? text.length).trimEnd());
+    });
+    return `<span class="page">${html}</span>`;
+  }).join("");
 }
 
 function renderTranscript() {

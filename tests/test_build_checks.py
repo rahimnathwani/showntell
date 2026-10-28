@@ -174,3 +174,50 @@ def test_diagram_node_limit(build):
 def test_open_fence_at_end_of_call_is_reported(build):
     _, b = build("# T\n\nA.\n\n## C\n\n```python\nx = 1\n")
     assert has(b.issues, "still open")
+
+
+# -- the camera and withheld answers ------------------------------------------------------------
+
+DRAWING = """## Sky {#sky}
+
+```svg
+<svg viewBox="0 0 1150 560"><g id="sun"><circle cx="100" cy="100" r="40"/></g><g id="earth"><circle cx="400" cy="100" r="40"/></g><g id="moon"><circle cx="700" cy="100" r="40"/></g></svg>
+```
+
+Light leaves [the sun](#sun){CUE} and travels a long way through empty space before anything stops it.
+
+It reaches [the Earth](#earth){CUE}, which turns all day so that one half is lit and the other half is dark.
+
+And it reaches [the moon](#moon){CUE}, which sends some of that light back to us at night.
+"""
+
+
+@pytest.mark.parametrize("cue, found", [("", True), ("{.zoom}", False)])
+def test_naming_several_parts_of_one_drawing_suggests_close_ups(build, cue, found):
+    _, b = build("# T\n\nA.\n\n" + DRAWING.replace("{CUE}", cue))
+    assert any(i.code == "zoom_unused" for i in b.issues) is found
+
+
+CHAIN = """## Lookup {#lookup}
+
+```mermaid
+graph LR
+  b[Browser] --> r[Resolver] --> root[Root] --> ip[Address]
+```
+
+The [browser](#b) asks the [resolver](#r), which asks [the root](#root), and back comes [the address](#ip){STYLE}.
+"""
+
+
+@pytest.mark.parametrize("style, found", [("", True), ("{.decode}", False)])
+def test_a_chain_cued_in_order_to_its_end_suggests_decode_once(build, style, found):
+    _, b = build("# T\n\nA.\n\n" + CHAIN.replace("{STYLE}", style) + CHAIN.replace("lookup", "again").replace("{STYLE}", ""))
+    assert [i.code for i in b.issues].count("decode_unused") == (1 if found else 0)
+
+
+def test_decode_on_a_target_without_a_label_is_reported(build):
+    md = "## Fast {#fast}\n\n```stat\np95 latency: 400 ms -> 100 ms\n```\n\nThe [p95 latency](#p95-latency){.decode} fell by three quarters.\n"
+    _, b = build("# T\n\nA.\n\n" + md)
+    assert has(b.issues, "{.decode}", "does nothing")
+    _, b = build("# T\n\nA.\n\n" + CHAIN.replace("{STYLE}", "{.decode}"))
+    assert not has(b.issues, "does nothing")
