@@ -386,6 +386,15 @@ def summarize(w: Walkthrough | None, expect: list[str] | None = None) -> dict:
     # Pace: seconds of narration on each content slide; past 20 s a slide reads as a lecture.
     per = [sum(x.duration for x in s.says if x.text) for s in content]
     shapes = [(s.kind, s.visual.get("style"), s.pair.get("kind"), _layout(s)) for s in content]
+    # Picture changes: each content slide, and on it each zoom, code or drawing version, and part
+    # revealed on a `.build` slide. A pointer moving alone does not count.
+    changes = len(content) + sum(
+        1
+        for s in content
+        for x in s.says
+        for c in x.cues
+        if "zoom" in (c.get("style") or "") or c.get("kind") == "step" or "build" in s.classes
+    )
     return {
         "features": sorted(used),
         "slides": len(w.slides),
@@ -393,6 +402,7 @@ def summarize(w: Walkthrough | None, expect: list[str] | None = None) -> dict:
         "duration_s": round(sum(x.duration for x in says), 1),
         "s_per_slide": round(sum(per) / len(per), 1) if per else None,
         "long_slides": sum(1 for t in per if t > 20),
+        "s_per_change": round(sum(per) / changes, 1) if changes else None,
         "cues": len(cues),
         "inferred_cues": sum(1 for c in cues if c.get("inferred")),
         "kinds": sorted({s.kind for s in w.slides}),
@@ -498,7 +508,7 @@ async def main() -> None:
 def print_table(results: list[dict]) -> None:
     head = (
         "| run | model | link s | total s | cost | slides | min | issues | render err | stalls | cue acc | missing/min | preview "
-        "| s/slide | >20 s | small text | plain | fit | variety | layouts | takeaways | icons | alike | features |"
+        "| s/slide | s/change | >20 s | small text | plain | fit | variety | layouts | takeaways | icons | alike | features |"
     )
     print("\n" + head + "\n|" + "---|" * (head.count("|") - 1))
     for r in sorted(results, key=lambda r: (r["model"], r["id"])):
@@ -508,7 +518,7 @@ def print_table(results: list[dict]) -> None:
             f"${r.get('cost') or 0:.2f} | {s.get('slides', '-')} | {s.get('duration_s', 0) / 60:.1f} | {r['issues']} | "
             f"{len(pl.get('render_errors', [])) if pl else '-'} | {pl.get('stalls', '-') if pl else '-'} | "
             f"{a.get('cue_accuracy', '-')} | {a.get('missing_per_min', '-')} | "
-            f"{sum(1 for _, n in r.get('tool_calls', []) if n == 'preview_slides')} | {s.get('s_per_slide', '-')} | "
+            f"{sum(1 for _, n in r.get('tool_calls', []) if n == 'preview_slides')} | {s.get('s_per_slide', '-')} | {s.get('s_per_change', '-')} | "
             f"{s.get('long_slides', '-')} | {r.get('issue_codes', {}).get('text_too_small', 0)} | {s.get('plain_share', '-')} | "
             f"{'-' if s.get('fit') is None else 'yes' if s['fit'] else 'no'} | {s.get('variety', '-')} | {s.get('layouts', '-')} | "
             f"{s.get('takeaways', '-')} | {s.get('icons', '-')} | {s.get('alike', '-')} | {', '.join(s.get('features', [])) or '-'} |"
