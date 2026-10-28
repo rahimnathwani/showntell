@@ -213,21 +213,24 @@ BASELINES = Path(__file__).parent / "baselines" / "linux"
 MAX_CHANGED = 0.005  # fraction of pixels allowed to differ noticeably from the baseline
 
 
-def compare_baseline(shot: Path) -> None:
-    """Compare a screenshot with its Linux baseline. Fonts and Chromium builds differ between
-    systems, so baselines exist only for Linux CI; elsewhere, and before baselines are added
-    (scripts/update_baselines.sh), this does nothing."""
+def compare_baseline(shot: Path) -> str | None:
+    """Compare a screenshot with its Linux baseline and return the mismatch, if any. Fonts and
+    Chromium builds differ between systems, so baselines exist only for Linux CI; elsewhere, and
+    before baselines are added (scripts/update_baselines.sh), this does nothing."""
     base = BASELINES / shot.name
     if sys.platform != "linux" or not base.is_file():
-        return
+        return None
     import numpy as np
     from PIL import Image
 
     a = np.asarray(Image.open(shot).convert("RGB"), dtype=np.int16)
     b = np.asarray(Image.open(base).convert("RGB"), dtype=np.int16)
-    assert a.shape == b.shape, f"{shot.name}: size {a.shape} differs from the baseline {b.shape}"
+    if a.shape != b.shape:
+        return f"{shot.name}: size {a.shape} differs from the baseline {b.shape}"
     changed = float((np.abs(a - b).max(axis=2) > 24).mean())
-    assert changed <= MAX_CHANGED, f"{shot.name}: {changed:.2%} of pixels differ from tests/baselines/linux"
+    if changed > MAX_CHANGED:
+        return f"{shot.name}: {changed:.2%} of pixels differ from tests/baselines/linux"
+    return None
 
 
 def _free_port() -> int:
@@ -301,6 +304,9 @@ def test_every_kind_renders(daemon, browser, frame):
     assert [s["kind"] for s in data["slides"]] == KINDS
     page = browser.new_page(viewport={"width": 1440, "height": 900} if frame != "portrait" else {"width": 900, "height": 1400})
     ART.mkdir(exist_ok=True)
+    # Every slide is shot before a baseline mismatch fails the test, so one CI run carries the
+    # full set for scripts/update_baselines.sh.
+    mismatches = []
     for i, slide in enumerate(data["slides"]):
         # a moment after the first cue of the slide, or a second in
         page.goto(url)
@@ -339,7 +345,8 @@ def test_every_kind_renders(daemon, browser, frame):
         page.wait_for_function("document.getAnimations().every((a) => a.playState !== 'running')", timeout=5000)
         page.wait_for_timeout(150)
         page.screenshot(path=str(shot), animations="disabled")
-        compare_baseline(shot)
+        if miss := compare_baseline(shot):
+            mismatches.append(miss)
         assert f"k-{slide['kind']}" in state["cls"]
         assert not state["errors"], state["errors"]
         st = state["stage"]
@@ -352,6 +359,7 @@ def test_every_kind_renders(daemon, browser, frame):
             assert p["left"] >= st["left"] - 20 and p["right"] <= st["right"] + 20
             assert p["top"] >= st["top"] - 20 and p["bottom"] <= st["bottom"] + 20
     page.close()
+    assert not mismatches, "\n".join(mismatches)
 
 
 # -- ranges, presenting, embedding, layout findings -------------------------------------------------
