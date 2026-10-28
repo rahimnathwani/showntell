@@ -395,7 +395,19 @@ def summarize(w: Walkthrough | None, expect: list[str] | None = None) -> dict:
         for c in x.cues
         if "zoom" in (c.get("style") or "") or c.get("kind") == "step" or "build" in s.classes
     )
+    # The camera and withheld answers: zoom cues, slides where the camera visits two or more parts
+    # of one picture (panels or close-ups), zooms on visuals made of words or code (likely forced),
+    # and {.decode} cues.
+    styled = [(s, c) for s in content for x in s.says for c in x.cues]
+    zooms = [(s, c) for s, c in styled if "zoom" in (c.get("style") or "").split()]
+    shots = Counter(s.id for s, c in zooms if c.get("target") not in ("", "#", None))
     return {
+        "zooms": len(zooms),
+        "zoom_slides": len(shots),
+        "multi_shot": sum(1 for n in shots.values() if n >= 2),
+        "forced_zooms": sum(1 for s, _ in zooms if s.kind in ("code", "diff", "list", "table", "text", "stat", "chat", "terminal", "tree")),
+        "decodes": sum(1 for _, c in styled if "decode" in (c.get("style") or "").split()),
+        "quiz": any(s.visual.get("style") == "quiz" for s in content),
         "features": sorted(used),
         "slides": len(w.slides),
         "paragraphs": len(says),
@@ -508,7 +520,8 @@ async def main() -> None:
 def print_table(results: list[dict]) -> None:
     head = (
         "| run | model | link s | total s | cost | slides | min | issues | render err | stalls | cue acc | missing/min | preview "
-        "| s/slide | s/change | >20 s | small text | plain | fit | variety | layouts | takeaways | icons | alike | features |"
+        "| s/slide | s/change | >20 s | zooms | multi-shot | forced | decode | quiz | small text | plain | fit | variety | layouts | takeaways | icons "
+        "| alike | features |"
     )
     print("\n" + head + "\n|" + "---|" * (head.count("|") - 1))
     for r in sorted(results, key=lambda r: (r["model"], r["id"])):
@@ -519,7 +532,8 @@ def print_table(results: list[dict]) -> None:
             f"{len(pl.get('render_errors', [])) if pl else '-'} | {pl.get('stalls', '-') if pl else '-'} | "
             f"{a.get('cue_accuracy', '-')} | {a.get('missing_per_min', '-')} | "
             f"{sum(1 for _, n in r.get('tool_calls', []) if n == 'preview_slides')} | {s.get('s_per_slide', '-')} | {s.get('s_per_change', '-')} | "
-            f"{s.get('long_slides', '-')} | {r.get('issue_codes', {}).get('text_too_small', 0)} | {s.get('plain_share', '-')} | "
+            f"{s.get('long_slides', '-')} | {s.get('zooms', '-')} | {s.get('multi_shot', '-')} | {s.get('forced_zooms', '-')} | "
+            f"{s.get('decodes', '-')} | {'yes' if s.get('quiz') else 'no'} | {r.get('issue_codes', {}).get('text_too_small', 0)} | {s.get('plain_share', '-')} | "
             f"{'-' if s.get('fit') is None else 'yes' if s['fit'] else 'no'} | {s.get('variety', '-')} | {s.get('layouts', '-')} | "
             f"{s.get('takeaways', '-')} | {s.get('icons', '-')} | {s.get('alike', '-')} | {', '.join(s.get('features', [])) or '-'} |"
         )
