@@ -114,7 +114,7 @@ Every slide with a visual needs at least one cue (`no_cues`). Use only targets i
 - **Prefer `file=`.** Code from disk is never retyped and keeps the editor's numbers; take line numbers from the file, not memory.
 - **Quote when you count.** Quoted text must match exactly, spaces included, and corrects a miscounted line (`cue_moved`); quote every line cue on inline code or a terminal.
 - **Pointer styles.** After a cue, `{.circle}`, `{.underline}`, `{.arrow}` or `{.highlight}` replaces the box; `{.highlight}` sweeps a marker across a label and the last one fades a second later, which suits diagram nodes and list items. `{.zoom}` moves the camera onto the target until the next cue (`{.zoom .circle}` combines). One or two a slide.
-- **Withhold the answer.** `{.decode}` keeps the target's label scrambled from the start of the slide until its cue, then resolves it as the word is heard: the last node of a chain, a result value, the one number the slide builds to. Cue it by id on a drawing part, diagram node, list item or table row; once a slide.
+- **Withhold the answer.** `{.decode}` keeps the target's label scrambled from the start of the slide until its cue, then resolves it as the word is heard: the last node of a chain, a result value, the one number the slide builds to. Cue it by id on a drawing part, diagram node, list item or table row; once a slide: `…and the resolver finally hands back [the address](#ip){.decode}.`
 
 Targets by visual; a slug is lowercase with hyphens:
 
@@ -145,6 +145,41 @@ The camera turns one dense picture into a run of readable close-ups: show the wh
 - **Anchor.** A small shared element where the panels meet (the user, the server, a hub) peeks into every close-up and keeps the viewer oriented.
 - **Timing.** A move in starts shortly after its sentence does and takes about a second and a half, settling as the cued word is heard: put the panel's name late in the sentence and give each panel one or two sentences. Pulling back out is quicker. Such a slide may run 30 to 40 seconds: every shot changes the picture.
 - **One slide,** five shots: whole, each panel, whole. Follow it with a different look, not another grid.
+
+````markdown
+## Four stations, one cup {.full}
+
+```svg
+<svg viewBox="0 0 1150 560">
+  <g id="order"><rect x="20" y="20" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="50" y="80" font-size="36" fill="var(--fg)">1 Order</text>
+    <use href="icon:message-square" x="50" y="120" width="80"/>
+    <text x="150" y="175" font-size="28" fill="var(--muted)">name, size, milk</text></g>
+  <g id="pay"><rect x="590" y="20" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="620" y="80" font-size="36" fill="var(--fg)">2 Pay</text>
+    <use href="icon:credit-card" x="620" y="120" width="80"/>
+    <text x="720" y="175" font-size="28" fill="var(--muted)">card or cash</text></g>
+  <g id="brew"><rect x="590" y="290" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="620" y="350" font-size="36" fill="var(--fg)">3 Brew</text>
+    <use href="icon:flame" x="620" y="390" width="80"/>
+    <text x="720" y="445" font-size="28" fill="var(--muted)">grind, press, steam</text></g>
+  <g id="serve"><rect x="20" y="290" width="540" height="250" rx="18" fill="var(--panel)"/>
+    <text x="50" y="350" font-size="36" fill="var(--fg)">4 Serve</text>
+    <use href="icon:hand" x="50" y="390" width="80"/>
+    <text x="150" y="445" font-size="28" fill="var(--muted)">name called out</text></g>
+  <g id="cup"><circle cx="575" cy="280" r="48" fill="var(--accent)"/>
+    <use href="icon:coffee" x="547" y="252" width="56"/></g>
+</svg>
+```
+
+Every coffee passes four stations, with [the cup](#cup) at the centre of each.
+
+It starts when you tell the barista [your order](#order){.zoom}: a name, a size, the milk. Next comes the moment you [pay](#pay){.zoom}, and only then does the till print a ticket.
+
+The ticket goes behind the bar, where the barista [brews it](#brew){.zoom}. Then the cup comes back round the counter, and they [serve it](#serve){.zoom}.
+
+So one order is [four short stops](#), clockwise round a single cup.
+````
 
 ## Reveal in steps
 
