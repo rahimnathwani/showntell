@@ -273,7 +273,8 @@ class Checks:
                     "decode_unused",
                     f"Slide `{s.id}` walks through its parts in order and ends on `#{last.get('target')}`.",
                     "If that last part is the answer the slide builds to, add `{.decode}` to its cue: its label stays "
-                    "scrambled until the narration reaches it, then resolves as the word is heard.",
+                    "scrambled until the narration reaches it, then resolves as the word is heard. Apply it to this slide "
+                    "with revise_slide, or to the next slide that builds to an answer.",
                     slide=s.id,
                     line=s.line,
                 )
