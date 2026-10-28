@@ -262,7 +262,7 @@ After [the final attempt](#L55) the error goes back to the caller.
 | **Layouts** | `{.side}` puts `>` takeaways beside the visual, `{.pair}` shows two visuals, `{.full}` one edge to edge; a slide with only a `>` sentence is a statement |
 | **Icons** | Lucide names: `- :database: **Postgres**`, `> :zap: takeaway`, `{icon=rocket}` on a heading, `<use href="icon:cloud"/>` in a drawing |
 
-`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, or `{.zoom}` to move the camera in. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
+`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, `{.zoom}` to move the camera in, or `{.decode}` to keep a label scrambled until its cue. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
 
 ## Commands
 

@@ -59,7 +59,9 @@ Each bundled kind is a `kinds.base.Kind`: its fence languages, a parser that ret
 | **`state.js`** | shared flags, DOM handles, mutable playback state (one object), finding reports and embed events; imports no other player module |
 | **`playback.js`** | the clock: play, pause, seek, stalls while the writer or voice catches up, the wait for a slide to draw, ranges |
 | **`view.js`** | the slide on screen: draws it, sizes it, reveals parts, switches code versions, runs per-frame animation, measures layout findings |
-| **`pointer.js`** | where a cue points, the pointer marks, scrolling long code and zooming the camera |
+| **`pointer.js`** | where a cue points, the pointer marks and scrolling long code |
+| **`camera.js`** | zooming onto a cue's target and back, by the narration clock: moves planned against the speech (`cameraPlan` in `timeline.js`), arcs, creep and breathing |
+| **`decode.js`** | labels withheld by `{.decode}` cues: scrambled until their cue, then resolved |
 | **`chrome.js`** | captions, transcript, chapters, progress bar, overlay and end card |
 | **`present.js`** | presenter and audience windows, and commands from a page that embeds the player |
 | **`main.js`** | loads the walkthrough, follows live updates, wires the controls, capture mode |

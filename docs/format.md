@@ -64,7 +64,7 @@ A heading may end with attributes in braces: `## The lookup {#lookup .build}`.
 
 On a `.pair` slide a cue points into the first visual when it has the target, else into the second; give the two visuals different ids. Quoted text (`[label](# "text")`) is looked for in both. `.build` does not apply to a pair, and only the first visual may have `step` versions.
 
-Every content slide has a kicker above its title: its number among the content slides and the part it belongs to. Slides come in by the narration's clock, so seeking and MP4 export show the same motion: they rise in, a slide that shows the same kind of visual in the same layout as the one before slides across like a page, title and chapter slides zoom in, and cards, numbers, rows, messages and takeaways arrive one after another (except on `.build` slides).
+Every content slide has a kicker above its title: its number among the content slides and the part it belongs to. Slides come in by the narration's clock, so seeking and MP4 export show the same motion. A slide starts coming in about half a second before its first word, so the change has landed as the word is heard: it rises in, a slide that shows the same kind of visual in the same layout as the one before slides across like a page, title and chapter slides zoom in, and cards, numbers, rows, messages and takeaways arrive one after another, a tenth of a second apart (except on `.build` slides). A still drawing breathes, about 1% in and out.
 
 ## Icons
 
@@ -378,10 +378,20 @@ A style after the link changes how the pointer looks: `[the guard](#L12){.circle
 | **`.circle`** | a hand-drawn ring |
 | **`.underline`** | a hand-drawn line underneath |
 | **`.arrow`** | an arrow pointing at the target |
-| **`.highlight`** | a marker stroke behind the target |
-| **`.zoom`** | the camera zooms onto the target until the next cue; combine with another style, as in `{.zoom .circle}` |
+| **`.highlight`** | a marker stroke swept across the target, left to right; the previous one fades about a second later |
+| **`.zoom`** | the camera moves onto the target and holds there until the next cue; combine with another style, as in `{.zoom .circle}` |
+| **`.decode`** | the target's label shows scrambled from the start of the slide until the cue, then resolves left to right: for the answer the narration builds to. Works on a drawing part, a diagram node, a list item or a table row |
 
-On one dense drawing, draw.io diagram or screenshot, zoom onto each part as the narration names it and end with a cue to `#`, which pulls the camera back to the whole: a run of readable close-ups instead of one picture too small to read.
+On one dense drawing, draw.io diagram or screenshot, zoom onto each part as the narration names it and end with a cue to `#`, which pulls the camera back to the whole: a run of readable close-ups instead of one picture too small to read. A drawing made as a grid of self-titled panels (2×2, or a row of three) works well: each panel fills the frame when zoomed, without a pointer, and a small element where the panels meet shows in every close-up.
+
+The camera follows the speech, on the narration's clock:
+
+- **Moving in** starts about 0.4 s into the sentence holding the cue and takes about 1.6 s, easing in and out with half its change in the middle quarter, so it settles as the cued word is heard. A cue early in its sentence gets a shorter move that lands a little late.
+- **Between close-ups** at a similar zoom, the camera pulls back about 6% on the way: an arc, not a flat slide.
+- **Pulling out** to the whole visual takes 1 s and is front-loaded, starting just before its word.
+- **Holding** a close-up, the camera creeps about 2% further in, drifting slightly towards the picture's centre; the whole view of a drawing breathes about 1%.
+- **The pointer** waits while the camera moves and appears on the new subject when it lands.
+- **Reduced motion** (`prefers-reduced-motion`) cuts at each cue and holds still.
 
 When narration has no cues at all, showntell infers some by matching its words against code identifiers, node labels and list titles.
 
