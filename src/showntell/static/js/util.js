@@ -41,3 +41,27 @@ export function splitLines(html) {
 export function norm(s) {
   return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
+
+// Captions show one line at a time (chrome.js).
+const PAGE_MIN = 5, PAGE_MAX = 7, PAGE_CHARS = 46;
+
+// Pages of words: break after a sentence or clause once a page has five words, always by seven
+// (or about 46 characters), and never leave one or two words alone on the last page.
+export function captionPages(text, words) {
+  const pages = [];
+  let cur = [];
+  const chars = (ws) => (ws.length ? ws[ws.length - 1].c1 - ws[0].c0 : 0);
+  words.forEach((w, i) => {
+    if (cur.length && (cur.length >= PAGE_MAX || chars([...cur, w]) > PAGE_CHARS)) { pages.push(cur); cur = []; }
+    cur.push(w);
+    const left = words.length - i - 1;
+    const pause = /[.,;:!?…—–)]["'”’]?\s*$/.test(text.slice(w.c0, words[i + 1]?.c0 ?? text.length));
+    if (left > 2 && cur.length >= PAGE_MIN && pause) { pages.push(cur); cur = []; }
+  });
+  if (cur.length) {
+    const last = pages[pages.length - 1];
+    if (last && cur.length <= 2 && last.length + cur.length <= PAGE_MAX + 2) last.push(...cur);
+    else pages.push(cur);
+  }
+  return pages;
+}

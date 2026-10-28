@@ -489,9 +489,12 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 }
 #caption.off { visibility: hidden; min-height: 8px; height: 8px; padding: 0; overflow: hidden; }
 #caption .inner { max-width: 1000px; }
-#caption .w { border-radius: 4px; transition: background 0.12s, color 0.12s; }
+#caption .page { display: none; }
+#caption .page.on { display: inline; }
+#caption .w { border-radius: 4px; opacity: 0.5; transition: background 0.12s, color 0.12s, opacity 0.12s; }
+#caption .w.said { opacity: 1; }
 #caption .w.code { font-family: var(--mono); font-size: 0.9em; }
-#caption .w.now { color: var(--caption-now); background: var(--accent-soft); }
+#caption .w.now { opacity: 1; color: var(--caption-now); background: var(--accent-soft); }
 
 #controls { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 16px 14px; }
 #controls > button {
