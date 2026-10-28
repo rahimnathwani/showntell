@@ -140,6 +140,8 @@ Findings from the server, found while parsing, building and voicing:
 | `cue_wrong_kind` | warning | a cue's target does not suit the slide's visual |
 | `cue_no_visual` | warning | a cue is on a slide with no visual |
 | `no_cues` | info | a slide with a visual has no cues |
+| `zoom_unused` | info | narration names several parts of one picture without zooming onto them |
+| `decode_unused` | info | a slide builds in order to a last part that could stay hidden until named |
 | `build_cues_bunched` | info | a step-reveal slide fires all its cues in the first paragraph |
 | `build_cue_order` | info | a step-reveal slide cues its parts out of source order |
 | `no_narration` | warning | a slide has nothing to say |

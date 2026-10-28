@@ -147,7 +147,7 @@ export default {
     const px = sizes.length ? Math.min(...sizes) * k : 0;
     if (px && px < READABLE_PX - 3) {
       report(`Slide ${slide.id}: the smallest text in the drawing is about ${Math.round(px)} px high on the slide, too small to read.`
-        + " Use larger text, or a viewBox closer to the slide's size.", "text_too_small", slide.id);
+        + " Use larger text, a viewBox closer to the slide's size, or `{.zoom}` onto each part as the narration names it.", "text_too_small", slide.id);
     }
     for (const msg of overlaps(parts.shadow).slice(0, 2)) report(`Slide ${slide.id}: ${msg}`, "drawing_overlap", slide.id);
     // Drawn past the viewBox: on the slide it spills over the title or off the edge.

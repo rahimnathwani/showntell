@@ -123,7 +123,7 @@ export default {
     const px = small * g.view.scale;
     if (Number.isFinite(px) && px < READABLE_PX - 3) {
       report(`Slide ${slide.id}: the diagram's smallest labels are about ${Math.round(px)} px high on the slide, too small to read.`
-        + " Show one page or area of it, or split it.", "text_too_small", slide.id);
+        + " Show one page or area of it, split it, or `{.zoom}` onto each part as the narration names it.", "text_too_small", slide.id);
     }
     return true;
   },
