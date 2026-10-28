@@ -7,7 +7,8 @@
 - **Captions one line at a time:** five to seven words, paged whole at a clause or sentence break; spoken words light, the current word brightest, the rest of the line dim. The caption no longer grows to three or four lines and squeezes the stage.
 - **`{.highlight}`** sweeps a marker across its target, left to right, and the previous one fades about a second later.
 - **`{.decode}`:** a cue style that keeps its target's label scrambled from the start of the slide until the cue, then resolves it left to right in 0.2 s: for the answer the narration builds to. Works on drawing parts, diagram nodes, list items and table rows.
-- **Guide:** a section on one picture as many shots (a drawing split into titled panels, named along one axis, with a shared element at the centre), changing the picture about every ten seconds with two or three kinds of visual, and closing a teaching piece on three takeaway cards.
+- **Findings `zoom_unused` and `decode_unused`** (info, once per walkthrough): a drawing or screenshot whose narration names three or more of its parts with no zoom is pointed at close-ups; a diagram, table or labelled drawing cued in order to its last part is pointed at `{.decode}`. `text_too_small` on a drawing or draw.io diagram also suggests zooming.
+- **Guide:** a section on one picture as many shots (a drawing split into titled panels, named along one axis, with a shared element at the centre), changing the picture about every ten seconds with two or three kinds of visual, and closing a teaching piece on three takeaway cards. It ends on a worked example: a 2×2 drawing of panels round a shared centre, zoomed panel by panel.
 
 ## 0.1.8 (2026-10-27)
 
