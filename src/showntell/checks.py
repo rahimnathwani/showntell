@@ -237,6 +237,17 @@ class Checks:
         cues = [c for x in s.says for c in x.cues if not c.get("inferred")]
         styles = [set((c.get("style") or "").split()) for c in cues]
         words = sum(len(x.text.split()) for x in s.says)
+        # {.decode} scrambles a label the player can find: a drawing part, a diagram node, an item or a row.
+        can = {"svg": ("item", "text"), "diagram": ("node", "text"), "list": ("item",), "table": ("row",)}.get(s.kind, ())
+        for c, st in zip(cues, styles, strict=True):
+            if "decode" in st and c.get("kind") not in can:
+                self._issue(
+                    "cue_wrong_kind",
+                    f"[{c.get('label')}](#{c.get('target')}){{.decode}} on slide `{s.id}` has no label the player can scramble, so it does nothing.",
+                    "Put `{.decode}` on a cue at a drawing part, a diagram node, a list item or a table row.",
+                    slide=s.id,
+                    line=s.line,
+                )
         if "zoom_unused" not in once and s.kind in ("svg", "drawio", "image") and not any("zoom" in st for st in styles):
             parts = list(dict.fromkeys(c.get("target") for c in cues if c.get("target") and c.get("kind") in ("item", "region")))
             if len(parts) >= 3 and words >= 35:

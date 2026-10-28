@@ -213,3 +213,11 @@ The [browser](#b) asks the [resolver](#r), which asks [the root](#root), and bac
 def test_a_chain_cued_in_order_to_its_end_suggests_decode_once(build, style, found):
     _, b = build("# T\n\nA.\n\n" + CHAIN.replace("{STYLE}", style) + CHAIN.replace("lookup", "again").replace("{STYLE}", ""))
     assert [i.code for i in b.issues].count("decode_unused") == (1 if found else 0)
+
+
+def test_decode_on_a_target_without_a_label_is_reported(build):
+    md = "## Fast {#fast}\n\n```stat\np95 latency: 400 ms -> 100 ms\n```\n\nThe [p95 latency](#p95-latency){.decode} fell by three quarters.\n"
+    _, b = build("# T\n\nA.\n\n" + md)
+    assert has(b.issues, "{.decode}", "does nothing")
+    _, b = build("# T\n\nA.\n\n" + CHAIN.replace("{STYLE}", "{.decode}"))
+    assert not has(b.issues, "does nothing")
