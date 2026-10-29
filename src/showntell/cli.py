@@ -112,6 +112,8 @@ def main(argv: list[str] | None = None) -> None:
 
         serve(cfg)
     elif args.cmd == "mcp":
+        if cfg.hosted:
+            raise SystemExit("a hosted server takes MCP over HTTP at <public url>/mcp; `showntell mcp` is the local stdio shim")
         run_shim(cfg)
     elif args.cmd == "play":
         play(cfg, args)

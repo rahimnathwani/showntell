@@ -121,13 +121,23 @@ def _segment_cmd(fps: int, out: Path, image: str) -> list[str]:
 
 
 async def _render_range(
-    browser, url: str, fps: int, a: int, b: int, out: Path, image: str, captions: bool, motion: bool, progress: list[int]
+    browser,
+    url: str,
+    fps: int,
+    a: int,
+    b: int,
+    out: Path,
+    image: str,
+    captions: bool,
+    motion: bool,
+    progress: list[int],
+    only_origin: bool = False,
 ) -> dict:
     """Frames a..b-1 into one segment file. Returns counts for the speed report."""
     proc = await asyncio.create_subprocess_exec(*_segment_cmd(fps, out, image), stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     shots = 0
     try:
-        async with Capturer(url, captions=captions, motion=motion, image=image, browser=browser) as c:
+        async with Capturer(url, captions=captions, motion=motion, image=image, browser=browser, only_origin=only_origin) as c:
             last_key, last = None, b""
             for i in range(a, b):
                 key = await c.seek(i / fps)
@@ -150,7 +160,17 @@ async def _render_range(
 
 
 async def _render_frames(
-    url: str, fps: int, n: int, workers: int, work: Path, image: str, captions: bool, motion: bool, quiet: bool
+    url: str,
+    fps: int,
+    n: int,
+    workers: int,
+    work: Path,
+    image: str,
+    captions: bool,
+    motion: bool,
+    quiet: bool,
+    only_origin: bool = False,
+    sandbox: bool = False,
 ) -> tuple[list[Path], dict]:
     async_playwright = require_playwright()
     bounds = [round(n * k / workers) for k in range(workers + 1)]
@@ -159,10 +179,10 @@ async def _render_frames(
     progress = [0]
     async with async_playwright() as pw:
         # One browser per worker: screenshots of pages in one browser queue on its compositor.
-        browsers = await asyncio.gather(*(launch(pw) for _ in ranges))
+        browsers = await asyncio.gather(*(launch(pw, sandbox) for _ in ranges))
         try:
             tasks = [
-                asyncio.create_task(_render_range(br, url, fps, a, b, seg, image, captions, motion, progress))
+                asyncio.create_task(_render_range(br, url, fps, a, b, seg, image, captions, motion, progress, only_origin))
                 for br, (a, b), seg in zip(browsers, ranges, segs, strict=True)
             ]
             pending = set(tasks)
@@ -308,10 +328,14 @@ def render_mp4(
     image: str = IMAGE,
     quiet: bool = False,
     max_bytes: int = 0,
+    only_origin: bool = False,
+    sandbox: bool = False,
 ) -> dict:
     """Render walkthrough `wid` to an MP4 at `out`. Returns timing and frame counts. With
     `max_bytes`, a larger file is shrunk to fit (fit_size) or the export fails. `motion` keeps the
-    idle motion (a drawing's breathing, a held close-up's creep), which makes every held frame new."""
+    idle motion (a drawing's breathing, a held close-up's creep), which makes every held frame new.
+    `only_origin` aborts every browser request beyond the export's own loopback server, and `sandbox`
+    keeps Chromium's sandbox on (both hosted mode)."""
     require_ffmpeg()
     try:
         require_playwright()
@@ -331,7 +355,7 @@ def render_mp4(
         workers = max(1, min(workers, n))
         with serve_folder(folder) as url:
             try:
-                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, motion, quiet))
+                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, motion, quiet, only_origin, sandbox))
             except CaptureUnavailable as e:
                 raise SystemExit(f"MP4 export: {e}") from e
         if abs(stats["total"] - total) > 0.05:

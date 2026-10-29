@@ -207,6 +207,7 @@ ATTRIBUTES = PRESENTATION | {
 }
 BACKGROUND_RE = re.compile(r"^(#[0-9a-fA-F]{3,8}|[a-z]{3,20}|var\(--[a-z0-9-]+\))$")
 URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.I)
+MAX_DEPTH = 100  # levels of nesting; real drawings use a handful
 DATA_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$")
 DATA_FONT = re.compile(r"^data:(font/[\w.+-]+|application/(x-)?font-[\w.+-]+);base64,[A-Za-z0-9+/=\s]+$")
 
@@ -326,6 +327,15 @@ def _name_of(e: ET.Element) -> str:
     return text if len(text) <= 60 else ""
 
 
+def _depth(root: ET.Element) -> int:
+    deepest, stack = 0, [(root, 1)]
+    while stack:
+        e, d = stack.pop()
+        deepest = max(deepest, d)
+        stack.extend((c, d + 1) for c in e)
+    return deepest
+
+
 def parse_svg(body: str, attrs: dict) -> tuple[dict, list[str]]:
     """```svg [sketch] [step] [title="..."] [background="white"]: an <svg> element with a viewBox (or
     a width and height). Read with file=, it sits on white unless `background` says another colour
@@ -355,6 +365,8 @@ def parse_svg(body: str, attrs: dict) -> tuple[dict, list[str]]:
         return vis, [f"the drawing is not well-formed SVG ({e})"]
     if _local(root.tag) != "svg":
         return vis, ["the block must hold one <svg> element"]
+    if _depth(root) > MAX_DEPTH:  # the walks below recurse once per level
+        return vis, [f"the drawing nests elements more than {MAX_DEPTH} deep"]
     box = [_number(x) for x in re.split(r"[\s,]+", root.get("viewBox", "").strip())] if root.get("viewBox") else []
     if len(box) != 4 or any(x is None for x in box):
         w, h = _number(root.get("width")), _number(root.get("height"))

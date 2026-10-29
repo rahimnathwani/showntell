@@ -342,6 +342,7 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
         '<link rel="stylesheet" href="__STATIC__/themes.css">\n<link rel="stylesheet" href="__STATIC__/player.css">',
         f"<style>\n{css}\n</style>",
     )
+    page = _swap(page, '<script src="__STATIC__/boot.js"></script>', f"<script>\n{(STATIC / 'boot.js').read_text()}</script>")
     page = _swap(page, '<script src="__STATIC__/vendor/hljs/highlight.min.js"></script>\n', "")
     page = _swap(
         page,

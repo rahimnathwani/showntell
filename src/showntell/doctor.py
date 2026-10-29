@@ -70,6 +70,51 @@ def _ffmpeg_check() -> tuple[str, str, str]:
     return OK, "mp4 export", "ffmpeg and ffprobe found"
 
 
+def _hosted_checks(cfg: Config) -> list[tuple[str, str, str]]:
+    """With SHOWNTELL_MODE=hosted: the settings, the provider's discovery document and Chromium's sandbox."""
+    from . import hosted
+
+    try:
+        hosted.check_config(cfg)
+    except SystemExit as e:
+        return [(FAIL, "hosted settings", str(e))]
+    rows = []
+    if cfg.oidc:
+        from .oidc import issuer_for
+
+        issuer = issuer_for(cfg.oidc, cfg.entra_tenant, cfg.oidc_issuer)
+        rows.append((OK, "hosted settings", f"sign-in with {cfg.oidc} ({issuer}); MCP at {cfg.base_url}/mcp"))
+        try:
+            import httpx
+
+            meta = httpx.get(issuer + "/.well-known/openid-configuration", timeout=10).raise_for_status().json()
+            if meta.get("issuer", "").rstrip("/") != issuer:
+                rows.append((FAIL, "sign-in provider", f"its discovery document names issuer {meta.get('issuer')!r}, not {issuer!r}"))
+            else:
+                rows.append((OK, "sign-in provider", "discovery document found; issuer matches"))
+        except Exception as e:  # noqa: BLE001 - unreachable or not a provider
+            rows.append((FAIL, "sign-in provider", f"{issuer}/.well-known/openid-configuration: {type(e).__name__}: {e}"))
+    else:
+        rows.append((WARN, "hosted settings", "the dev login (SHOWNTELL_DEV_USERS) is on: a trial on this machine only, never production"))
+    rows.append(_sandbox_check())
+    return rows
+
+
+def _sandbox_check() -> tuple[str, str, str]:
+    """Hosted mode keeps Chromium's own sandbox on; it needs unprivileged user namespaces."""
+    if not _chromium():
+        return WARN, "chromium sandbox", "Playwright Chromium not found, so nothing to check"
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            pw.chromium.launch(chromium_sandbox=True).close()
+    except Exception as e:  # noqa: BLE001
+        first = str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__
+        return FAIL, "chromium sandbox", f"Chromium will not start with its sandbox ({first}); see docs/self-hosting.md"
+    return OK, "chromium sandbox", "Chromium starts with its sandbox on"
+
+
 def doctor(cfg: Config, args) -> None:
     print(f"showntell {__version__} on Python {platform.python_version()}, {platform.system()} {platform.machine()}")
     problems = 0
@@ -86,11 +131,17 @@ def doctor(cfg: Config, args) -> None:
         problems += 1
 
     # git, used for diffs read from the project
-    _row(OK if shutil.which("git") else WARN, "git", shutil.which("git") or "not found: diffs from git revisions will not work")
+    if not cfg.hosted:  # a hosted server never reads git
+        _row(OK if shutil.which("git") else WARN, "git", shutil.which("git") or "not found: diffs from git revisions will not work")
 
     # the finish-time layout check, and MP4 export
     _row(*_browser_check())
     _row(*_ffmpeg_check())
+
+    if cfg.hosted:
+        for row in _hosted_checks(cfg):
+            _row(*row)
+            problems += row[0] == FAIL
 
     # speech backend and models
     from .speech import Status, make_backend
@@ -163,6 +214,9 @@ def doctor(cfg: Config, args) -> None:
         _row(OK, "daemon", "not running; MCP clients start it on demand")
 
     print()
+    if cfg.hosted:
+        print(f"Add {cfg.base_url}/mcp to Claude (a claude.ai connector, `claude mcp add --transport http`, or Desktop).")
+        sys.exit(1 if problems else 0)
     print("Connect an MCP client:")
     print(f"  Claude Code   claude mcp add --scope user showntell -- {INSTALL}")
     print(f"  any client    command: {INSTALL}   (stdio)")

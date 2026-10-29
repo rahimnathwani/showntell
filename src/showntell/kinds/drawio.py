@@ -176,9 +176,16 @@ def clean_style(style: str) -> str:
     return ";".join(out)
 
 
+MAX_INFLATED = 20_000_000  # bytes a compressed page may expand to; a real one is far smaller
+
+
 def _decompress(text: str) -> str:
     data = base64.b64decode(text.strip())
-    return urllib.parse.unquote(zlib.decompress(data, -15).decode("utf-8"))
+    d = zlib.decompressobj(-15)
+    raw = d.decompress(data, MAX_INFLATED)
+    if d.unconsumed_tail:
+        raise ValueError(f"it expands past {MAX_INFLATED // 1_000_000} MB")
+    return urllib.parse.unquote(raw.decode("utf-8"))
 
 
 def _xml(text: str) -> ET.Element:

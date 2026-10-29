@@ -28,11 +28,12 @@ li a + .badge { grid-column: 2; }
 .del { grid-column: 3; grid-row: 1 / span 3; background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
 .del:hover, .del:focus-visible { color: #f87171; border-color: #f87171; }
 .empty { display: block; color: var(--muted); }
+.signout { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; }
 </style>
 </head>
-<body>
+<body data-csrf="{{CSRF}}">
 <main>
   <header><img src="/static/icon.svg" alt=""><h1>showntell</h1></header>
   <p class="lede">Narrated walkthroughs made by your coding agent, voiced on this machine.</p>
@@ -41,15 +42,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em
   </ul>
   <footer>showntell {{VERSION}} · Ask your agent for a walkthrough, or run <code>showntell play file.md</code>.</footer>
 </main>
-<script>
-document.getElementById("list").addEventListener("click", async (e) => {
-  const btn = e.target.closest(".del");
-  if (!btn) return;
-  const li = btn.closest("li");
-  if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "Confirm"; setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "Delete"; }, 3000); return; }
-  const r = await fetch(`/w/${li.dataset.id}/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-  if (r.ok) li.remove();
-});
-</script>
+<script src="/static/gallery.js"></script>
 </body>
 </html>

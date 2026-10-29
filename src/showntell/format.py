@@ -336,7 +336,11 @@ LINK_RE = re.compile(r"\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(\s*(#[^\s)]*)?\s*(?:\"([
 SPAN_RE = re.compile(r"\[([^\[\]]+)\]\{\s*say\s*=\s*(?:\"([^\"]*)\"|'([^']*)')\s*\}")
 OTHER_LINK_RE = re.compile(r"\[([^\[\]]+)\]\((?!\s*#)[^)]*\)")
 FOOTREF_RE = re.compile(r"\[\^([^\]\s]+)\]")
-EMPH_RE = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])")
+# Emphasis spans stop at 400 characters: an unclosed `_` would otherwise scan to the end of the
+# paragraph at every underscore, quadratic in its length.
+EMPH_RE = re.compile(
+    r"(\*\*|__)(?=\S)(.{1,400}?)(?<=\S)\1|(?<![\w*])\*(?=\S)(.{1,400}?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=\S)(.{1,400}?)(?<=\S)_(?![\w_])"
+)
 
 
 def parse_narration(src: str) -> Narration:

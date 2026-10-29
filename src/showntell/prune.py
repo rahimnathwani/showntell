@@ -21,7 +21,7 @@ def parse_age(text: str) -> float:
 
 
 def prune(data_dir: Path, older_than: float, dry_run: bool = False) -> dict:
-    """Remove walkthroughs last changed before the cutoff, then audio files that no remaining
+    """Remove walkthroughs last changed (or, in hosted mode, viewed) before the cutoff, then audio files that no remaining
     walkthrough refers to and that are themselves older than the cutoff (audio made a moment ago
     may belong to a walkthrough whose state is not saved yet)."""
     cutoff = time.time() - older_than
@@ -34,7 +34,7 @@ def prune(data_dir: Path, older_than: float, dry_run: bool = False) -> dict:
             data = json.loads(st.read_text())
         except (OSError, ValueError):
             continue  # not a walkthrough, or one being written: leave it
-        if data.get("updated", 0) < cutoff:
+        if max(data.get("updated", 0), data.get("viewed", 0)) < cutoff:  # `viewed`: hosted mode only
             gone.append({"id": d.name, "title": data.get("title", ""), "updated": data.get("updated", 0)})
             if not dry_run:
                 shutil.rmtree(d)

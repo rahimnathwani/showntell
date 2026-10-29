@@ -42,6 +42,8 @@ dependencies = [
 espeak = ["phonemizer-fork>=3.3", "espeakng-loader>=0.2.4"]
 # MP4 export and poster images: frames captured from the player in headless Chromium.
 video = ["playwright>=1.50"]
+# Hosted mode's sign-in (docs/hosted-design.md): the OIDC client and ID token validation.
+hosted = ["authlib>=1.6", "joserfc>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/rahimnathwani/showntell"
@@ -56,6 +58,8 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "authlib>=1.6",
+    "joserfc>=1.0",
     "pillow>=12.3.0",
     "playwright>=1.50",
     "pytest>=9.1.1",

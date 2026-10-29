@@ -121,15 +121,40 @@ def pick_port(host: str, preferred: int, tries: int = 20) -> int:
     raise SystemExit(f"no free port between {preferred} and {preferred + tries - 1}")
 
 
+def build_app(cfg: Config, service: LocalService, rpc_token: str, started: float, stop=None, cleanup=None):
+    """The ASGI app: MCP at /mcp, the web routes, and the guard for the mode."""
+    mcp = create_mcp(service, deliver=cfg.deliver)
+    add_routes(mcp, service, rpc_token, started, stop=stop)
+    h = service.store.hosted
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    if h:
+        from .hosted import HostedGuard
+
+        mcp._custom_starlette_routes.extend(h.identity.routes())  # sign-in pages and the OAuth endpoints
+        pub = urlparse(cfg.public_url)
+        hosts += [pub.netloc, f"{pub.hostname}:*"]
+        origins.append(f"{pub.scheme}://{pub.netloc}")
+    security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins)
+    inner = mcp.streamable_http_app(streamable_http_path="/mcp", transport_security=security, host=cfg.host)
+    if h:
+        return HostedGuard(inner, cfg, h, on_shutdown=cleanup)
+    return Guard(inner, cfg, on_shutdown=cleanup)
+
+
 def serve(cfg: Config) -> None:
     started = time.time()
+    if cfg.hosted:
+        from . import hosted
+
+        hosted.check_config(cfg)
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     held = daemon.instance_lock(cfg)
     if held is None:
         other = daemon.running(cfg)
         where = f" at {other['url']} (pid {other['pid']})" if other else ""
         raise SystemExit(f"showntell is already running for {cfg.data_dir}{where}")
-    if (not cfg.loopback or cfg.public_url) and not cfg.access_token:
+    if (not cfg.loopback or cfg.public_url) and not cfg.access_token and not cfg.hosted:
         cfg.access_token = secrets.token_urlsafe(16)
     port = pick_port(cfg.host, cfg.port)
     if port != cfg.port:
@@ -140,9 +165,15 @@ def serve(cfg: Config) -> None:
     narrator.lexicon = load_lexicon(cfg)
     narrator.start()
     suffix = f"?t={cfg.access_token}" if cfg.access_token else ""
-    store = Store(cfg.data_dir, cfg.base_url, narrator, default_voice=cfg.voice, open_browser=cfg.open_browser, link_suffix=suffix)
+    h = None
+    if cfg.hosted:
+        from . import hosted
+
+        h = hosted.build(cfg)
+    store = Store(
+        cfg.data_dir, cfg.base_url, narrator, default_voice=cfg.voice, open_browser=cfg.open_browser, link_suffix=suffix, hosted=h
+    )
     service = LocalService(store, layout_check=cfg.finish_check)
-    mcp = create_mcp(service, deliver=cfg.deliver)
     rpc_token = secrets.token_urlsafe(24)
     holder: dict = {}
 
@@ -155,13 +186,7 @@ def serve(cfg: Config) -> None:
         for s in list(store.sessions.values()):
             s.save_now()
 
-    add_routes(mcp, service, rpc_token, started, stop=stop)
-    security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
-        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
-    )
-    app = Guard(mcp.streamable_http_app(streamable_http_path="/mcp", transport_security=security, host=cfg.host), cfg, on_shutdown=cleanup)
+    app = build_app(cfg, service, rpc_token, started, stop=stop, cleanup=cleanup)
 
     async def main() -> None:
         store.loop = asyncio.get_running_loop()
@@ -176,6 +201,26 @@ def serve(cfg: Config) -> None:
                 await asyncio.sleep(3600)
 
         holder["log"] = asyncio.create_task(keep_log_small())
+        if h:
+
+            async def expire() -> None:
+                """Daily: drop spent sign-in records, and walkthroughs unseen past the retention."""
+                from .prune import prune
+
+                while True:
+                    db = getattr(h.identity.login, "db", None)
+                    if db is not None:
+                        db.sweep()
+                    if cfg.limits.retention_days > 0:
+                        gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
+                        for row in gone["walkthroughs"]:
+                            store.sessions.pop(row["id"], None)
+                        if gone["walkthroughs"]:
+                            n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
+                            log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
+                    await asyncio.sleep(86400)
+
+            holder["expire"] = asyncio.create_task(expire())
         log.info(
             "showntell %s at %s (MCP: http://localhost:%d/mcp, speech: %s)",
             _version(),

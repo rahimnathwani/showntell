@@ -1,6 +1,7 @@
 """MCP tools and the web side: player pages, live updates, audio, health and the shim's RPC."""
 
-from __future__ import annotations
+# No `from __future__ import annotations`: the tools' `Field(description=arg_text(...))` must be
+# evaluated inside `create_mcp`, where `arg_text` reads the client's delivery mode and hosted text.
 
 import asyncio
 import html
@@ -19,8 +20,9 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import __version__
+from . import __version__, access
 from .build import LIMITS
+from .hosted import user_of
 from .issues import as_dict, line_text, summarize
 from .service import RPC_METHODS, LocalService, mmss
 from .speech.base import VOICES
@@ -36,11 +38,13 @@ DELIVER = ("link", "file")
 FILE_MAX_MB = 16.0  # WhatsApp sends videos up to 16 MB; larger ones go as documents or not at all
 
 
-@lru_cache(maxsize=2)
-def texts(deliver: str = "link") -> dict:
+@lru_cache(maxsize=4)
+def texts(deliver: str = "link", hosted: bool = False) -> dict:
     """The agent-facing text. With `deliver="file"` the user cannot open links on this machine
     (the agent runs in a sandbox, or talks to the user through a chat app), so the files in
-    text/file/ replace what tells the agent to share the link with what tells it to send a file."""
+    text/file/ replace what tells the agent to share the link with what tells it to send a file.
+    A hosted server reads nothing from disk, so text/hosted/ replaces what tells the agent to
+    point at files, git and images."""
 
     def load(name: str, default, base: Path = TEXT):
         p = base / name
@@ -55,8 +59,8 @@ def texts(deliver: str = "link") -> dict:
         "replies": load("replies.json", {}),
         "prompts": load("prompts.json", {}),
     }
-    if deliver == "file":
-        over = TEXT / "file"
+    for folder in (["file"] if deliver == "file" else []) + (["hosted"] if hosted else []):
+        over = TEXT / folder
         out["instructions"] = load("instructions.md", out["instructions"], over)
         out["replies"] = {**out["replies"], **load("replies.json", {}, over)}
         tools = {k: dict(v) for k, v in out["tools"].items()}
@@ -68,28 +72,30 @@ def texts(deliver: str = "link") -> dict:
     return out
 
 
-def tool_text(name: str, key: str = "description", default: str = "", deliver: str = "link") -> str:
-    return texts(deliver)["tools"].get(name, {}).get(key, default)
+def tool_text(name: str, key: str = "description", default: str = "", deliver: str = "link", hosted: bool = False) -> str:
+    return texts(deliver, hosted)["tools"].get(name, {}).get(key, default)
 
 
-def arg_text(name: str, arg: str, deliver: str = "link") -> str:
-    return texts(deliver)["tools"].get(name, {}).get("args", {}).get(arg, "")
+def arg_text(name: str, arg: str, deliver: str = "link", hosted: bool = False) -> str:
+    return texts(deliver, hosted)["tools"].get(name, {}).get("args", {}).get(arg, "")
 
 
-def reply(name: str, default: str, deliver: str = "link", **kw: Any) -> str:
-    template = texts(deliver)["replies"].get(name, default)
+def reply(name: str, default: str, deliver: str = "link", hosted: bool = False, **kw: Any) -> str:
+    template = texts(deliver, hosted)["replies"].get(name, default)
     try:
         return template.format(**kw)
     except (KeyError, IndexError):
         return default.format(**kw)
 
 
-def guide(frame: str, deliver: str = "link") -> str:
+def guide(frame: str, deliver: str = "link", hosted: bool = False) -> str:
     lim = LIMITS.get(frame, LIMITS["landscape"])
-    g = texts(deliver)["guide"]
+    g = texts(deliver, hosted)["guide"]
+    if hosted:  # what this server cannot do comes before the parts of the guide it overrides
+        g = reply("guide_hosted", "", deliver, hosted) + "\n\n" + g
     for k, v in {
-        "SEND_LINK": reply("guide_send_link", "", deliver),
-        "TELL_USER": reply("guide_tell_user", "", deliver),
+        "SEND_LINK": reply("guide_send_link", "", deliver, hosted),
+        "TELL_USER": reply("guide_tell_user", "", deliver, hosted),
         "FRAME": frame,
         "LINES": lim["lines"],
         "WIDTH": lim["width"],
@@ -169,23 +175,40 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     if deliver not in DELIVER:
         raise ValueError(f"deliver must be one of {', '.join(DELIVER)}")
     by_file = deliver == "file"
+    h = getattr(getattr(service, "store", None), "hosted", None)  # hosted.Hosted, in hosted mode
+    hosted = h is not None
 
     # The text for this client's delivery mode, under the usual names.
     def tool_text(name: str, key: str = "description", default: str = "") -> str:
-        return _tool_text(name, key, default, deliver)
+        return _tool_text(name, key, default, deliver, hosted)
 
     def arg_text(name: str, arg: str) -> str:
-        return _arg_text(name, arg, deliver)
+        return _arg_text(name, arg, deliver, hosted)
 
     def reply(name: str, default: str, **kw: Any) -> str:
-        return _reply(name, default, deliver, **kw)
+        return _reply(name, default, deliver, hosted, **kw)
 
     def guide(frame: str) -> str:
-        return _guide(frame, deliver)
+        return _guide(frame, deliver, hosted)
+
+    def who(ctx: Context | None) -> dict:
+        """Hosted: the signed-in caller as `user=` for the service, after the rate limit; {} locally."""
+        if not hosted:
+            return {}
+        try:
+            request = ctx.request_context.request if ctx is not None else None
+        except ValueError:
+            request = None
+        user = user_of(request) if request is not None else None
+        if user is None:
+            raise ValueError("sign in required")
+        if not h.rate.allow(user.key):
+            raise ValueError(reply("rate_limit", "Over {n} tool calls a minute; wait a moment.", n=h.limits.calls_per_min))
+        return {"user": user}
 
     mcp = MCPServer(
         "showntell",
-        instructions=texts(deliver)["instructions"],
+        instructions=texts(deliver, hosted)["instructions"],
         version=__version__,
         website_url="https://github.com/rahimnathwani/showntell",
     )
@@ -193,17 +216,21 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     def _root(shared: ListRootsResult | None, given: str) -> str | None:
         """The project folder: `project_dir`, else the client's first root, else the default. When
         the client shares folders, `project_dir` must be inside one, so an agent cannot put files
-        from elsewhere on the machine (keys, other projects) on a slide."""
+        from elsewhere on the machine (keys, other projects) on a slide. Hosted: the client's
+        folders are on another machine, so only `project_dir` passes, for the service to refuse."""
+        if hosted:
+            return given or None
         if not given:
             roots = _roots(shared)
             return roots[0] if roots else project_dir_default
         _check_inside(shared, given, "project_dir")
         return given
 
-    async def _append(handle: str, markdown: str, ctx: Context | None) -> CallToolResult:
+    async def _append(handle: str, markdown: str, ctx: Context | None, u: dict | None = None) -> CallToolResult:
         """Add Markdown; until the link is shared, wait for the opening audio and return the link."""
         try:
-            r = await service.add(handle, markdown)
+            u = who(ctx) if u is None else u
+            r = await service.add(handle, markdown, **u)
         except ValueError as e:
             return _error(str(e))
         parts: list[str] = []
@@ -212,7 +239,7 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             t0 = time.time()
             p = None
             while time.time() - t0 < FIRST_WAIT_S:
-                p = await service.playable(handle, 2.0)
+                p = await service.playable(handle, 2.0, **u)
                 if p["status"] != "pending":
                     break
                 if ctx is not None:
@@ -241,14 +268,14 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
                 parts.append(reply("need_opening", "Nothing to play yet: send the title slide with a spoken sentence."))
             else:
                 status = "pending"
-                await service.playable(handle, 0, give_up=True)  # later calls return at once
+                await service.playable(handle, 0, give_up=True, **u)  # later calls return at once
                 parts.append(reply("pending", "Audio is still being made; share this link anyway: {url}", url=r["url"]))
             if p.get("guide"):
                 g = guide(p.get("frame", r["frame"]))
                 if g:
                     parts.append("\n" + g)
         else:
-            p = await service.playable(handle, 0)  # the guide, if the first reply went out before the audio
+            p = await service.playable(handle, 0, **u)  # the guide, if the first reply went out before the audio
             if p.get("guide"):
                 g = guide(p.get("frame", r["frame"]))
                 if g:
@@ -285,7 +312,8 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
         try:
-            r = await service.start(title, frame, voice, speed, _root(shared, project_dir), theme, description)
+            u = who(ctx)
+            r = await service.start(title, frame, voice, speed, _root(shared, project_dir), theme, description, **u)
         except ValueError as e:
             return _error(str(e))
         head = reply(
@@ -302,7 +330,7 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         )
         if opening.strip():
             # The opening came with the call: voice it now and return the link, saving a round trip.
-            res = await _append(r["handle"], opening, ctx)
+            res = await _append(r["handle"], opening, ctx, u)
             text = f"Handle: {r['handle']}\n{project}\n" + res.content[0].text
             data = {**(res.structured_content or {}), "message": text, "handle": r["handle"]}
             return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=data, is_error=res.is_error)
@@ -326,9 +354,10 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         handle: Annotated[str, Field(description=arg_text("revise_slide", "handle"))],
         slide: Annotated[str, Field(description=arg_text("revise_slide", "slide"))],
         markdown: Annotated[str, Field(description=arg_text("revise_slide", "markdown"))],
+        ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
         try:
-            r = await service.revise(handle, slide, markdown)
+            r = await service.revise(handle, slide, markdown, **who(ctx))
         except ValueError as e:
             return _error(str(e))
         text = f"Replaced slide `{r['slide']}` (revision {r['rev']}); {r['revoiced']} paragraph(s) need new audio."
@@ -358,9 +387,10 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     async def finish_walkthrough(
         handle: Annotated[str, Field(description=arg_text("finish_walkthrough", "handle"))],
         questions: Annotated[list[str] | None, Field(description=arg_text("finish_walkthrough", "questions"))] = None,
+        ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
         try:
-            r = await service.finish(handle, questions)
+            r = await service.finish(handle, questions, **who(ctx))
         except ValueError as e:
             return _error(str(e))
         # Slides with errors or warnings still standing: the reply asks for fixes before the
@@ -422,20 +452,32 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         path: Annotated[str, Field(description=arg_text("export_walkthrough", "path"))] = "",
         max_mb: Annotated[float | None, Field(description=arg_text("export_walkthrough", "max_mb"))] = None,
         shared: Annotated[ListRootsResult | None, Resolve(_shared_folders)] = None,
+        ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
         limit = (FILE_MAX_MB if by_file else 0.0) if max_mb is None else max(0.0, max_mb)
         try:
-            if path and Path(path).expanduser().is_absolute():
+            u = who(ctx)
+            if path and not hosted and Path(path).expanduser().is_absolute():
                 _check_inside(shared, path, "path")
-            r = await service.export(handle, path, format, limit)
+            r = await service.export(handle, path, format, limit, **u)
         except ValueError as e:
             return _error(str(e))
-        text = reply(
-            "exported",
-            "Saved {path} ({mb} MB, {duration}). Send the user this file.",
-            path=r["path"],
-            mb=f"{r['bytes'] / 1e6:.1f}",
-            duration=mmss(r["duration_s"]),
+        text = (
+            reply(
+                "exported_hosted",
+                "Saved on the server ({mb} MB, {duration}). Its owner can download it: {download}",
+                mb=f"{r['bytes'] / 1e6:.1f}",
+                duration=mmss(r["duration_s"]),
+                download=r["download"],
+            )
+            if hosted
+            else reply(
+                "exported",
+                "Saved {path} ({mb} MB, {duration}). Send the user this file.",
+                path=r["path"],
+                mb=f"{r['bytes'] / 1e6:.1f}",
+                duration=mmss(r["duration_s"]),
+            )
         )
         if r["shrunk"]:
             text += "\n" + reply("export_shrunk", "Shrunk to fit {limit} MB: {what}.", limit=f"{limit:g}", what=r["shrunk"])
@@ -443,20 +485,34 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             text += "\n" + reply("export_silent", "{n} paragraph(s) could not be voiced and play without sound.", n=r["silent"])
         if r["errors"]:
             text += "\nThe player reported while rendering (untrusted text):\n" + "\n".join(f"- {e}" for e in r["errors"][:10])
-        return _result(text, {"status": "exported", **{k: r[k] for k in ("path", "format", "bytes", "duration_s", "shrunk", "silent")}})
+        keys = (
+            ("download", "format", "bytes", "duration_s", "shrunk", "silent")
+            if hosted
+            else ("path", "format", "bytes", "duration_s", "shrunk", "silent")
+        )
+        return _result(text, {"status": "exported", **{k: r[k] for k in keys}})
 
     @mcp.tool(
         title=tool_text("list_walkthroughs", "title", "List walkthroughs"),
         description=tool_text("list_walkthroughs"),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
     )
-    async def list_walkthroughs() -> CallToolResult:
-        rows = await service.list()
+    async def list_walkthroughs(ctx: Context = None) -> CallToolResult:  # type: ignore[assignment]
+        try:
+            rows = await service.list(**who(ctx))
+        except ValueError as e:
+            return _error(str(e))
         if not rows:
             return _result("No walkthroughs yet.", {"walkthroughs": []})
+
+        def whose(r: dict) -> str:
+            if not hosted:
+                return ""
+            return " (yours)" if r["role"] == "yours" else f" (shared with you by {r['owner']}; view only)"
+
         lines = [
             f"- {r['title']}{': ' + r['description'] if r.get('description') else ''} — {r['slides']} slides, "
-            f"{mmss(r['duration'])}, {r['status']}. handle: {r['handle']} link: {r['url']}"
+            f"{mmss(r['duration'])}, {r['status']}{whose(r)}.{' handle: ' + r['handle'] if r.get('handle') else ''} link: {r['url']}"
             for r in rows
         ]
         return _result("\n".join(lines), {"walkthroughs": rows})
@@ -469,9 +525,10 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     async def preview_slides(
         handle: Annotated[str, Field(description=arg_text("preview_slides", "handle"))],
         slides: Annotated[list[str] | None, Field(description=arg_text("preview_slides", "slides"))] = None,
+        ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
         try:
-            r = await service.preview(handle, slides)
+            r = await service.preview(handle, slides, **who(ctx))
         except ValueError as e:
             return _error(str(e))
         content: list = [
@@ -492,18 +549,48 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         # No structured content here: clients that prefer it would drop the pictures.
         return CallToolResult(content=content)
 
-    for name, p in texts(deliver)["prompts"].items():
+    if hosted:
+
+        @mcp.tool(
+            title=tool_text("share_walkthrough", "title", "Share walkthrough"),
+            description=tool_text("share_walkthrough"),
+            annotations=WRITE,
+        )
+        async def share_walkthrough(
+            handle: Annotated[str, Field(description=arg_text("share_walkthrough", "handle"))],
+            add: Annotated[list[str] | None, Field(description=arg_text("share_walkthrough", "add"))] = None,
+            remove: Annotated[list[str] | None, Field(description=arg_text("share_walkthrough", "remove"))] = None,
+            company: Annotated[bool | None, Field(description=arg_text("share_walkthrough", "company"))] = None,
+            ctx: Context = None,  # type: ignore[assignment]
+        ) -> CallToolResult:
+            try:
+                r = await service.share(handle, add, remove, company, **who(ctx))
+            except ValueError as e:
+                return _error(str(e))
+            people = ", ".join(r["shares"]) or reply("shared_nobody", "nobody")
+            text = reply(
+                "shared",
+                "Shared with: {people}. Whole company: {company}. Link: {url}",
+                people=people,
+                company="yes" if r["company"] else "no",
+                url=r["url"],
+            )
+            return _result(text, {"status": "shared", **r})
+
+    for name, p in texts(deliver, hosted)["prompts"].items():
         _register_prompt(mcp, name, p)
 
-    @mcp.resource(
-        "showntell://walkthroughs",
-        name="walkthroughs",
-        title="Recent walkthroughs",
-        description="Recent walkthroughs with titles, links and handles",
-        mime_type="application/json",
-    )
-    async def walkthroughs_resource() -> str:
-        return json.dumps(await service.list(), indent=1)
+    if not hosted:  # a static resource gets no caller, so a hosted server lists through list_walkthroughs
+
+        @mcp.resource(
+            "showntell://walkthroughs",
+            name="walkthroughs",
+            title="Recent walkthroughs",
+            description="Recent walkthroughs with titles, links and handles",
+            mime_type="application/json",
+        )
+        async def walkthroughs_resource() -> str:
+            return json.dumps(await service.list(), indent=1)
 
     @mcp.resource(
         "showntell://slide-kinds",
@@ -522,8 +609,8 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         description="The Markdown a walkthrough was written in, to read or revise",
         mime_type="text/markdown",
     )
-    async def walkthrough_resource(wid: str) -> str:
-        return await service.source(wid)
+    async def walkthrough_resource(wid: str, ctx: Context = None) -> str:  # type: ignore[assignment]
+        return await service.source(wid, **who(ctx))
 
     return mcp
 
@@ -550,13 +637,26 @@ def _register_prompt(mcp: MCPServer, name: str, p: dict) -> None:
 
 def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: float, stop=None) -> None:
     store = service.store
+    hosted = store.hosted is not None
 
     def session_or_404(request: Request):
-        return store.get(request.path_params["wid"])
+        """The walkthrough for a viewer's request: in hosted mode only for its owner and those it
+        is shared with, so anyone else gets the same 404 as for an id that does not exist."""
+        return store.viewable(request.path_params["wid"], user_of(request))
+
+    def seen(s) -> None:
+        if hosted:  # retention counts from the last view
+            s.w.viewed = time.time()
+            s._schedule_save()
 
     @mcp.custom_route("/", methods=["GET"])
     async def index(request: Request) -> Response:
-        return HTMLResponse(render_index(store.list(200), store.link_suffix), headers={"Cache-Control": "no-store"})
+        user = user_of(request)
+        signout = hosted and store.hosted.identity.login_url("/") is not None  # provider sign-in, not the dev login
+        page = render_index(
+            store.list(200, user), store.link_suffix, csrf=request.scope.get("showntell.csrf", ""), hosted=hosted, signout=signout
+        )
+        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/w/{wid}", methods=["GET"])
     async def player_redirect(request: Request) -> Response:
@@ -568,6 +668,7 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         s = session_or_404(request)
         if not s:
             return HTMLResponse("Walkthrough not found", status_code=404)
+        seen(s)
         return HTMLResponse(
             render_player(
                 s.w.title,
@@ -579,6 +680,8 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                 tokens=s.w.tokens,
                 description=s.w.description,
                 poster=f"{s.url}/poster.png" if (store.walk_dir(s.w.id) / "poster.png").is_file() else "",
+                csrf=request.scope.get("showntell.csrf", ""),
+                share=hosted and access.owns(s.w, user_of(request)),
             ),
             headers={"Cache-Control": "no-store"},
         )
@@ -588,6 +691,7 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         s = session_or_404(request)
         if not s:
             return JSONResponse({"error": "not found"}, status_code=404)
+        seen(s)
         return JSONResponse(s.w.public(), headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/w/{wid}/events", methods=["GET"])
@@ -595,6 +699,12 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         s = session_or_404(request)
         if not s:
             return JSONResponse({"error": "not found"}, status_code=404)
+        wid, user = s.w.id, user_of(request)
+
+        def allowed() -> bool:
+            # Hosted: access is checked again on every event, so a removed share or a deleted
+            # walkthrough ends the stream.
+            return not hosted or store.viewable(wid, user) is s
 
         async def stream():
             q = s.subscribe()
@@ -604,8 +714,12 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                     try:
                         item = await asyncio.wait_for(q.get(), timeout=15)
                     except TimeoutError:
+                        if not allowed():
+                            return
                         yield ": keepalive\n\n"
                         continue
+                    if not allowed():
+                        return
                     await asyncio.sleep(0.05)  # coalesce bursts
                     ids, meta = set(item["slides"]), item["meta"]
                     while not q.empty():
@@ -649,7 +763,7 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
             s._voice(*hit)
             s._changed({hit[0].id})
             return Response("Being voiced again", status_code=404)
-        return _file(store.narrator.cache_dir, f"{key}.wav", immutable=True)
+        return _file(store.narrator.cache_dir, f"{key}.wav", immutable=True, private=hosted)
 
     @mcp.custom_route("/w/{wid}/poster.png", methods=["GET"])
     async def poster(request: Request) -> Response:
@@ -665,13 +779,50 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
 
     @mcp.custom_route("/w/{wid}/delete", methods=["POST"])
     async def delete(request: Request) -> Response:
-        ok = store.delete(request.path_params["wid"])
+        wid = request.path_params["wid"]
+        if hosted and store.owned(wid, user_of(request)) is None:
+            return JSONResponse({"ok": False}, status_code=404)
+        ok = store.delete(wid)
         return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+    if hosted:
+
+        @mcp.custom_route("/w/{wid}/shares", methods=["GET", "POST"])
+        async def shares(request: Request) -> Response:
+            """The page's Share control, for the owner only: who it is shared with, and changes to that
+            through the same checks as share_walkthrough."""
+            s = store.owned(request.path_params["wid"], user_of(request))
+            if s is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
+            if request.method == "POST":
+                try:
+                    body = await request.json()
+                    add, remove, company = body.get("add") or [], body.get("remove") or [], body.get("company")
+                    if not all(isinstance(x, str) for x in [*add, *remove]) or company not in (None, True, False):
+                        raise ValueError("bad request")
+                    service.share_session(s, add, remove, company)
+                except ValueError as e:
+                    return JSONResponse({"error": str(e)}, status_code=400)
+                except Exception:
+                    return JSONResponse({"error": "bad request"}, status_code=400)
+            domains = store.hosted.allowed_domains
+            return JSONResponse({"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains})
+
+        @mcp.custom_route("/w/{wid}/exports/{name}", methods=["GET"])
+        async def exported(request: Request) -> Response:
+            """An MP4 or page made by export_walkthrough, for the owner only."""
+            s = store.owned(request.path_params["wid"], user_of(request))
+            if s is None:
+                return Response("Not found", status_code=404)
+            r = _file(store.walk_dir(s.w.id) / "exports", request.path_params["name"])
+            r.headers["Cache-Control"] = "private, no-store"
+            r.headers["Content-Disposition"] = "attachment"
+            return r
 
     @mcp.custom_route("/static/{path:path}", methods=["GET"])
     async def static(request: Request) -> Response:
         r = _file(STATIC, request.path_params["path"])
-        if request.path_params["path"] == "embed.js":
+        if request.path_params["path"] == "embed.js" and not hosted:
             r.headers["Access-Control-Allow-Origin"] = "*"  # for pages on other sites that embed a player
         return r
 
@@ -700,6 +851,8 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
 
     @mcp.custom_route("/api/rpc/{method}", methods=["POST"])
     async def rpc(request: Request) -> Response:
+        if hosted:  # the stdio shim's route; HostedGuard refuses it before it gets here
+            return JSONResponse({"error": "not found"}, status_code=404)
         auth = request.headers.get("authorization", "")
         if not secrets.compare_digest(auth, f"Bearer {rpc_token}"):
             return JSONResponse({"error": "forbidden"}, status_code=403)
@@ -711,6 +864,7 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
             return JSONResponse({"error": "unknown method"}, status_code=404)
         try:
             kw = await request.json()
+            kw.pop("user", None)  # a caller is never named over RPC
             result = await getattr(service, method)(**kw)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
@@ -726,11 +880,12 @@ def _shutdown() -> None:
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-def _file(base: Path, rel: str, immutable: bool = False) -> Response:
+def _file(base: Path, rel: str, immutable: bool = False, private: bool = False) -> Response:
     path = (base / rel).resolve()
     if not path.is_relative_to(base.resolve()) or not path.is_file():
         return Response("Not found", status_code=404)
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"} if immutable else {"Cache-Control": "no-cache"}
+    scope = "private" if private else "public"
+    headers = {"Cache-Control": f"{scope}, max-age=31536000, immutable"} if immutable else {"Cache-Control": "no-cache"}
     return FileResponse(path, headers=headers)
 
 
@@ -744,6 +899,8 @@ def render_player(
     tokens: dict | None = None,
     description: str = "",
     poster: str = "",
+    csrf: str = "",
+    share: bool = False,
 ) -> str:
     from .themes import THEMES, clean_tokens, style_attr
 
@@ -761,23 +918,39 @@ def render_player(
         .replace("{{THEME}}", theme)
         .replace("{{TOKENS}}", style)
         .replace("{{REPORT_KEY}}", report_key if live else "")
+        .replace("{{CSRF}}", html.escape(csrf))
+        .replace("</head>", SHARE_HEAD + "</head>" if share else "</head>")
         .replace("{{STATIC}}", static)
         .replace("{{LIVE}}", "1" if live else "0")
         .replace("{{VERSION}}", __version__)
     )
 
 
-def render_index(rows: list[dict], suffix: str) -> str:
+# The owner's Share control in hosted mode: a row in the settings menu and its dialog.
+SHARE_HEAD = '<link rel="stylesheet" href="{{STATIC}}/share.css">\n<script type="module" src="{{STATIC}}/share.js"></script>\n'
+
+
+def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = False, signout: bool = False) -> str:
+    """The gallery. Hosted: the viewer's own walkthroughs, then those shared with them, which
+    have no Delete button."""
     items = []
+    if hosted:
+        rows = [r for r in rows if r.get("role") == "yours"] + [r for r in rows if r.get("role") == "shared"]
     for r in rows:
         when = time.strftime("%d %b %Y, %H:%M", time.localtime(r["created"]))
         badge = '<span class="badge">writing</span>' if r["status"] != "finished" else ""
         desc = f'<span class="desc">{html.escape(r["description"])}</span>' if r.get("description") else ""
         thumb = f'<img class="thumb" src="/w/{r["id"]}/poster.png" alt="">' if r.get("poster") else '<span class="thumb"></span>'
+        shared = hosted and r.get("role") == "shared"
+        by = f" · shared by {html.escape(r.get('owner', ''))}" if shared else ""
+        button = "" if shared else f'<button class="del" title="Delete" aria-label="Delete {html.escape(r["title"])}">Delete</button>'
         items.append(
             f'<li data-id="{r["id"]}">{thumb}<a href="/w/{r["id"]}/{suffix}">{html.escape(r["title"] or "Untitled")}</a>{badge}{desc}'
-            f'<span class="meta">{when} · {r["slides"]} slides · {mmss(r["duration"])} · {r["frame"]}</span>'
-            f'<button class="del" title="Delete" aria-label="Delete {html.escape(r["title"])}">Delete</button></li>'
+            f'<span class="meta">{when} · {r["slides"]} slides · {mmss(r["duration"])} · {r["frame"]}{by}</span>'
+            f"{button}</li>"
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
-    return (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    if signout:
+        page = page.replace("</footer>", ' · <button class="signout">Sign out</button></footer>')
+    return page.replace("{{CSRF}}", html.escape(csrf))

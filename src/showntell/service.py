@@ -8,6 +8,7 @@ MCP client shares one daemon and one loaded voice model.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -33,19 +34,54 @@ class LocalService:
         return {"ready": n.ready, "state": n.status.state, "describe": n.status.describe()}
 
     async def start(
-        self, title: str, frame: str, voice: str, speed: float, project_dir: str | None, theme: str = "", description: str = ""
+        self,
+        title: str,
+        frame: str,
+        voice: str,
+        speed: float,
+        project_dir: str | None,
+        theme: str = "",
+        description: str = "",
+        user=None,
     ) -> dict:
         root = None
-        if project_dir:
+        if self.store.hosted:
+            from .hosted import say
+
+            if project_dir:
+                raise ValueError(say("no_project_dir", "This server cannot read project_dir {given}.", given=project_dir))
+            self._check_room(user)
+        elif project_dir:
             p = Path(project_dir).expanduser()
             if not p.is_dir():
                 raise ValueError(f"project_dir {project_dir} is not a folder")
             root = str(p.resolve())
-        s = self.store.create(title, frame, voice, speed, root, theme, description)
+        s = self.store.create(title, frame, voice, speed, root, theme, description, owner=user)
         return {"handle": s.handle, "url": s.url, "frame": s.w.frame, "root": root, "speech": self.speech_status()}
 
-    async def add(self, handle: str, markdown: str) -> dict:
-        s = self.store.by_handle(handle)
+    def _check_room(self, user) -> None:
+        """Hosted: room for one more walkthrough under the user's limits."""
+        from .hosted import WRITING_STALE_S, say
+
+        lim = self.store.hosted.limits
+        mine = [r for r in self.store.list(10**9, user) if r["role"] == "yours"]
+        recent = time.time() - WRITING_STALE_S
+        writing = [r for r in mine if r["status"] != "finished" and r["updated"] > recent]
+        if len(writing) >= lim.writing:
+            handles = ", ".join(f"{r['title']} ({r['handle']})" for r in writing)
+            raise ValueError(
+                say("writing_limit", "You have {n} walkthroughs in progress, the limit: {handles}.", n=len(writing), handles=handles)
+            )
+        if len(mine) >= lim.walkthroughs:
+            raise ValueError(say("stored_limit", "You have {n} walkthroughs, the limit.", n=len(mine)))
+        used = sum(self.store.size(r["id"]) for r in mine)
+        if used >= lim.storage_gb * 1e9:
+            raise ValueError(
+                say("storage_limit", "Your walkthroughs use {gb:.1f} GB, the limit is {limit:g} GB.", gb=used / 1e9, limit=lim.storage_gb)
+            )
+
+    async def add(self, handle: str, markdown: str, user=None) -> dict:
+        s = self.store.by_handle(handle, user)
         r = s.add(markdown)
         r["issues"] = _dicts(r["issues"] + s.take_late_issues())
         says = [x for sl in s.w.slides for x in sl.says if x.text]
@@ -63,10 +99,10 @@ class LocalService:
             "speech": self.speech_status(),
         }
 
-    async def playable(self, handle: str, timeout: float, give_up: bool = False) -> dict:
+    async def playable(self, handle: str, timeout: float, give_up: bool = False, user=None) -> dict:
         """Wait up to `timeout` for the opening narration. Marks the link shared once it is,
         or at once with `give_up`, so later calls stop waiting."""
-        s = self.store.by_handle(handle)
+        s = self.store.by_handle(handle, user)
         status = await s.wait_playable(timeout) if timeout > 0 else (s.first_say().status if s.first_say() else "empty")
         if give_up and status == "pending":
             s.w.link_shared = True
@@ -85,15 +121,15 @@ class LocalService:
                     self.store.on_playable(s)
         return out
 
-    async def revise(self, handle: str, slide: str, markdown: str) -> dict:
-        s = self.store.by_handle(handle)
+    async def revise(self, handle: str, slide: str, markdown: str, user=None) -> dict:
+        s = self.store.by_handle(handle, user)
         r = s.revise(slide, markdown)
         if s.w.slides and s.w.slides[0].id == slide:  # the poster shows the title slide; finish draws a new one
             (self.store.walk_dir(s.w.id) / "poster.png").unlink(missing_ok=True)
         r["issues"] = _dicts(r["issues"] + s.take_late_issues())
         return {**r, "url": s.url, "player_issues": _dicts(s.take_player_issues())}
 
-    async def finish(self, handle: str, questions: list[str] | None, check: bool = True) -> dict:
+    async def finish(self, handle: str, questions: list[str] | None, check: bool = True, user=None) -> dict:
         """Close the walkthrough. `check=False` skips drawing the slides headless, for callers
         that only wait for the audio (exporting a Markdown file)."""
         import base64
@@ -101,7 +137,7 @@ class LocalService:
         from .checks import alike_runs, look
         from .export import slide_starts, timeline_total
 
-        s = self.store.by_handle(handle)
+        s = self.store.by_handle(handle, user)
         layout = self.layout_check and check
         runs = [[x.id for x in run] for run in alike_runs(s.w.slides)]
         shots: dict[str, bytes] = {}
@@ -124,8 +160,44 @@ class LocalService:
             "thumbs": [{"id": sid, "png": base64.b64encode(shots[sid]).decode()} for sid in want if sid in shots],
         }
 
-    async def list(self) -> list[dict]:
-        return self.store.list(20)
+    async def list(self, user=None) -> list[dict]:
+        return self.store.list(20, user)
+
+    async def share(
+        self, handle: str, add: list[str] | None = None, remove: list[str] | None = None, company: bool | None = None, user=None
+    ) -> dict:
+        """Hosted: change who else may view a walkthrough. Takes effect on their next request,
+        and ends their open live updates when access goes."""
+        from .hosted import say
+
+        if not self.store.hosted:
+            raise ValueError(
+                say("share_local", "Sharing is for hosted servers; on this machine the link works for anyone who can reach it.")
+            )
+        return self.share_session(self.store.by_handle(handle, user), add, remove, company)
+
+    def share_session(self, s, add: list[str] | None = None, remove: list[str] | None = None, company: bool | None = None) -> dict:
+        """The checks and the change behind both `share_walkthrough` and the page's Share control;
+        the caller has already made sure the user owns `s`. All or nothing."""
+        from .hosted import say
+
+        allowed = self.store.hosted.allowed_domains
+        shares = list(s.w.shares)
+        for raw in add or []:
+            email = (raw or "").strip().lower()
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=raw))
+            if allowed and email.rsplit("@", 1)[1] not in allowed:
+                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=raw, domains=", ".join(allowed)))
+            if email not in shares and email != (s.w.owner.get("email") or "").lower():
+                shares.append(email)
+        gone = {(x or "").strip().lower() for x in remove or []}
+        s.w.shares = [x for x in shares if x not in gone]
+        if company is not None:
+            s.w.company = bool(company)
+        s._changed(set(), meta=True)  # wakes open event streams, which check access again
+        s.save_now()
+        return {"url": s.url, "shares": list(s.w.shares), "company": s.w.company}
 
     async def _check_layout(self, s, shoot: list[str] = (), shots: dict | None = None) -> tuple[str, str]:
         """Draw every slide fully revealed in headless Chromium, so the player's render and layout
@@ -140,9 +212,10 @@ class LocalService:
         ends = _end_times(s.w)
         if not ends:
             return "", ""
+        limit = self.store.hosted.limits.check_s if self.store.hosted else LAYOUT_CHECK_S
 
         async def run() -> None:
-            async with Capturer(s.url, short=360) as c:
+            async with self._browser(), Capturer(**self._capture_target(s, limit), short=360) as c:
                 for i, (sid, t) in enumerate(list(ends.items())[:LAYOUT_CHECK_MAX]):
                     await c.seek(t, measure=True)
                     if i == 0:  # the settled title slide: the poster for the gallery and link previews
@@ -153,25 +226,48 @@ class LocalService:
                     s.report(f)
 
         try:
-            await asyncio.wait_for(run(), LAYOUT_CHECK_S)
+            await asyncio.wait_for(run(), limit)
         except CaptureUnavailable as e:
             if not _browser_warned:  # once per daemon, so the log says why finish never draws
                 _browser_warned = True
                 log.warning("finish_walkthrough does not draw the slides: %s", e)
             return "no_browser", e.reason
         except TimeoutError:
-            return "not_checked", f"drawing the slides took over {LAYOUT_CHECK_S} s"
+            return "not_checked", f"drawing the slides took over {limit:g} s"
         except Exception as e:  # a broken page or browser must not fail finish
             return "not_checked", f"the headless player failed: {str(e).splitlines()[0][:200]}"
         return "", ""
 
-    async def preview(self, handle: str, slides: list[str] | None = None, short: int = 360) -> dict:
+    def _browser(self):
+        """Hosted: one of the server's few Chromium slots, held for the whole job."""
+        import contextlib
+
+        return self.store.hosted.browsers if self.store.hosted else contextlib.nullcontext()
+
+    def _capture_target(self, s, ttl: float) -> dict:
+        """Where headless Chromium opens a walkthrough. Hosted: this process's own address with a
+        short session for the owner, and nothing loaded from any other origin."""
+        h = self.store.hosted
+        if not h:
+            return {"url": s.url}
+        from .identity import SESSION_COOKIE, User
+
+        session = h.capture_session(User.from_owner(s.w.owner), ttl + 30)
+        return {
+            "url": f"{h.internal_url}/w/{s.w.id}/",
+            "cookie": (SESSION_COOKIE, session.id),
+            "only_origin": True,
+            "sandbox": h.chromium_sandbox,
+        }
+
+    async def preview(self, handle: str, slides: list[str] | None = None, short: int = 360, user=None) -> dict:
         """Pictures of slides as the viewer sees them once fully revealed, for the agent to check."""
+        import asyncio
         import base64
 
         from .capture import CaptureUnavailable, capture_frames_async
 
-        s = self.store.by_handle(handle)
+        s = self.store.by_handle(handle, user)
         ends = _end_times(s.w)
         order = list(ends)
         want = [x for x in (slides or order) if x in ends]
@@ -179,10 +275,19 @@ class LocalService:
         if len(want) > PREVIEW_MAX:
             want = want[-PREVIEW_MAX:] if not slides else want[:PREVIEW_MAX]
         times = [ends[sid] for sid in want]
+        limit = self.store.hosted.limits.check_s if self.store.hosted else None
         try:
-            pngs = await capture_frames_async(s.url, times, short=short, measure=True) if times else []
+            if not times:
+                pngs = []
+            else:
+                async with self._browser():
+                    t = self._capture_target(s, limit or 0)
+                    shoot = capture_frames_async(t.pop("url"), times, short=short, measure=True, **t)
+                    pngs = await (asyncio.wait_for(shoot, limit) if limit else shoot)
         except CaptureUnavailable as e:
             raise ValueError(str(e)) from e
+        except TimeoutError:
+            raise ValueError(f"drawing the slides took over {limit:g} s") from None
         return {
             "url": s.url,
             "slides": [
@@ -198,19 +303,32 @@ class LocalService:
             "player_issues": _dicts(s.take_player_issues()),
         }
 
-    async def export(self, handle: str, path: str = "", format: str = "mp4", max_mb: float = 0, wait_s: float | None = None) -> dict:
+    async def export(
+        self, handle: str, path: str = "", format: str = "mp4", max_mb: float = 0, wait_s: float | None = None, user=None
+    ) -> dict:
         """Write the walkthrough to a file the agent can attach: an MP4, or one HTML page that plays
-        offline. A relative or empty `path` is in the project folder. Waits for the narration first."""
+        offline. A relative or empty `path` is in the project folder. Waits for the narration first.
+        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download."""
         import asyncio
+        import contextlib
 
         from .export import export_html, timeline_total
         from .video import render_mp4
 
         wait_s = EXPORT_WAIT_S if wait_s is None else wait_s
-        s = self.store.by_handle(handle)
+        s = self.store.by_handle(handle, user)
         if format not in ("mp4", "html"):
             raise ValueError("format must be mp4 or html")
-        out = export_path(s.w.title, s.w.root, path, format)
+        h = self.store.hosted
+        if h:
+            from .hosted import say
+
+            if path:
+                raise ValueError(say("no_export_path", "This server cannot save to {given}.", given=path))
+            out = self.store.walk_dir(s.w.id) / "exports" / f"{_slug(s.w.title)}.{format}"
+            out.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            out = export_path(s.w.title, s.w.root, path, format)
         says = [x for sl in s.w.slides for x in sl.says if x.text]
         if not says:
             raise ValueError("nothing to export yet: the walkthrough has no narration")
@@ -223,9 +341,13 @@ class LocalService:
         silent = sum(1 for x in says if x.status != "ready")
         s.save_now()  # the exporters read the saved state
         data_dir = self.store.data_dir
+        # Hosted: one browser, no requests beyond the export's own server, and a time limit.
+        hosted_kw = {"workers": 1, "only_origin": True, "sandbox": h.chromium_sandbox} if h else {}
         try:
             if format == "mp4":
-                r = await asyncio.to_thread(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6))
+                async with self._browser() if h else contextlib.nullcontext():
+                    job = asyncio.to_thread(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
+                    r = await (asyncio.wait_for(job, h.limits.export_min * 60) if h else job)
                 shrunk, errors = r["shrunk"], r["errors"]
             else:
                 await asyncio.to_thread(export_html, data_dir, s.w.id, out)
@@ -236,7 +358,11 @@ class LocalService:
                     raise SystemExit(f"the page is {size / 1e6:.1f} MB, over the {max_mb:g} MB limit; export an MP4 instead")
         except SystemExit as e:  # the exporters stop the command line this way
             raise ValueError(str(e)) from None
+        except TimeoutError:
+            raise ValueError(f"the export took over {h.limits.export_min:g} minutes") from None
+        extra = {"download": f"{s.store.base_url}/w/{s.w.id}/exports/{out.name}"} if h else {}
         return {
+            **extra,
             "path": str(out),
             "format": format,
             "bytes": out.stat().st_size,
@@ -247,8 +373,8 @@ class LocalService:
             "seconds": round(time.monotonic() - t0, 1),
         }
 
-    async def source(self, wid: str) -> str:
-        s = self.store.get(wid)
+    async def source(self, wid: str, user=None) -> str:
+        s = self.store.owned(wid, user)
         if s is None:
             raise ValueError(f"no walkthrough {wid}")
         return s.source
@@ -331,11 +457,13 @@ def _end_times(w) -> dict[str, float]:
     return out
 
 
+def _slug(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60].strip("-") or "walkthrough"
+
+
 def export_path(title: str, root: str | None, path: str, format: str) -> Path:
     """Where an export goes: `path` (relative ones inside the project folder), else a file named
     after the title in the project folder. The suffix must match the format."""
-    import re
-
     if path:
         p = Path(path).expanduser()
         if not p.is_absolute():
@@ -345,8 +473,7 @@ def export_path(title: str, root: str | None, path: str, format: str) -> Path:
     else:
         if not root:
             raise ValueError("no project folder to save in; pass an absolute path")
-        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60].strip("-") or "walkthrough"
-        p = Path(root) / f"{slug}.{format}"
+        p = Path(root) / f"{_slug(title)}.{format}"
     p = p.resolve()
     want = (".mp4",) if format == "mp4" else (".html", ".htm")
     if p.suffix.lower() not in want:

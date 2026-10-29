@@ -37,9 +37,10 @@ def slugify(text: str) -> str:
 
 
 class Builder(CueResolver, Checks):
-    def __init__(self, w: Walkthrough, assets_dir: Path) -> None:
+    def __init__(self, w: Walkthrough, assets_dir: Path, hosted: bool = False) -> None:
         self.w = w
         self.assets_dir = assets_dir
+        self.hosted = hosted  # hosted mode: nothing is read from the server's disk or fetched from elsewhere
         self.parser = Parser()
         self.questions_mode = False
         self.pending_old: tuple[Block, sources.Excerpt] | None = None
@@ -56,6 +57,20 @@ class Builder(CueResolver, Checks):
     @property
     def limits(self) -> dict:
         return LIMITS.get(self.w.frame, LIMITS["landscape"])
+
+    def _no_disk(self, b: Block, what: str) -> bool:
+        """In hosted mode, refuse a block that would read the server's disk or git; True if refused."""
+        if not self.hosted:
+            return False
+        from .hosted import say
+
+        self._issue(
+            "source_error",
+            say("no_disk_block", "Line {line}: {what} cannot be read on this server.", line=b.line, what=what),
+            say("no_disk_fix", ""),
+            line=b.line,
+        )
+        return True
 
     def _issue(self, code: str, message: str, fix: str = "", *, slide: str | None = None, line: int | None = None) -> None:
         if slide is None and self.w.slides:
@@ -367,6 +382,8 @@ class Builder(CueResolver, Checks):
                 lines.append(rest if name else ln)
             body = "\n".join(lines)
         if k.reads_file and b.attrs.get("file"):
+            if self._no_disk(b, f"`{k.name} file={b.attrs['file']}`"):
+                return
             try:
                 body = sources.read_text(sources.resolve(self.root, b.attrs["file"]))
             except sources.SourceError as e:
@@ -418,6 +435,8 @@ class Builder(CueResolver, Checks):
 
     def _code_excerpt(self, b: Block) -> sources.Excerpt | None:
         if b.attrs.get("file"):
+            if self._no_disk(b, f"`file={b.attrs['file']}`"):
+                return None
             try:
                 ex, _ = sources.read_excerpt(self.root, b.attrs["file"], b.attrs.get("lines"))
                 if b.text.strip():
@@ -441,6 +460,8 @@ class Builder(CueResolver, Checks):
 
     def _diff_block(self, b: Block) -> None:
         if b.attrs.get("file") and b.attrs.get("rev"):
+            if self._no_disk(b, f"`diff file={b.attrs['file']} rev={b.attrs['rev']}`"):
+                return
             try:
                 d = sources.git_diff(self.root, b.attrs["file"], b.attrs["rev"], b.attrs.get("lines"))
                 if not self.w.sha:
@@ -514,6 +535,16 @@ class Builder(CueResolver, Checks):
 
     def _image(self, b: Block) -> None:
         src, alt = b.attrs["src"], b.attrs.get("alt", "")
+        if self.hosted:  # no files from disk, and nothing fetched from elsewhere (img-src blocks it too)
+            from .hosted import say
+
+            self._issue(
+                "image_error",
+                say("no_images", "Line {line}: images are off on this server.", line=b.line),
+                say("no_images_fix", ""),
+                line=b.line,
+            )
+            return
         s = self._slide_for_visual("image")
         if re.match(r"^https?://", src):
             vis = {"src": src, "alt": alt}

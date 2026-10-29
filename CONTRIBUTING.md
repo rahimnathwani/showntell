@@ -69,6 +69,7 @@ A kind made from a fenced block (```` ```name ````) touches these files:
 - **Tag:** push `vX.Y.Z`. That alone publishes nothing; installs from GitHub pinned to the tag start working.
 - **Publish:** publish a GitHub release for the tag (or run `release.yml` on it). The workflow runs lint, format and tests, stops unless the tag equals the pyproject version, the manifests agree and the changelog section is dated and non-empty, then builds, smoke-tests the wheel with `scripts/wheel_smoke.sh` and publishes to PyPI through trusted publishing.
 - **Check first:** `uv run scripts/sync_version.py --check --tag vX.Y.Z` runs the same gate locally.
+- **Seccomp profile:** `uv run scripts/seccomp_profile.py --check` says whether Docker's default seccomp profile has changed since `deploy/chromium-seccomp.json` was built from it. If it has, rebuild with `--commit latest` and run `scripts/container_check.sh` before tagging.
 - **Through Claude Code:** `SHOWNTELL_TEST_CLAUDE=1 uv run pytest -m claude` checks what the model really receives from the tools (the guide, the share-the-link instruction, preview pictures). CI cannot run it; it needs a logged-in `claude` and costs a few cents.
 - **Clean room:** `uv run scripts/provenance_check.py <reference folder>` should match only HTML boilerplate.
 
