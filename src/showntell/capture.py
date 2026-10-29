@@ -16,12 +16,15 @@ import contextlib
 import functools
 import http.server
 import json
+import logging
 import threading
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .model import FRAMES
+
+log = logging.getLogger("showntell.capture")
 
 
 def install_hint() -> str:
@@ -115,9 +118,20 @@ class Capturer:
     """
 
     def __init__(
-        self, url: str, *, short: int = 1080, captions: bool = False, motion: bool = False, image: str = "png", browser=None
+        self,
+        url: str,
+        *,
+        short: int = 1080,
+        captions: bool = False,
+        motion: bool = False,
+        image: str = "png",
+        browser=None,
+        cookie: tuple[str, str] | None = None,
+        only_origin: bool = False,
     ) -> None:
         self.url = url
+        self.cookie = cookie  # (name, value) for the page's origin: hosted mode's session for the owner
+        self.only_origin = only_origin  # abort every request to another origin (hosted mode)
         self.short = short
         self.captions = captions
         self.motion = motion  # keep the idle motion (breathing, creep), so held frames differ
@@ -135,13 +149,17 @@ class Capturer:
             self._own.append(pw.stop)
             self._browser = await launch(pw)
             self._own.append(self._browser.close)
-        self.frame_name = await _frame_of(self.url)
+        self.frame_name = await _frame_of(self.url, self.cookie)
         native = FRAMES.get(self.frame_name, FRAMES["landscape"])
         self.size = output_size(self.frame_name, self.short)
         ctx = await self._browser.new_context(
             viewport={"width": native[0], "height": native[1]}, device_scale_factor=self.size[0] / native[0]
         )
         self._own.append(ctx.close)
+        if self.cookie:
+            await ctx.add_cookies([{"name": self.cookie[0], "value": self.cookie[1], "url": _origin(self.url)}])
+        if self.only_origin:
+            await ctx.route("**/*", _same_origin_only(_origin(self.url)))
         self.page = await ctx.new_page()
         problems: list[str] = []
         self.page.on("pageerror", lambda e: problems.append(str(e)))
@@ -192,25 +210,52 @@ async def launch(pw):
         raise
 
 
-async def _frame_of(url: str) -> str:
+def _origin(url: str) -> str:
+    u = urlsplit(url)
+    return f"{u.scheme}://{u.netloc}"
+
+
+def _same_origin_only(origin: str):
+    """A Playwright route handler that lets through only requests to `origin` (and data: URLs,
+    which never reach the network); everything else is aborted before it leaves the browser."""
+
+    async def handle(route) -> None:
+        url = route.request.url
+        if url.startswith("data:") or _origin(url) == origin:
+            await route.continue_()
+        else:
+            log.warning("headless player: blocked a request to %s", url[:200])
+            await route.abort("blockedbyclient")
+
+    return handle
+
+
+async def _frame_of(url: str, cookie: tuple[str, str] | None = None) -> str:
     """The walkthrough's frame, read from data.json before the page is sized."""
     import httpx
 
     u = urlsplit(_with_params(url))
     path = u.path.rsplit("/", 1)[0] + "/data.json"
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, cookies=dict([cookie]) if cookie else None) as client:
         r = await client.get(urlunsplit((u.scheme, u.netloc, path, u.query, "")))
         r.raise_for_status()
         return json.loads(r.content).get("frame", "landscape")
 
 
 async def capture_frames_async(
-    source: str | Path, times: Sequence[float], *, short: int = 1080, captions: bool = False, measure: bool = False
+    source: str | Path,
+    times: Sequence[float],
+    *,
+    short: int = 1080,
+    captions: bool = False,
+    measure: bool = False,
+    cookie: tuple[str, str] | None = None,
+    only_origin: bool = False,
 ) -> list[bytes]:
     """PNG bytes of the player at each time (seconds), for a player link or an exported folder.
     `measure` waits for the player's layout checks on each slide, which report to a live link."""
     with player_url(source) as url:
-        async with Capturer(url, short=short, captions=captions) as c:
+        async with Capturer(url, short=short, captions=captions, cookie=cookie, only_origin=only_origin) as c:
             out, last_key, last_png = [], None, b""
             for t in times:
                 key = await c.seek(t, measure)

@@ -1,0 +1,23 @@
+{
+  "no_project": "This server reads no folders: write the code and diffs into the Markdown.",
+  "no_project_dir": "This server cannot read project_dir ({given}): it is shared and sees nothing on your machine or its own disk. Start again without project_dir, read the files yourself, and put the code in the Markdown: a fenced block with start= for the first line number, or a unified diff block.",
+  "no_disk_block": "Line {line}: {what} was not shown: this server cannot read files or git.",
+  "no_disk_fix": "Read it yourself and paste the lines into the block, with start= for the first line number; for a change, paste a unified diff into a ```diff block or use old/new blocks. Send the fixed slide with revise_slide.",
+  "no_images": "Line {line}: the image was not shown: this server takes no images, from paths or from the web.",
+  "no_images_fix": "Draw it instead: ```svg, a ```mermaid diagram, a ```chart, or a table. Send the fixed slide with revise_slide.",
+  "no_export_path": "This server cannot save to {given}: exports stay on the server for the owner to download. Call export_walkthrough again without path.",
+  "guide_hosted": "**On this server:** it reads nothing from disk or the web. Where the guide below says `file=`, `rev=`, `svg file=`, `drawio file=` or an image, put the content in the Markdown instead: code in a fenced block with `start=` for its first line number, a change as a unified ```diff block or old/new blocks, a picture as ```svg, a diagram or a chart.",
+  "exported_hosted": "Saved on the server ({mb} MB, {duration}). The owner can download it, signed in, from {download}\nGive the user that link with a line on what it covers. Anyone they send the file to can play it. Don't repeat the script.",
+  "markdown_too_big": "This call carries {kb:.0f} KB of Markdown; the limit is {limit:g} KB per call. Send fewer slides per call.",
+  "too_many_slides": "Not added: that would make {n} slides, over this server's limit of {limit}. Finish this walkthrough and put the rest in a second one.",
+  "narration_limit": "Not added: that would make about {minutes} of narration, over this server's limit of {limit:g} minutes per walkthrough. Shorten what you send, or finish here and put the rest in a second walkthrough.",
+  "writing_limit": "Not started: you have {n} walkthroughs in progress, this server's limit. Finish one with finish_walkthrough first: {handles}.",
+  "stored_limit": "Not started: you have {n} walkthroughs stored, this server's limit. Ask the user to delete old ones from the gallery page.",
+  "storage_limit": "Not started: your walkthroughs use {gb:.1f} GB, over this server's limit of {limit:g} GB. Ask the user to delete old ones from the gallery page.",
+  "rate_limit": "Too many calls: this server allows {n} tool calls a minute per user. Wait a minute, then send more slides per call.",
+  "share_bad_email": "{email} is not an email address; nothing was changed.",
+  "share_domain": "{email} is outside this company's domains ({domains}); nothing was changed.",
+  "share_local": "Sharing is for hosted servers; this one runs on the user's machine.",
+  "shared": "Shared with: {people}. Whole company: {company}. Link: {url}\nTell the user who can open it now.",
+  "shared_nobody": "only the owner"
+}

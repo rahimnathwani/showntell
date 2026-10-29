@@ -139,8 +139,21 @@ The same module writes `poster.png` for folder exports and returns PNG frames at
 | `walkthroughs/<id>/state.json` | the walkthrough: slides, narration, cues, timings |
 | `walkthroughs/<id>/source.md` | the Markdown as received |
 | `walkthroughs/<id>/assets/` | images copied from the project |
+| `walkthroughs/<id>/exports/` | hosted mode: MP4 and page exports, for the owner to download |
+| `dev-logins.json` | hosted mode trials: the stub login's tokens (mode 0600) |
 | `audio/<key>.wav` and `.json` | voiced narration and its word timings, shared by all walkthroughs |
 | `models/` | the spaCy English model |
 | `lexicon.txt` | your pronunciations, `word = spoken form` |
 
 Voice models live in the Hugging Face cache (`~/.cache/huggingface`).
+
+## Hosted mode
+
+With `SHOWNTELL_MODE=hosted` one server serves several people (docs/hosted-design.md). `hosted.check_config` refuses unsafe settings at start; `hosted.HostedGuard` replaces `Guard` and resolves each request to a user through `identity.Identity` (bearer token on `/mcp`, session cookie on pages); `access.py` decides who may view or change a walkthrough. The store, service and routes take that user and check it; in local mode they get none and check nothing. Agent-facing differences live in `text/hosted/`.
+
+| Module | Holds |
+|---|---|
+| `identity.py` | `User`, browser sessions with CSRF tokens, the `Login` seam and the phase 1 stub login |
+| `access.py` | owner, shared viewer, or nobody |
+| `hosted.py` | startup checks, the CSP, the guard, the rate limiter, and `Hosted`: limits, identity and the internal URL the server's Chromium uses |
+

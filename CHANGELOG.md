@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Hosted mode, phase 1** (`SHOWNTELL_MODE=hosted`, docs/hosted-design.md): one server for several people. Walkthroughs belong to their maker and open for others only when shared (`share_walkthrough`, to named emails or the whole company); anyone else gets 404, and a removed share ends an open player's live updates. Slide content cannot read the server's disk or reach the network: `project_dir`, `file=`, `rev=` and images are refused with a fix, and the server's own Chromium aborts requests to any other origin. A Content-Security-Policy and CSRF tokens on every page, the RPC route and cross-site embedding off, limits per user (narration, slides, walkthroughs, storage, calls a minute, retention) and speech served round-robin across users. Sign-in is a stub for trials on one machine (`SHOWNTELL_DEV_USERS`); provider sign-in is phase 2.
+- **Speech queue:** one priority queue per user, served in turn; a single user sees no change.
+- **No inline scripts:** the player's head scripts and the gallery's script are files (`static/boot.js`, `static/gallery.js`); single-page exports still inline them.
+- **Hostile input:** an SVG block nested thousands of levels deep no longer fails the call (drawings stop at 100 levels); unclosed `_` emphasis no longer makes parsing quadratic; a compressed draw.io page may expand to 20 MB at most.
+
 ## 0.1.9 (2026-10-28)
 
 - **Camera on the narration clock:** `{.zoom}` moves are worked out from the clock instead of CSS transitions, so seeking lands mid-move and MP4 export shows the move (it used to cut). Moves are planned against the speech: in over about 1.6 s, starting about 0.4 s into the sentence and settling as the cued word is heard; out in 1 s, front-loaded; a move between close-ups at a similar zoom pulls back about 6% on the way. A held close-up creeps about 2% in, a still drawing breathes about 1%; MP4 export leaves this idle motion out so held frames are reused, and `--motion` keeps it. A zoom onto a large part (a panel) fills about 90% of the frame and needs no pointer; small targets still fill about 60%. The pointer waits while the camera moves and appears on the new subject when it lands. Reduced motion cuts and holds still.

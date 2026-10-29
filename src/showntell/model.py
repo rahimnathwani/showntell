@@ -65,6 +65,11 @@ class Walkthrough:
     slides: list = field(default_factory=list)
     link_shared: bool = False
     guide_sent: bool = False
+    # Hosted mode only (docs/hosted-design.md): who made it, who else may view it, when it was last seen.
+    owner: dict = field(default_factory=dict)  # {iss, sub, email}; empty in local mode
+    shares: list = field(default_factory=list)  # emails, lower case
+    company: bool = False  # shared with everyone who can sign in
+    viewed: float = 0.0
     format: int = FORMAT_VERSION
     version: int = STATE_VERSION
 

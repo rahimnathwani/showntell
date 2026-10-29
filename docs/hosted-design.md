@@ -1,6 +1,6 @@
 # Hosted mode: design
 
-Status: proposed, 2026-10-28. Not built.
+Status: phase 1 built on branch `hosted-mode`, 2026-10-28 (see **Phase 1 as built**). Phases 2 and 3 not started.
 
 One showntell server for a whole company. Anyone at the company adds it to Claude (claude.ai connector, Claude Code, Desktop) by URL and signs in with the company's Google or Entra account. Walkthroughs belong to the person who made them; others see one only when the owner shares it.
 
@@ -26,8 +26,9 @@ Hosted mode is `SHOWNTELL_MODE=hosted`. Everything else about it is off unless t
 | `SHOWNTELL_ENTRA_TENANT` | `entra` only: the tenant ID (a GUID, not a domain) |
 | `SHOWNTELL_ALLOWED_DOMAINS` | Comma-separated. Required for `google` and `generic`. Empty for `entra` means anyone in the tenant |
 | `SHOWNTELL_QUOTA_*` | Per-user limits, below |
+| `SHOWNTELL_DEV_USERS` | Phase 1 only: comma-separated emails for the stub login, below |
 
-The server refuses to start in hosted mode with any of these missing or with a `http://` public URL other than localhost.
+The server refuses to start in hosted mode with any of these missing or with a `http://` public URL other than localhost. It also refuses `SHOWNTELL_DELIVER=file` (a hosted server delivers links) and, until phase 2, `SHOWNTELL_OIDC` (not built yet). With neither OIDC nor the stub configured it refuses with a message naming both.
 
 ## Sign-in
 
@@ -73,9 +74,10 @@ Every walkthrough has an `owner` (the user key) and a `shares` list. Access is c
 
 - **Share targets:** a person, by email address in an allowed domain; or the whole company (everyone who passes sign-in). Both are explicit, per walkthrough, and the default is no shares.
 - **Matching:** a share to an email matches a user whose verified email (Google, generic) or UPN (Entra) equals it, case-insensitive. A share can name someone who hasn't signed in yet.
-- **Where shares are made:** a new MCP tool `share_walkthrough(walkthrough, add=[...], remove=[...], company=true|false)`, and a Share control on the owner's view of the page. Its tool description is agent-facing text: a fresh agent writes it (see the clean-room rule).
+- **Where shares are made:** a new MCP tool `share_walkthrough(walkthrough, add=[...], remove=[...], company=true|false)`, and a Share control on the owner's view of the page. Its description is agent-facing text, in `text/hosted/tools.json`; the phase 1 build session wrote it, as its brief allowed, having read none of the outside reference material.
 - **404, not 403:** nothing tells a non-owner that an ID exists. IDs stay 16 random bytes.
-- **Exports:** MP4 and folder exports go to the owner only. An exported folder plays offline without sign-in, so sharing it is the owner's act, outside the server's control.
+- **Exports:** MP4 and folder exports go to the owner only. An exported folder plays offline without sign-in, so sharing it is the owner's act, outside the server's control. `export_walkthrough` writes into the walkthrough's own folder (`exports/<slug>.mp4` or `.html`, one per format, overwritten) and replies with `<url>/w/{id}/exports/<name>`, served to the owner only, as an attachment. A `path` is refused. Exports count toward the owner's storage.
+- **The Markdown resource:** `showntell://walkthroughs/{id}` is owner-only, like the write tools: a shared viewer watches, but does not get the source. The static `showntell://walkthroughs` list resource is not offered in hosted mode, because the SDK gives a static resource no caller; `list_walkthroughs` does the same job.
 - **Routes that go:** `/api/rpc/*` (the stdio shim's route) and embedding with `Access-Control-Allow-Origin: *` are off in hosted mode.
 
 ## Slide content is untrusted
@@ -84,10 +86,10 @@ An agent can be steered by what it reads, so its Markdown is treated as hostile.
 
 | Risk | Today | Hosted mode |
 |---|---|---|
-| **Script in a slide** | SVG rebuilt from an allowlist; draw.io parsing skips scripts; the player escapes text | The same, plus a CSP on every page: `default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; img-src 'self' data:`. Remove any inline script the player needs; check whether mermaid needs `unsafe-eval` and confine it if so |
-| **Reading the server's disk** | Code, diffs, images and git are read under `project_dir` | `project_dir`, file and git sources and local image paths are refused with a reply that says to put code and diffs in the Markdown. The reply and guide wording come from a fresh agent |
+| **Script in a slide** | SVG rebuilt from an allowlist; draw.io parsing skips scripts; the player escapes text | The same, plus a CSP on every response: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:`, with `nosniff`, `Referrer-Policy: same-origin` and `X-Frame-Options: DENY`. The player's two inline scripts and the gallery's are files now (`static/boot.js`, `static/gallery.js`) in both modes. Neither Mermaid nor the draw.io viewer needs `unsafe-eval` (see **Phase 1 as built**) |
+| **Reading the server's disk** | Code, diffs, images and git are read under `project_dir` | `project_dir`, file and git sources and local image paths are refused with a reply that says to put code and diffs in the Markdown. The wording lives in `text/hosted/` (instructions, tool and argument overrides, replies, and a note put before the guide); local text is unchanged |
 | **Server-side requests (SSRF)** | Remote image URLs are allowed; the checks and export Chromium loads them | Remote images refused when slides are added (`img-src` blocks them anyway). The checks and export Chromium routes every request through an allowlist of showntell's own origin and aborts the rest. The container's outbound traffic is limited to the OIDC provider and the voice model download |
-| **Hostile Markdown at parse time** | — | Size caps on a slide and a walkthrough before parsing; parser timeouts |
+| **Hostile Markdown at parse time** | 1 MB per walkthrough | The same, plus 64 KB per `add_slides` or `revise_slide` call, checked before parsing. No parser timeout: parsing is CPU-bound Python on the event loop, which a timeout cannot interrupt, and a thread cannot be killed. Instead the parser is kept near-linear and a test builds a corpus of pathological inputs at the cap in under 2 s each (see **Phase 1 as built**) |
 
 Later, optionally: serve walkthrough content from a second origin (`SHOWNTELL_CONTENT_URL`) so that a hole in the player can't use the main origin's session. It needs a sign-in handoff between origins, so it is left out of v1.
 
@@ -95,14 +97,17 @@ Later, optionally: serve walkthrough content from a second origin (`SHOWNTELL_CO
 
 | Limit | Default |
 |---|---|
-| **Narration per walkthrough** | 8 minutes; `too_long` becomes an error past it |
-| **Slides per walkthrough** | 60 |
-| **Walkthroughs in progress per user** | 3 |
+| **Narration per walkthrough** | 8 minutes; past it the call is refused and the walkthrough left as it was |
+| **Slides per walkthrough** | 60, refused the same way |
+| **Markdown per call** | 64 KB |
+| **Walkthroughs in progress per user** | 3; "in progress" is not finished and changed in the last hour, so an abandoned one stops counting |
 | **Stored per user** | 200 walkthroughs or 2 GB |
 | **Retention** | 180 days after last view, then deleted |
 | **Speech** | One queue, served round-robin across users, so one long walkthrough doesn't hold up others |
 | **Chromium** | 2 pages at once server-wide, 60 s per check, 15 min per export |
-| **Requests** | 60 tool calls a minute per user |
+| **Requests** | 60 tool calls a minute per user, a sliding window; a start with its opening counts once |
+
+Each is `SHOWNTELL_QUOTA_<NAME>`: `NARRATION_MIN`, `SLIDES`, `MARKDOWN_KB`, `WRITING`, `WALKTHROUGHS`, `STORAGE_GB`, `RETENTION_DAYS` (0 keeps forever), `CALLS_PER_MIN`, `BROWSERS`, `CHECK_S`, `EXPORT_MIN`. Storage counts a walkthrough's folder (state, source, exports) plus the audio files it plays; audio is shared by content, so two users voicing the same sentence each count it. Count and storage limits are checked at `start_walkthrough`. Retention runs daily: a walkthrough neither changed nor viewed for that long is deleted with `showntell prune`'s logic, which now also counts the last view.
 
 ## Process
 
@@ -134,6 +139,53 @@ CI runs these against a fake OIDC provider. One manual run per provider (Google,
 1. **Hosted switch:** the mode, ownership checks, no disk or remote fetches, CSP, quotas, speech queue. Testable with a stub login.
 2. **Sign-in:** OIDC for the viewer pages, MCP authorization for `/mcp`, the domain checks, `share_walkthrough`.
 3. **Packaging:** Dockerfile, compose file with Caddy, `docs/self-hosting.md` with the Google and Entra registration steps, a `showntell doctor` row for hosted settings.
+
+## Phase 1 as built
+
+What phase 1 decided where the design was open, and where it changed the design.
+
+### The identity seam and the stub login
+
+- **One seam:** `identity.Identity` turns a request into a `User(issuer, sub, email)`: `from_bearer` for `/mcp`, `from_cookie` for pages. It holds a `Login` (where users come from: `user_for_token` and its sign-in routes) and `BrowserSessions` (cookie sessions, each with its CSRF token, 12 hours, in memory). Phase 2 adds a provider `Login` and OAuth token checks behind the same calls; `access.py`, the store and the routes see only `User`.
+- **Where the user travels:** `HostedGuard` puts the user in the ASGI scope; routes read it with `hosted.user_of(request)`, tools from the SDK's request context. The service and store take `user=` and check it; local mode passes nothing and checks nothing.
+- **The stub:** `SHOWNTELL_DEV_USERS=a@example.com,b@example.com` gives each email a random bearer token, kept in `dev-logins.json` (0600) so trials survive restarts. MCP clients send `Authorization: Bearer <token>`; a browser signs in at `/dev/login?token=...`. It starts only with a loopback `SHOWNTELL_HOST` and a localhost public URL, so it cannot sit behind a public proxy, and every start logs a banner saying it is on and must never be used in production. Its issuer is `showntell-dev-login`, so a stub user is never the same key as a real one.
+- **Cookies on `/mcp`:** refused. `/mcp` takes only bearer tokens, so a page cannot drive tools with a viewer's cookie.
+
+### Ownership
+
+- **Fields:** `owner` (`{iss, sub, email}`), `shares` (lower-case emails), `company` (bool) and `viewed` live in `state.json`. `data.json` never carries them.
+- **Unknown handles:** a write tool given someone else's handle gets the same "unknown handle" as a made-up one. The handle's key is still checked, so knowing an ID is not enough even for the owner.
+- **Live updates:** the event stream checks access again on every event and keepalive; sharing changes push an event, so removing a share or deleting the walkthrough ends open streams within moments.
+- **Walkthroughs without an owner** (a data folder reused from local mode) are visible to nobody in hosted mode.
+- **`share_walkthrough` is in phase 1:** it fell out of the data model. Emails must be in `SHOWNTELL_ALLOWED_DOMAINS` when that is set; the owner's own email is ignored. The Share control on the page is still phase 2.
+
+### Disk, network and Chromium
+
+- **Builder:** in hosted mode `file=`, `rev=`, `svg file=`, `drawio file=` and every image (path or URL) become a `source_error` or `image_error` finding with a fix that says to paste the content into the Markdown; nothing is read or fetched. `project_dir` and an export `path` are refused outright. MCP roots are ignored, since they name folders on the client's machine.
+- **The server's Chromium:** the finish check and preview open `http://<bind address>:<port>/w/{id}/` with a short browser session for the owner, through the guard; MP4 export opens its own loopback copy as before. All three route every request through a handler that aborts any other origin and logs it. A test points a slide's image at another local server and checks it gets no request.
+- **Chromium limits:** an asyncio semaphore of `BROWSERS` held for each whole job; MP4 export uses one browser in hosted mode instead of up to four. Check and preview time out at `CHECK_S`, export at `EXPORT_MIN` (the reply returns; the render thread finishes in the background).
+
+### Headers and CSRF
+
+- **`style-src 'unsafe-inline'` (a design change):** Mermaid writes a `<style>` element into each diagram, KaTeX sets `style` attributes, and the page carries the theme's colours as a `style` attribute. Nonces cannot cover styles added by script. Inline style cannot run script, and with `img-src`, `font-src` and `connect-src` all `'self'`, CSS cannot send data anywhere else.
+- **No `unsafe-eval`:** Mermaid's two `Function("return this")` calls are lodash's fallback for finding the global object, reached only where `self` is missing, never in a browser. The draw.io viewer's `mxUtils.eval` runs only to decode function-valued XML, sits in a try/catch, and under the CSP fails harmlessly; the hosted browser test draws Mermaid, KaTeX, code and draw.io slides with no CSP violation at all.
+- **What the CSP catches:** with the hostile corpus, Mermaid adds one inline event handler while drawing a hostile label; the CSP blocks it. The same corpus in local mode, without a CSP, ran no script either, so this is defence in depth, not a hole.
+- **CSRF:** every POST from a page needs the session's token in `X-CSRF-Token` (the page carries it as `data-csrf`), JSON, an Origin that is the public or internal origin when present, and a `Sec-Fetch-Site` of `same-origin`. Unauthenticated pages get 401; `/static/`, `/health` and the dev login are open. `Cache-Control` on audio is `private` in hosted mode.
+
+### Fixes found on the way (both modes)
+
+- **Nested SVG:** a `svg` block nested a few thousand levels deep raised `RecursionError` and failed the call; drawings now stop at 100 levels with a finding.
+- **Unclosed emphasis:** 64 KB of `_a _a …` took 10 s to parse, because each `_` scanned to the end of the paragraph for its closer; emphasis spans now stop at 400 characters (0.16 s).
+- **draw.io:** a compressed page may expand to at most 20 MB.
+
+### Speech
+
+- **Round-robin:** the narrator's single priority queue became `FairQueue`: one priority queue per user (owner key), served in turn. With one user, as in local mode, it is the same priority queue as before.
+
+### Left for later
+
+- **An owner index:** listings and limit checks read every `state.json`. Fine for hundreds of walkthroughs; an in-memory index by owner is the fix when it is not.
+- **Admins, uploads, retention per company:** as under **Open questions**.
 
 ## Open questions
 

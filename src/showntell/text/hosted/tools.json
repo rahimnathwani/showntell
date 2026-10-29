@@ -1,0 +1,26 @@
+{
+  "start_walkthrough": {
+    "args": {
+      "project_dir": "Leave empty: this server cannot read folders, and a non-empty value is refused. Put code and diffs in the Markdown."
+    }
+  },
+  "list_walkthroughs": {
+    "description": "List the user's recent walkthroughs, and those colleagues shared with them, with titles and links. The user's own carry a handle for revise_slide or share_walkthrough; shared ones are view only and have none. Its Markdown source is the resource showntell://walkthroughs/{id}, where id is the part of the handle before the dot."
+  },
+  "export_walkthrough": {
+    "description": "Render a walkthrough as one file kept on this server for its owner to download: an MP4 video (H.264 and AAC, with a subtitle track) or a self-contained HTML page that plays offline. Call it after finish_walkthrough and the fixes its reply names, when the user asks for a video or a file to keep. The reply gives a download link that works only for the owner when signed in. Anyone who gets the downloaded file can play it, so remind the user that sending it on shares it.",
+    "args": {
+      "path": "Leave empty: the file stays on the server. Any value is refused."
+    }
+  },
+  "share_walkthrough": {
+    "title": "Share walkthrough",
+    "description": "Let colleagues watch one of the user's walkthroughs. By default only its owner can open the link; everyone else gets \"not found\". Share only when the user asks, naming the people or the whole company. Shared viewers can watch, read the transcript and report player problems, but not change, export or delete it. Removing a share cuts the viewer off at once, an open player included. The reply lists who it is shared with now.",
+    "args": {
+      "handle": "Handle from start_walkthrough or list_walkthroughs.",
+      "add": "Email addresses to share with, in the company's domains. They can sign in later; the share waits for them.",
+      "remove": "Email addresses to stop sharing with.",
+      "company": "true shares with everyone who can sign in to this server; false stops that. Omit to leave it as it is."
+    }
+  }
+}

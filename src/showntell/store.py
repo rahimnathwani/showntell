@@ -7,6 +7,7 @@ are handed to the loop with `call_soon_threadsafe`.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -16,7 +17,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import themes
+from . import access, themes
 from .build import SPEED_RANGE, Builder
 from .format import Parser
 from .issues import Issue, player_issue
@@ -42,7 +43,7 @@ class Session:
     def __init__(self, store: Store, w: Walkthrough) -> None:
         self.store = store
         self.w = w
-        self.builder = Builder(w, store.walk_dir(w.id) / "assets")
+        self.builder = Builder(w, store.walk_dir(w.id) / "assets", hosted=store.hosted is not None)
         self.subscribers: set[asyncio.Queue] = set()
         self.player_issues: list[Issue] = []
         self.reported: set[str] = set()
@@ -58,11 +59,16 @@ class Session:
     # -- writing ------------------------------------------------------------------------
 
     def add(self, markdown: str) -> dict:
+        lim = self.store.hosted.limits if self.store.hosted else None
+        if lim:
+            self._check_size(markdown, lim)
         if self.w.status == "finished":
             self.w.status = "writing"  # adding after finishing reopens it
         if len(self.source) + len(markdown) > MAX_SOURCE_BYTES:
             raise ValueError("this walkthrough is over 1 MB of Markdown; start a new one")
         before = len(self.w.slides)
+        # Hosted limits are checked on the result: keep the state to put back if it goes over.
+        undo = copy.deepcopy({"w": self.w, "b": self.builder, "source": self.source}) if lim else None
         self.source += markdown if markdown.endswith("\n") else markdown + "\n"
         b = self.builder
         b.issues, b.new_says, b.changed = [], [], set()
@@ -74,6 +80,11 @@ class Session:
                 "Split it into a series.",
             )
         spoken = narration_seconds(self.w)
+        if lim:
+            over = self._over_limits(lim, len(self.w.slides), spoken)
+            if over:
+                self.w, self.builder, self.source = undo["w"], undo["b"], undo["source"]
+                raise ValueError(over)
         if spoken > TARGET_S and "too_long" not in self.reported:
             self.reported.add("too_long")
             b._issue(
@@ -86,7 +97,40 @@ class Session:
         self._changed(b.changed)
         return {"slides": len(self.w.slides) - before, "says": len(b.new_says), "issues": list(b.issues)}
 
+    def _check_size(self, markdown: str, lim) -> None:
+        """Hosted: cap one call's Markdown before it is parsed."""
+        size = len(markdown.encode())
+        if size > lim.markdown_kb * 1024:
+            from .hosted import say
+
+            raise ValueError(
+                say(
+                    "markdown_too_big",
+                    "This call carries {kb:.0f} KB of Markdown; the limit is {limit:g} KB.",
+                    kb=size / 1024,
+                    limit=lim.markdown_kb,
+                )
+            )
+
+    def _over_limits(self, lim, slides: int, spoken: float) -> str:
+        """Hosted: why the walkthrough would be past its slide or narration limit, or ''."""
+        from .hosted import say
+
+        if slides > lim.slides:
+            return say("too_many_slides", "That would make {n} slides; the limit is {limit}.", n=slides, limit=lim.slides)
+        if spoken > lim.narration_min * 60:
+            return say(
+                "narration_limit",
+                "That would make about {minutes} of narration; the limit is {limit:g} minutes.",
+                minutes=f"{int(spoken // 60)}:{int(spoken % 60):02d}",
+                limit=lim.narration_min,
+            )
+        return ""
+
     def revise(self, slide_id: str, markdown: str) -> dict:
+        lim = self.store.hosted.limits if self.store.hosted else None
+        if lim:
+            self._check_size(markdown, lim)
         idx = next((i for i, s in enumerate(self.w.slides) if s.id == slide_id), None)
         if idx is None:
             raise ValueError(f"no slide `{slide_id}`. Slides: {', '.join(s.id for s in self.w.slides)}")
@@ -107,7 +151,7 @@ class Session:
             root=self.w.root,
             sha=self.w.sha,
         )
-        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets")
+        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
         b.add(text + "\n", check_last=False)
         issues = list(b.issues)
         if not scratch.slides:
@@ -129,6 +173,12 @@ class Session:
         for i, say in enumerate(new.says):
             say.id = f"{new.id}.{i + 1}.{new.rev}"
         b._check_finished_slide(new)
+        if lim:
+            others = [x for x in self.w.slides if x is not old]
+            spoken = sum(x.duration or len(x.text.split()) / 2.7 for sl in [*others, new] for x in sl.says if x.text)
+            over = self._over_limits(lim, len(self.w.slides), spoken)
+            if over:
+                raise ValueError(over)
         issues = list(dict.fromkeys(issues + [x for x in b.issues if x not in issues]))
         # Someone may be watching: keep showing the voiced old version until the new one has
         # its audio, so a revision never makes the viewer wait.
@@ -256,7 +306,8 @@ class Session:
             else:
                 loop.call_soon_threadsafe(self._audio, slide.id, sid, result)
 
-        narrator.request(key, spoken, self.w.voice, self.w.speed, order, done)
+        user = f"{self.w.owner.get('iss', '')} {self.w.owner.get('sub', '')}" if self.w.owner else ""
+        narrator.request(key, spoken, self.w.voice, self.w.speed, order, done, user=user)
         return 0 if hit else 1
 
     def _audio(self, slide_id: str, say_id: str, result: dict) -> None:
@@ -419,6 +470,7 @@ class Store:
         default_voice: str = "af_heart",
         open_browser: bool = False,
         link_suffix: str = "",
+        hosted=None,
     ) -> None:
         self.data_dir = data_dir
         self.base_url = base_url.rstrip("/")
@@ -427,6 +479,7 @@ class Store:
         self.default_theme = themes.DEFAULT
         self.open_browser = open_browser
         self.link_suffix = link_suffix  # e.g. "?t=token" when serving beyond localhost
+        self.hosted = hosted  # hosted.Hosted in hosted mode: owners, shares and limits apply
         self.loop: asyncio.AbstractEventLoop | None = None
         self.sessions: dict[str, Session] = {}
         (data_dir / "walkthroughs").mkdir(parents=True, exist_ok=True)
@@ -443,6 +496,7 @@ class Store:
         root: str | None = None,
         theme: str = "",
         description: str = "",
+        owner=None,
     ) -> Session:
         if frame not in FRAMES:
             raise ValueError(f"frame must be one of {', '.join(FRAMES)}")
@@ -466,6 +520,7 @@ class Store:
             root=root,
             created=time.time(),
             updated=time.time(),
+            owner=owner.as_owner() if owner is not None else {},
         )
         s = Session(self, w)
         s.late_issues += [Issue("theme_file", p, "Fix the file; the rest of it still applies.") for p in theme_problems]
@@ -507,14 +562,32 @@ class Store:
             s._playable.set()
         return s
 
-    def by_handle(self, handle: str) -> Session:
+    def by_handle(self, handle: str, user=None) -> Session:
+        """The walkthrough a handle names. In hosted mode only its owner gets it; anyone else
+        is told the handle is unknown, as for one that does not exist."""
         wid, _, key = (handle or "").strip().partition(".")
         s = self.get(wid)
-        if s is None or not secrets.compare_digest(s.w.key, key):
+        if s is None or not secrets.compare_digest(s.w.key, key) or (self.hosted and not access.owns(s.w, user)):
             raise ValueError("unknown handle; use the handle returned by start_walkthrough")
         return s
 
-    def list(self, limit: int = 50) -> list[dict]:
+    def viewable(self, wid: str, user=None) -> Session | None:
+        """The walkthrough for a page or file request: in hosted mode only for its owner and
+        those it is shared with."""
+        s = self.get(wid)
+        if s is None or (self.hosted and not access.can_view(s.w, user)):
+            return None
+        return s
+
+    def owned(self, wid: str, user=None) -> Session | None:
+        s = self.get(wid)
+        if s is None or (self.hosted and not access.owns(s.w, user)):
+            return None
+        return s
+
+    def list(self, limit: int = 50, user=None) -> list[dict]:
+        """Recent walkthroughs, newest change first. In hosted mode only those `user` may see,
+        each with its `role` ("yours" or "shared"); shared ones carry no handle."""
         from .export import timeline_total
 
         out = []
@@ -525,6 +598,9 @@ class Store:
             try:
                 data = json.loads(st.read_text())
             except json.JSONDecodeError:
+                continue
+            role = access.role(data, user) if self.hosted else ""
+            if self.hosted and not role:
                 continue
             out.append(
                 {
@@ -542,8 +618,26 @@ class Store:
                     "url": f"{self.base_url}/w/{data['id']}{self.link_suffix}",
                 }
             )
+            if self.hosted:
+                out[-1]["role"] = role
+                out[-1]["owner"] = (data.get("owner") or {}).get("email", "")
+                if role != "yours":
+                    del out[-1]["handle"]
         out.sort(key=lambda r: r["updated"], reverse=True)
         return out[:limit]
+
+    def size(self, wid: str) -> int:
+        """Bytes a walkthrough keeps: its folder (state, exports) and the audio it plays."""
+        d = self.walk_dir(wid)
+        total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) if d.is_dir() else 0
+        try:
+            data = json.loads((d / "state.json").read_text())
+        except (OSError, ValueError):
+            return total
+        for key in {x.get("key") for sl in data.get("slides", []) for x in sl.get("says", []) if x.get("key")}:
+            f = self.narrator.audio_path(key)
+            total += f.stat().st_size if f.is_file() else 0
+        return total
 
     def delete(self, wid: str) -> bool:
         if not ID_RE.match(wid or ""):
