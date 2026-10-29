@@ -79,6 +79,10 @@ The gallery at `https://<your name>/` lists each person's walkthroughs and those
 | **TLS** | Caddy, with automatic certificates |
 | **Logs** | sign-ins, approved clients, and each tool call: user, tool, walkthrough and seconds. Never narration, code or tokens |
 
+**Chromium on Ubuntu 23.10 and later:** the host also forbids unprivileged user namespaces to processes whose AppArmor profile does not grant them, and Docker's default AppArmor profile does not. There the sandbox fails until you lift the restriction on the host, `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (and a line in `/etc/sysctl.d/` to keep it), or give the container an AppArmor profile that allows `userns`. `showntell doctor` in the container shows which: the `chromium sandbox` row. CI does the first before its container check.
+
+**Checking a build:** `scripts/container_check.sh` builds the image, runs it locked down as the compose file does with the dev login and fake speech, and drives one walkthrough through MCP to a finish check and an MP4 export. CI runs it on pull requests that touch the image, `deploy/` or hosted-mode code.
+
 **Outbound traffic** is not restricted by the compose file. Restrict it with the host's firewall or an egress proxy to:
 
 | Destination | Why |

@@ -1,0 +1,40 @@
+name: Container
+
+# The hosted image, built and run locked down as deploy/compose.yaml runs it (scripts/container_check.sh).
+# Only on pull requests that touch the image, the deploy files or hosted-mode code.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - deploy/**
+      - scripts/container_check.sh
+      - scripts/container_e2e.py
+      - .github/workflows/container.yml
+      - pyproject.toml
+      - uv.lock
+      - src/showntell/hosted.py
+      - src/showntell/identity.py
+      - src/showntell/access.py
+      - src/showntell/oidc.py
+      - src/showntell/oauth.py
+      - src/showntell/signin.py
+      - src/showntell/authdb.py
+      - src/showntell/capture.py
+      - src/showntell/video.py
+      - src/showntell/text/hosted/**
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: Hosted image (build, locked-down run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Ubuntu 23.10 and later forbid unprivileged user namespaces to processes without an AppArmor
+      # profile that grants them, and Docker's default profile does not, so Chromium's sandbox cannot
+      # start in a container until this is lifted (docs/self-hosting.md, "Chromium on Ubuntu").
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: scripts/container_check.sh
