@@ -1223,7 +1223,7 @@
    }
   },
   {
-   "comment": "showntell: Chromium's sandbox makes user namespaces and chroots inside them; the default profile allows clone with namespace flags, unshare, setns and chroot only with CAP_SYS_ADMIN or CAP_SYS_CHROOT, which the container drops (docs/self-hosting.md)",
+   "comment": "showntell: Chromium's sandbox makes user namespaces and chroots inside them; the default profile allows clone with namespace flags, unshare, setns and chroot only with CAP_SYS_ADMIN or CAP_SYS_CHROOT, which the container drops (docs/self-hosting.md). Docker default from moby/profiles 6fe7deb",
    "names": [
     "chroot",
     "clone",

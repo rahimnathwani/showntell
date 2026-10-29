@@ -75,7 +75,7 @@ The gallery at `https://<your name>/` lists each person's walkthroughs and those
 | **User** | uid 10001, not root |
 | **Filesystem** | read-only root; the `showntell-data` volume (`/data`) and a 512 MB `/tmp` are the only writable places |
 | **Capabilities** | all dropped, `no-new-privileges` |
-| **Chromium** | runs with its own sandbox. That sandbox makes user namespaces and chroots inside them, which Docker's default seccomp profile allows only with capabilities the container drops, so `deploy/chromium-seccomp.json` is Docker's default profile (from moby/profiles at commit `6fe7deb`) plus `chroot`, `clone`, `setns` and `unshare`. Without it `doctor` reports `chromium sandbox` as failing and the layout check and exports stop |
+| **Chromium** | runs with its own sandbox. That sandbox makes user namespaces and chroots inside them, which Docker's default seccomp profile allows only with capabilities the container drops, so `deploy/chromium-seccomp.json` is Docker's default profile (from moby/profiles at commit `6fe7deb`, rebuilt by `scripts/seccomp_profile.py`) plus `chroot`, `clone`, `setns` and `unshare`. Without it `doctor` reports `chromium sandbox` as failing and the layout check and exports stop |
 | **TLS** | Caddy, with automatic certificates |
 | **Logs** | sign-ins, approved clients, and each tool call: user, tool, walkthrough and seconds. Never narration, code or tokens |
 
