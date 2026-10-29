@@ -23,7 +23,7 @@ You need [uv](https://docs.astral.sh/uv/). It installs Python 3.12 or newer for 
 Every agent runs the same command, which starts showntell as a stdio MCP server:
 
 ```zsh
-uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
+uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
 ```
 
 The tag after `@` installs that release; leave it off for the latest commit. Once showntell is on PyPI this shortens to `uvx showntell mcp`. Pick your agent below, then ask it something like *"walk me through how a request gets retried in this codebase"*. The agent replies with a link; open it and press play.
@@ -33,8 +33,8 @@ The first run downloads the voice model (about 330 MB on Apple silicon, 92 MB el
 The base install leaves out the browser that draws slides. With it, `finish_walkthrough` checks every slide's layout and shows the agent pictures of slides that look alike, each walkthrough gets a poster in the gallery, and MP4 export works. To add it, use the `video` extra in place of the command above and fetch Chromium (about 100 MB) once:
 
 ```zsh
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' showntell mcp
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' playwright install chromium
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' showntell mcp
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' playwright install chromium
 ```
 
 `showntell doctor` says whether the browser was found. Without it, finish tells the agent the slides were not drawn.
@@ -46,8 +46,8 @@ Install showntell, an MCP server that turns Markdown into narrated slide walkthr
 
 1. If `uv` is missing, install it: curl -LsSf https://astral.sh/uv/install.sh | sh
 2. Add a stdio MCP server named showntell to your own MCP configuration, for all my projects, with this command:
-   uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
-3. Run `uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell doctor` and fix anything it marks with ✗. The first run downloads the voice model, a few hundred MB.
+   uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
+3. Run `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell doctor` and fix anything it marks with ✗. The first run downloads the voice model, a few hundred MB.
 4. Tell me whether I need to restart you or reload MCP servers before the tools appear. Once they do, make a three-slide walkthrough of this project and send me the link.
 ```
 
@@ -56,7 +56,7 @@ Install showntell, an MCP server that turns Markdown into narrated slide walkthr
 1. Add the server for all your projects:
 
    ```zsh
-   claude mcp add --scope user showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
+   claude mcp add --scope user showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
    ```
 
 2. Start a new `claude` session and run `/mcp`; `showntell` should be listed as connected.
@@ -76,7 +76,7 @@ Claude Code 2.1.275 or later does both in one step: `claude plugin install shown
 1. Add the server (this writes `~/.codex/config.toml`):
 
    ```zsh
-   codex mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
+   codex mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
    ```
 
 2. Check it with `codex mcp list`, or run `/mcp` inside a `codex` session.
@@ -87,7 +87,7 @@ If you prefer to edit the config file yourself, add:
 ```toml
 [mcp_servers.showntell]
 command = "uvx"
-args = ["--from", "git+https://github.com/rahimnathwani/showntell@v0.1.9", "showntell", "mcp"]
+args = ["--from", "git+https://github.com/rahimnathwani/showntell@v0.2.0", "showntell", "mcp"]
 ```
 
 ### Antigravity CLI (agy)
@@ -95,7 +95,7 @@ args = ["--from", "git+https://github.com/rahimnathwani/showntell@v0.1.9", "show
 1. Add the server (this writes `~/.gemini/config/mcp_config.json`, which the Antigravity IDE shares). Flags go before the name, and the `--` keeps `--from` from being read as an agy flag:
 
    ```zsh
-   agy mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
+   agy mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
    ```
 
 2. Check it with `agy mcp list`.
@@ -119,7 +119,7 @@ Recent Pi (checked with 1.3.0) has MCP built in.
 1. Add the server (this writes `~/.pi/agent/mcp.json`; add `-l` to write `.pi/mcp.json` in the current project instead):
 
    ```zsh
-   pi mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp
+   pi mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp
    ```
 
 2. Check it with `pi mcp list`. It should say `showntell: connected, 7 tools`.
@@ -132,7 +132,7 @@ Older Pi without `pi mcp` needs the [pi-mcp-adapter](https://github.com/nicobail
   "mcpServers": {
     "showntell": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/rahimnathwani/showntell@v0.1.9", "showntell", "mcp"]
+      "args": ["--from", "git+https://github.com/rahimnathwani/showntell@v0.2.0", "showntell", "mcp"]
     }
   }
 }
@@ -143,12 +143,12 @@ Older Pi without `pi mcp` needs the [pi-mcp-adapter](https://github.com/nicobail
 - **VS Code:** add the server to your user profile from a terminal, then pick `showntell` under **MCP: List Servers**:
 
   ```zsh
-  code --add-mcp '{"name":"showntell","command":"uvx","args":["--from","git+https://github.com/rahimnathwani/showntell@v0.1.9","showntell","mcp"]}'
+  code --add-mcp '{"name":"showntell","command":"uvx","args":["--from","git+https://github.com/rahimnathwani/showntell@v0.2.0","showntell","mcp"]}'
   ```
 
 - **GitHub Copilot CLI:** its plugin system reads the same marketplace file as Claude Code: `copilot plugin marketplace add rahimnathwani/showntell`, then `copilot plugin install showntell@showntell`.
-- **Cursor, Claude Desktop and others:** add a stdio server with command `uvx` and arguments `--from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell mcp`. Most use the same `mcpServers` JSON as the older-Pi example.
-- **Over HTTP:** run `uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell serve` and connect the client to `http://localhost:4747/mcp`.
+- **Cursor, Claude Desktop and others:** add a stdio server with command `uvx` and arguments `--from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell mcp`. Most use the same `mcpServers` JSON as the older-Pi example.
+- **Over HTTP:** run `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell serve` and connect the client to `http://localhost:4747/mcp`.
 
 ### Agents in a sandbox or a chat app
 
@@ -157,9 +157,9 @@ When the agent runs in a sandbox, or you talk to it through WhatsApp, Telegram o
 ```zsh
 # inside the sandbox image, once (Debian or Ubuntu)
 apt-get install -y ffmpeg
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' playwright install --with-deps chromium
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' playwright install --with-deps chromium
 # the MCP server the agent runs
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' showntell mcp --deliver file
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' showntell mcp --deliver file
 ```
 
 | Part | What happens |
@@ -178,11 +178,11 @@ I can't open links on your machine, so you'll send me walkthroughs as MP4 files.
 
 1. Install what's missing in your environment: uv (curl -LsSf https://astral.sh/uv/install.sh | sh) and ffmpeg with ffprobe (apt-get install -y ffmpeg, your package manager, or a static build on PATH).
 2. Install Chromium for video rendering:
-   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' playwright install --with-deps chromium
+   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' playwright install --with-deps chromium
    If you can't install system packages, drop --with-deps and tell me if Chromium fails to start.
 3. Add a stdio MCP server named showntell to your own MCP configuration, running inside this environment, not on a host outside it:
-   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' showntell mcp --deliver file
-4. Run `uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' showntell doctor` and fix anything marked ✗ or about video export. The first run downloads the voice model, about 100 MB.
+   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' showntell mcp --deliver file
+4. Run `uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' showntell doctor` and fix anything marked ✗ or about video export. The first run downloads the voice model, about 100 MB.
 5. If this environment is rebuilt between sessions, add steps 1 to 3 to whatever sets it up, so they persist.
 6. Once the tools appear (restart or reload MCP servers if you must), make a three-slide walkthrough on any topic, export it with export_walkthrough, and send me the MP4 as an attachment. If you have no way to attach files, tell me so instead of sending a path.
 ```
@@ -192,9 +192,9 @@ I can't open links on your machine, so you'll send me walkthroughs as MP4 files.
 ### Good to know
 
 - **One shared daemon:** the first `showntell mcp` starts a background daemon, and later ones reuse it. The voice model stays loaded and every agent shares one port. A newer copy of showntell replaces an idle daemon running older code; an older copy uses the newer daemon as it is. `showntell stop` stops it, and the next client starts its own.
-- **Checking the setup:** `uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell doctor` checks the models, speech speed, port and daemon.
+- **Checking the setup:** `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell doctor` checks the models, speech speed, port and daemon.
 - **Your walkthroughs:** http://localhost:4747/ lists them. They and their audio stay until you delete them, or run `showntell prune --older-than 60d`. The daemon log is `~/.local/share/showntell/daemon.log`, kept under 5 MB with the part before in `daemon.log.1`.
-- **Faster mornings on a Mac:** `uvx --from git+https://github.com/rahimnathwani/showntell@v0.1.9 showntell autostart on` starts the daemon at login, so even the first walkthrough of the day comes back as fast as the rest.
+- **Faster mornings on a Mac:** `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.0 showntell autostart on` starts the daemon at login, so even the first walkthrough of the day comes back as fast as the rest.
 
 ## How it works
 
@@ -285,8 +285,8 @@ After [the final attempt](#L55) the error goes back to the caller.
 An output path ending in `.mp4` renders a video. Each frame is captured by seeking the player in headless Chromium, so rendering runs faster than real time and never drops a frame: a 4.4-minute walkthrough renders in 16 to 20 s on an M-series Mac.
 
 ```zsh
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' playwright install chromium   # once
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.1.9' showntell export <id> talk.mp4
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' playwright install chromium   # once
+uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.0' showntell export <id> talk.mp4
 ```
 
 | Part | What you get |
@@ -378,7 +378,7 @@ uv run pytest -m "not slow and not browser and not mlx and not onnx"   # fast te
 uv run showntell serve --speech fake                                   # run without a voice model
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](docs/self-hosting.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](docs/self-hosting.md). Sign-in has passed its tests against a fake provider but not yet been tried against real Google or Entra.
 
 ## Who uses it
 
