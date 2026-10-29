@@ -161,6 +161,7 @@ class Hosted:
     public_url: str
     allowed_domains: list[str] = field(default_factory=list)
     rate: RateLimiter | None = None
+    chromium_sandbox: bool = True  # Chromium's own sandbox for the checks and exports; off only in tests
     _browsers: asyncio.Semaphore | None = None
 
     def __post_init__(self) -> None:
@@ -270,7 +271,9 @@ class HostedGuard:
                 challenge = self.identity.challenge().encode()
                 return await deny(send, 401, "sign in required", [(b"www-authenticate", challenge)])
             scope[SCOPE_KEY] = user
-            return await self.app(scope, receive, send)
+            if scope["method"] != "POST":
+                return await self.app(scope, receive, send)
+            return await logged_call(self.app, scope, receive, send, user)
         if path in OAUTH_PATHS:
             if path == "/register" and not self.registrations.allow(("register",)):
                 return await deny(send, 429, "too many client registrations; try again in a minute")
@@ -295,6 +298,41 @@ class HostedGuard:
                 return await deny(send, 303, "Sign in first.", [(b"location", login.encode())])
             return await deny(send, 401, "Sign in to see this page.")
         return await self.app(scope, receive, send)
+
+
+async def logged_call(app, scope, receive, send, user: User) -> None:
+    """Run one POST to /mcp and log who called which tool on which walkthrough, and how long it
+    took. Never the arguments themselves: no narration, code or tokens reach the log."""
+    body, more = b"", True
+    while more:
+        msg = await receive()
+        body += msg.get("body", b"")
+        more = msg.get("more_body", False)
+    calls = []
+    try:
+        data = json.loads(body)
+        for m in data if isinstance(data, list) else [data]:
+            if isinstance(m, dict) and m.get("method") == "tools/call":
+                params = m.get("params") or {}
+                handle = str((params.get("arguments") or {}).get("handle", ""))
+                calls.append((str(params.get("name", ""))[:60], handle.split(".", 1)[0][:64]))
+    except (ValueError, AttributeError):
+        pass
+    replayed = False
+
+    async def replay():
+        nonlocal replayed
+        if replayed:
+            return await receive()  # the client hanging up, while a response streams
+        replayed = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    t0 = time.monotonic()
+    try:
+        await app(scope, replay, send)
+    finally:
+        for tool, wid in calls:
+            log.info("tool %s by %s (%s) on %s: %.2f s", tool, user.email, user.sub, wid or "-", time.monotonic() - t0)
 
 
 def _with_headers(send):

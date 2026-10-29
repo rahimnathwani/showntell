@@ -23,6 +23,8 @@ showntell downloads these models on first run; they are not part of the package:
 | **Kokoro-82M** (weights and voices) | Apache-2.0 | https://huggingface.co/hexgrad/Kokoro-82M, via mlx-community/Kokoro-82M-bf16 and onnx-community/Kokoro-82M-v1.0-ONNX-timestamped |
 | **spaCy en_core_web_sm** 3.8.0 | MIT | https://github.com/explosion/spacy-models |
 
+`deploy/chromium-seccomp.json` is Docker's default seccomp profile (moby/profiles `seccomp/default.json`, commit 6fe7deb, Apache-2.0, https://github.com/moby/profiles) with one rule added for Chromium's sandbox.
+
 Runtime dependencies are installed from PyPI under their own licences. The optional `espeak` extra installs espeak-ng (GPL-3.0); it is not installed by default.
 
 The full licence texts of the bundled libraries are in `src/showntell/static/vendor/LICENSES/`.

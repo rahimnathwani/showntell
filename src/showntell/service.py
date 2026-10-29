@@ -253,7 +253,12 @@ class LocalService:
         from .identity import SESSION_COOKIE, User
 
         session = h.capture_session(User.from_owner(s.w.owner), ttl + 30)
-        return {"url": f"{h.internal_url}/w/{s.w.id}/", "cookie": (SESSION_COOKIE, session.id), "only_origin": True}
+        return {
+            "url": f"{h.internal_url}/w/{s.w.id}/",
+            "cookie": (SESSION_COOKIE, session.id),
+            "only_origin": True,
+            "sandbox": h.chromium_sandbox,
+        }
 
     async def preview(self, handle: str, slides: list[str] | None = None, short: int = 360, user=None) -> dict:
         """Pictures of slides as the viewer sees them once fully revealed, for the agent to check."""
@@ -337,7 +342,7 @@ class LocalService:
         s.save_now()  # the exporters read the saved state
         data_dir = self.store.data_dir
         # Hosted: one browser, no requests beyond the export's own server, and a time limit.
-        hosted_kw = {"workers": 1, "only_origin": True} if h else {}
+        hosted_kw = {"workers": 1, "only_origin": True, "sandbox": h.chromium_sandbox} if h else {}
         try:
             if format == "mp4":
                 async with self._browser() if h else contextlib.nullcontext():

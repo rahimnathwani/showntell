@@ -1,0 +1,8 @@
+# TLS in front of showntell, with certificates from Let's Encrypt (docs/self-hosting.md).
+{$SHOWNTELL_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy showntell:4747 {
+		# Live updates are a server-sent event stream: pass every event on at once.
+		flush_interval -1
+	}
+}

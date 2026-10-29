@@ -1,0 +1,9 @@
+# Only what the image builds from: the project files, its licences and src/.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!src/
+src/**/__pycache__

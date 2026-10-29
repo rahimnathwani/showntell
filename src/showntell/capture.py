@@ -128,8 +128,10 @@ class Capturer:
         browser=None,
         cookie: tuple[str, str] | None = None,
         only_origin: bool = False,
+        sandbox: bool = False,
     ) -> None:
         self.url = url
+        self.sandbox = sandbox  # Chromium's own sandbox, which Playwright turns off unless asked (hosted mode asks)
         self.cookie = cookie  # (name, value) for the page's origin: hosted mode's session for the owner
         self.only_origin = only_origin  # abort every request to another origin (hosted mode)
         self.short = short
@@ -147,7 +149,7 @@ class Capturer:
         if self._browser is None:
             pw = await require_playwright()().start()
             self._own.append(pw.stop)
-            self._browser = await launch(pw)
+            self._browser = await launch(pw, self.sandbox)
             self._own.append(self._browser.close)
         self.frame_name = await _frame_of(self.url, self.cookie)
         native = FRAMES.get(self.frame_name, FRAMES["landscape"])
@@ -200,10 +202,11 @@ class Capturer:
         return await self.page.evaluate("window.__showntell.renderErrors || []")
 
 
-async def launch(pw):
-    """Headless Chromium, with a clear message when the browser is not installed."""
+async def launch(pw, sandbox: bool = False):
+    """Headless Chromium, with a clear message when the browser is not installed. `sandbox` keeps
+    Chromium's sandbox on (Playwright passes --no-sandbox otherwise)."""
     try:
-        return await pw.chromium.launch()
+        return await pw.chromium.launch(chromium_sandbox=sandbox)
     except Exception as e:
         if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
             raise CaptureUnavailable("Playwright's Chromium is not installed", install_hint()) from e
@@ -251,11 +254,12 @@ async def capture_frames_async(
     measure: bool = False,
     cookie: tuple[str, str] | None = None,
     only_origin: bool = False,
+    sandbox: bool = False,
 ) -> list[bytes]:
     """PNG bytes of the player at each time (seconds), for a player link or an exported folder.
     `measure` waits for the player's layout checks on each slide, which report to a live link."""
     with player_url(source) as url:
-        async with Capturer(url, short=short, captions=captions, cookie=cookie, only_origin=only_origin) as c:
+        async with Capturer(url, short=short, captions=captions, cookie=cookie, only_origin=only_origin, sandbox=sandbox) as c:
             out, last_key, last_png = [], None, b""
             for t in times:
                 key = await c.seek(t, measure)

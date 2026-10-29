@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import json
 import re
+import sys
 import time
 from types import SimpleNamespace
 
@@ -60,6 +61,9 @@ async def running(tmp_path, port: int, narrator: Narrator, limits: Limits | None
     h = hosted.Hosted(
         cfg.limits, Identity(StubLogin(TOKENS), secure_cookie=False), f"http://127.0.0.1:{port}", cfg.base_url, ["example.com"]
     )
+    # Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 (CI) restricts; the
+    # container image keeps it on (docs/self-hosting.md).
+    h.chromium_sandbox = sys.platform == "darwin"
     store = Store(cfg.data_dir, cfg.base_url, narrator, hosted=h)
     store.loop = asyncio.get_running_loop()
     service = LocalService(store, layout_check=layout_check)
@@ -602,3 +606,15 @@ async def test_the_share_control_changes_shares_through_the_same_checks(srv):
         assert r.json()["shares"] == [] and r.json()["company"] is False
         assert (await c.post(f"/w/{wid}/shares", json={"company": True})).status_code == 403  # no CSRF token
     assert srv.store.get(wid).w.company is False
+
+
+async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):
+    secret = "the narration is private"
+    with caplog.at_level("INFO", logger="showntell.hosted"):
+        async with mcp_as(srv, "alice@example.com") as alice:
+            handle = (await start(alice))["handle"]
+            await alice.call_tool("add_slides", {"handle": handle, "markdown": f"## S\n\n{secret}.\n"})
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("tool ")]
+    assert any(m.startswith("tool start_walkthrough by alice@example.com") for m in lines)
+    assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: ") for m in lines)
+    assert not any(secret in r.getMessage() or "tok-alice" in r.getMessage() for r in caplog.records)

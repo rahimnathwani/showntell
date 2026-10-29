@@ -113,7 +113,7 @@ Each is `SHOWNTELL_QUOTA_<NAME>`: `NARRATION_MIN`, `SLIDES`, `MARKDOWN_KB`, `WRI
 ## Process
 
 - **One process for everyone:** user input is never run as code; Chromium has its own sandbox. Per-user processes would load the voice model and Chromium once each.
-- **Container:** non-root user, read-only root filesystem, the data folder as the only writable volume, Chromium sandbox on (no `--no-sandbox`), default seccomp profile.
+- **Container:** non-root user, read-only root filesystem, the data folder as the only writable volume, all capabilities dropped, Chromium sandbox on (no `--no-sandbox`), and Docker's default seccomp profile plus the four calls the sandbox needs (see **Phase 3 as built**).
 - **TLS:** a reverse proxy in front; the compose file ships Caddy (self-hosted, automatic certificates).
 - **Logs:** user key, walkthrough ID, tool, timing. No narration, code or tokens.
 
@@ -230,6 +230,15 @@ What phase 1 decided where the design was open, and where it changed the design.
 
 - **Clearing unused registered clients**, and per-address limits on `/register` (behind a proxy every request comes from the proxy).
 - **Pinning a metadata document's resolved address** for its fetch.
+
+## Phase 3 as built
+
+- **Files:** `Dockerfile` (Python 3.13 slim, uv, ffmpeg, Playwright's Chromium, the `video` and `hosted` extras), `deploy/compose.yaml` with Caddy, `deploy/Caddyfile`, `deploy/.env.example`, `deploy/chromium-seccomp.json`, and [self-hosting.md](self-hosting.md) with the Google and Entra registration steps. `showntell doctor` gains rows for the hosted settings, the provider's discovery document and Chromium's sandbox.
+- **Seccomp (a design change):** the design asked for the sandbox on under Docker's default seccomp profile. Built and run (Docker 29.8, linux/arm64), that fails: the sandbox makes user namespaces and chroots inside them, and the default profile allows `clone` with namespace flags, `unshare`, `setns` and `chroot` only with `CAP_SYS_ADMIN` or `CAP_SYS_CHROOT`, which the container drops. Giving the container those capabilities would grant far more than the sandbox needs, and `--no-sandbox` would leave Chromium with none of its own, so the compose file uses Docker's default profile (moby/profiles at `6fe7deb`) plus an unconditional allow for exactly those four calls. Verified: with it, as uid 10001 with every capability dropped, `no-new-privileges` and a read-only root, Chromium starts sandboxed, the finish check draws the slides and an MP4 exports.
+- **Sandbox in hosted mode:** Playwright passes `--no-sandbox` unless asked, so hosted mode now asks (`Hosted.chromium_sandbox`). The tests turn it off on Linux, where Ubuntu 24.04 runners forbid unprivileged user namespaces; macOS keeps it on.
+- **Outbound traffic (a design gap):** the design limits it to the provider and the voice model download. Client ID metadata documents add a third kind of destination: the hosts of the clients' own metadata documents, which showntell fetches. The compose file restricts no outbound traffic; self-hosting.md lists what a firewall or egress proxy must allow.
+- **Tool call logs:** `HostedGuard` reads the tool name and handle from each `/mcp` call and logs the user, tool, walkthrough and time once the response ends; the arguments never reach the log.
+- **Not tried against real providers:** the sign-in and token tests run against `tests/fake_oidc.py`. The manual run per provider (sign in through Google and Entra, add the server to claude.ai and to Claude Code) is still to do.
 
 ## Open questions
 

@@ -170,6 +170,7 @@ async def _render_frames(
     motion: bool,
     quiet: bool,
     only_origin: bool = False,
+    sandbox: bool = False,
 ) -> tuple[list[Path], dict]:
     async_playwright = require_playwright()
     bounds = [round(n * k / workers) for k in range(workers + 1)]
@@ -178,7 +179,7 @@ async def _render_frames(
     progress = [0]
     async with async_playwright() as pw:
         # One browser per worker: screenshots of pages in one browser queue on its compositor.
-        browsers = await asyncio.gather(*(launch(pw) for _ in ranges))
+        browsers = await asyncio.gather(*(launch(pw, sandbox) for _ in ranges))
         try:
             tasks = [
                 asyncio.create_task(_render_range(br, url, fps, a, b, seg, image, captions, motion, progress, only_origin))
@@ -328,11 +329,13 @@ def render_mp4(
     quiet: bool = False,
     max_bytes: int = 0,
     only_origin: bool = False,
+    sandbox: bool = False,
 ) -> dict:
     """Render walkthrough `wid` to an MP4 at `out`. Returns timing and frame counts. With
     `max_bytes`, a larger file is shrunk to fit (fit_size) or the export fails. `motion` keeps the
     idle motion (a drawing's breathing, a held close-up's creep), which makes every held frame new.
-    `only_origin` aborts every browser request beyond the export's own loopback server (hosted mode)."""
+    `only_origin` aborts every browser request beyond the export's own loopback server, and `sandbox`
+    keeps Chromium's sandbox on (both hosted mode)."""
     require_ffmpeg()
     try:
         require_playwright()
@@ -352,7 +355,7 @@ def render_mp4(
         workers = max(1, min(workers, n))
         with serve_folder(folder) as url:
             try:
-                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, motion, quiet, only_origin))
+                segs, stats = asyncio.run(_render_frames(url, fps, n, workers, work, image, captions, motion, quiet, only_origin, sandbox))
             except CaptureUnavailable as e:
                 raise SystemExit(f"MP4 export: {e}") from e
         if abs(stats["total"] - total) > 0.05:
