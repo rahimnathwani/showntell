@@ -1,6 +1,7 @@
 """MCP tools and the web side: player pages, live updates, audio, health and the shim's RPC."""
 
-from __future__ import annotations
+# No `from __future__ import annotations`: the tools' `Field(description=arg_text(...))` must be
+# evaluated inside `create_mcp`, where `arg_text` reads the client's delivery mode and hosted text.
 
 import asyncio
 import html
@@ -579,9 +580,6 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     for name, p in texts(deliver, hosted)["prompts"].items():
         _register_prompt(mcp, name, p)
 
-    if hosted:
-        _override_arg_text(mcp, texts(deliver, hosted)["tools"])
-
     if not hosted:  # a static resource gets no caller, so a hosted server lists through list_walkthroughs
 
         @mcp.resource(
@@ -615,16 +613,6 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         return await service.source(wid, **who(ctx))
 
     return mcp
-
-
-def _override_arg_text(mcp: MCPServer, tools: dict) -> None:
-    """Put the hosted wording into the argument schemas. The `Field(description=...)` in each
-    signature is evaluated later, against this module's globals, so it reads the local text."""
-    for name, tool in mcp._tool_manager._tools.items():
-        props = tool.parameters.get("properties", {})
-        for arg, desc in tools.get(name, {}).get("args", {}).items():
-            if arg in props and desc:
-                props[arg]["description"] = desc + (" " + ", ".join(VOICES) + "." if arg == "voice" else "")
 
 
 def _register_prompt(mcp: MCPServer, name: str, p: dict) -> None:

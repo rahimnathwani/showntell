@@ -423,6 +423,17 @@ async def test_file_delivery_never_offers_the_link(service, tmp_path):
         assert url not in text(r) and "export_walkthrough" in text(r)
 
 
+async def test_file_delivery_argument_text_reaches_the_schema(service):
+    """The text/file/ wording for an argument replaces the local one in the tool's schema."""
+    from showntell.server import texts
+
+    want = texts("file")["tools"]["start_walkthrough"]["args"]["frame"]
+    assert want != texts("link")["tools"]["start_walkthrough"]["args"]["frame"]
+    async with Client(create_mcp(service, deliver="file")) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    assert tools["start_walkthrough"].input_schema["properties"]["frame"]["description"] == want
+
+
 async def test_link_delivery_guide_still_says_to_send_the_link(mcp):
     async with mcp as client:
         h = await start(client, opening=OPENING)
