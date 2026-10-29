@@ -8,38 +8,13 @@
 <meta property="og:title" content="{{TITLE}}">
 {{DESCRIPTION}}
 <link rel="icon" href="{{STATIC}}/icon.svg" type="image/svg+xml">
-<script>
-// The viewer's own theme choice (?theme= or the menu) wins over the walkthrough's, before first paint.
-(function () {
-  var t = new URLSearchParams(location.search).get("theme");
-  try { t = t || JSON.parse(localStorage.getItem("showntell.theme") || "null"); } catch (e) {}
-  if (t && /^(dark|light|paper|contrast|night|ocean|studio)$/.test(t)) document.documentElement.dataset.theme = t;
-})();
-</script>
+<script src="{{STATIC}}/boot.js"></script>
 <link rel="stylesheet" href="{{STATIC}}/themes.css">
 <link rel="stylesheet" href="{{STATIC}}/player.css">
-<script>
-// Errors before the player's modules load (a missing vendor file, a syntax error) would otherwise
-// go unreported: keep them, and send them ourselves if the player never starts.
-(function () {
-  var early = window.__showntellEarly = [];
-  addEventListener("error", function (e) {
-    var t = e.target, src = t && (t.src || t.href);
-    early.push(src && t !== window ? "could not load " + src : String(e.message || "script error"));
-  }, true);
-  addEventListener("unhandledrejection", function (e) { early.push(String((e.reason && e.reason.message) || e.reason)); });
-  setTimeout(function () {
-    var key = document.body && document.body.dataset.reportKey;
-    if (window.__showntellStarted || !early.length || !key) return;
-    fetch("report", { method: "POST", headers: { "Content-Type": "application/json", "X-Report-Key": key },
-      body: JSON.stringify({ code: "player_error", message: "The player did not start: " + early.join("; ") }) });
-  }, 8000);
-})();
-</script>
 <script src="{{STATIC}}/vendor/hljs/highlight.min.js"></script>
 <script type="module" src="{{STATIC}}/js/main.js"></script>
 </head>
-<body data-live="{{LIVE}}" data-report-key="{{REPORT_KEY}}" data-static="{{STATIC}}">
+<body data-live="{{LIVE}}" data-report-key="{{REPORT_KEY}}" data-csrf="{{CSRF}}" data-static="{{STATIC}}">
 <div id="app">
   <main id="viewport" aria-label="Walkthrough">
     <div id="stage">

@@ -32,7 +32,7 @@ footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; }
 </style>
 </head>
-<body>
+<body data-csrf="{{CSRF}}">
 <main>
   <header><img src="/static/icon.svg" alt=""><h1>showntell</h1></header>
   <p class="lede">Narrated walkthroughs made by your coding agent, voiced on this machine.</p>
@@ -41,15 +41,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em
   </ul>
   <footer>showntell {{VERSION}} · Ask your agent for a walkthrough, or run <code>showntell play file.md</code>.</footer>
 </main>
-<script>
-document.getElementById("list").addEventListener("click", async (e) => {
-  const btn = e.target.closest(".del");
-  if (!btn) return;
-  const li = btn.closest("li");
-  if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "Confirm"; setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "Delete"; }, 3000); return; }
-  const r = await fetch(`/w/${li.dataset.id}/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-  if (r.ok) li.remove();
-});
-</script>
+<script src="/static/gallery.js"></script>
 </body>
 </html>

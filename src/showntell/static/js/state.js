@@ -65,7 +65,9 @@ export function report(message, code = "player_error", slide = "") {
   (metrics.findings ||= []).push({ code, slide, message });
   if (!LIVE || reported.has(message)) return;
   reported.add(message);
-  fetch("report", { method: "POST", headers: { "Content-Type": "application/json", "X-Report-Key": REPORT_KEY }, body: JSON.stringify({ message, code, slide }) }).catch(() => {});
+  const headers = { "Content-Type": "application/json", "X-Report-Key": REPORT_KEY };
+  if (body.dataset.csrf) headers["X-CSRF-Token"] = body.dataset.csrf; // hosted mode
+  fetch("report", { method: "POST", headers, body: JSON.stringify({ message, code, slide }) }).catch(() => {});
 }
 window.addEventListener("error", (e) => report(`Player error: ${e.message}`));
 for (const m of window.__showntellEarly || []) report(`Before the player started: ${m}`);

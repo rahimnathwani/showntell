@@ -744,6 +744,7 @@ def render_player(
     tokens: dict | None = None,
     description: str = "",
     poster: str = "",
+    csrf: str = "",
 ) -> str:
     from .themes import THEMES, clean_tokens, style_attr
 
@@ -761,13 +762,14 @@ def render_player(
         .replace("{{THEME}}", theme)
         .replace("{{TOKENS}}", style)
         .replace("{{REPORT_KEY}}", report_key if live else "")
+        .replace("{{CSRF}}", html.escape(csrf))
         .replace("{{STATIC}}", static)
         .replace("{{LIVE}}", "1" if live else "0")
         .replace("{{VERSION}}", __version__)
     )
 
 
-def render_index(rows: list[dict], suffix: str) -> str:
+def render_index(rows: list[dict], suffix: str, csrf: str = "") -> str:
     items = []
     for r in rows:
         when = time.strftime("%d %b %Y, %H:%M", time.localtime(r["created"]))
@@ -780,4 +782,5 @@ def render_index(rows: list[dict], suffix: str) -> str:
             f'<button class="del" title="Delete" aria-label="Delete {html.escape(r["title"])}">Delete</button></li>'
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
-    return (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    return page.replace("{{CSRF}}", html.escape(csrf))
