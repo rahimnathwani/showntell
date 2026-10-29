@@ -101,7 +101,7 @@ git pull && docker compose -f deploy/compose.yaml up -d --build
 
 ## Trying it on one machine first
 
-Without a provider, `SHOWNTELL_DEV_USERS` gives a stand-in login for a few named addresses, for a trial on your own computer only: it works only with `SHOWNTELL_HOST` on loopback and an `http://localhost` public URL, and the log prints each user's bearer token and sign-in link. Never use it in production.
+Without a provider, `SHOWNTELL_DEV_USERS` gives a stand-in login for a few named addresses, for a trial on your own computer only: it works only with `SHOWNTELL_HOST` on loopback and an `http://localhost` public URL, refuses any request from another machine or through a proxy (one carrying `X-Forwarded-For`, `Forwarded` or `X-Real-IP`), and the log prints each user's bearer token and sign-in link. Never use it in production.
 
 ```sh
 SHOWNTELL_MODE=hosted SHOWNTELL_PUBLIC_URL=http://localhost:4747 SHOWNTELL_DEV_USERS=you@example.com \

@@ -44,7 +44,12 @@ OPEN_PATHS = ("/static/", "/health", "/dev/login", "/login", "/oidc/", "/oauth/c
 OAUTH_PATHS = ("/authorize", "/token", "/register", "/revoke")
 PAGE_RE = re.compile(r"^/(w/[A-Za-z0-9_-]{16,64}/?)?$")  # the gallery and the player: worth a sign-in redirect
 WRITING_STALE_S = 3600.0
-REGISTRATIONS_PER_MIN = 30  # a walkthrough untouched this long no longer counts as in progress
+REGISTRATIONS_PER_MIN = 30
+PROXY_HEADERS = (
+    "x-forwarded-for",
+    "forwarded",
+    "x-real-ip",
+)  # any of them: the request came through a proxy  # a walkthrough untouched this long no longer counts as in progress
 
 
 @functools.cache
@@ -258,6 +263,12 @@ class HostedGuard:
             return await self.app(scope, receive, send)
         send = _with_headers(send)
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope.get("headers", [])}
+        if getattr(self.identity.login, "loopback_only", False):
+            peer = (scope.get("client") or ("", 0))[0]
+            if not _is_loopback(peer) or any(h in headers for h in PROXY_HEADERS):
+                # The dev login is for one machine: a proxy in front, or anyone else, means it is not.
+                log.warning("dev login refused a request from %s%s", peer or "?", " through a proxy" if _is_loopback(peer) else "")
+                return await deny(send, 403, "the dev login serves only requests made on this machine, never through a proxy")
         host = headers.get("host", "").lower()
         hostname = host[1 : host.index("]")] if host.startswith("[") and "]" in host else host.rsplit(":", 1)[0]
         if hostname != self.public_host and not _is_loopback(hostname):

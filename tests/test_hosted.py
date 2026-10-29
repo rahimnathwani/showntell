@@ -618,3 +618,24 @@ async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):
     assert any(m.startswith("tool start_walkthrough by alice@example.com") for m in lines)
     assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: ") for m in lines)
     assert not any(secret in r.getMessage() or "tok-alice" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("header", ["X-Forwarded-For", "Forwarded", "X-Real-IP"])
+async def test_the_dev_login_refuses_requests_through_a_proxy(srv, header):
+    value = "for=203.0.113.9" if header == "Forwarded" else "203.0.113.9"
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        for method, path in (("GET", "/health"), ("GET", f"/dev/login?token={TOKENS['alice@example.com']}"), ("POST", "/mcp")):
+            r = await c.request(method, path, headers={header: value, "Authorization": f"Bearer {TOKENS['alice@example.com']}"})
+            assert r.status_code == 403 and "never through a proxy" in r.text, (method, path)
+
+
+async def test_the_dev_login_refuses_other_machines(srv):
+    transport = httpx.ASGITransport(app=build_app(srv.cfg, srv.service, "rpc-token", time.time()), client=("192.0.2.7", 50000))
+    async with httpx.AsyncClient(transport=transport, base_url=srv.url) as c:
+        r = await c.get(f"/dev/login?token={TOKENS['alice@example.com']}")
+        assert r.status_code == 403
+        r = await c.post("/mcp", json={}, headers={"Authorization": f"Bearer {TOKENS['alice@example.com']}"})
+        assert r.status_code == 403
+    transport = httpx.ASGITransport(app=build_app(srv.cfg, srv.service, "rpc-token", time.time()), client=("127.0.0.1", 50000))
+    async with httpx.AsyncClient(transport=transport, base_url=srv.url) as c:
+        assert (await c.get("/health")).status_code == 200  # the same app, from this machine

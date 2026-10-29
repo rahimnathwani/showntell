@@ -142,10 +142,12 @@ class StubLogin:
     """A fixed list of users, each with a bearer token, for tests and trials on one machine.
 
     Turned on only by `SHOWNTELL_DEV_USERS` with a loopback bind and a loopback public URL
-    (`hosted.check_config` refuses anything else), and announced in the log at every start.
+    (`hosted.check_config` refuses anything else), and announced in the log at every start. As a
+    backstop, every request from another machine or carrying a proxy header is refused.
     Tokens persist in `dev-logins.json` (mode 0600) in the data folder."""
 
     name = "dev login"
+    loopback_only = True  # HostedGuard refuses requests from other machines or through a proxy
 
     def __init__(self, tokens: dict[str, str]) -> None:
         # token -> email
