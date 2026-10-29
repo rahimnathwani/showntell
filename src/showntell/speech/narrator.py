@@ -1,13 +1,17 @@
 """The speech worker: one thread, a priority queue, and a content-addressed audio cache.
 
 Jobs are ordered by their position inside their walkthrough, so the opening narration of a
-new walkthrough jumps ahead of a backlog from another one. Audio files are named by a hash
-of model, voice, speed and spoken text; a repeat request is answered from disk.
+new walkthrough jumps ahead of a backlog from another one. On a hosted server each user has
+their own such queue and the worker takes from them in turn, so one user's long walkthrough
+never holds up another's. Audio files are named by a hash of model, voice, speed and spoken
+text; a repeat request is answered from disk.
 """
 
 from __future__ import annotations
 
+import collections
 import hashlib
+import heapq
 import itertools
 import json
 import logging
@@ -40,12 +44,55 @@ class _Job:
     speed: float
 
 
+class FairQueue:
+    """A priority queue per user, served round-robin: `get` takes the most urgent job of the user
+    whose turn it is, then moves that user to the back. With one user (local mode) it is a plain
+    priority queue."""
+
+    def __init__(self) -> None:
+        self._heaps: dict[str, list] = {}
+        self._turns: collections.deque[str] = collections.deque()
+        self._cv = threading.Condition()
+        self._n = 0
+
+    def put(self, user: str, item: tuple) -> None:
+        with self._cv:
+            if user not in self._heaps:
+                self._heaps[user] = []
+                self._turns.append(user)
+            heapq.heappush(self._heaps[user], item)
+            self._n += 1
+            self._cv.notify()
+
+    def get(self, block: bool = True) -> tuple:
+        with self._cv:
+            while not self._n:
+                if not block:
+                    raise queue.Empty
+                self._cv.wait()
+            user = self._turns.popleft()
+            heap = self._heaps[user]
+            item = heapq.heappop(heap)
+            self._n -= 1
+            if heap:
+                self._turns.append(user)
+            else:
+                del self._heaps[user]
+            return item
+
+    def get_nowait(self) -> tuple:
+        return self.get(block=False)
+
+    def qsize(self) -> int:
+        return self._n
+
+
 class Narrator:
     def __init__(self, backend: Backend, cache_dir: Path, status: Status | None = None) -> None:
         self.backend = backend
         self.cache_dir = cache_dir
         self.status = status or Status()
-        self._q: queue.PriorityQueue = queue.PriorityQueue()
+        self._q = FairQueue()
         self._seq = itertools.count()
         self._waiting: dict[str, list[Done]] = {}
         self._lock = threading.Lock()
@@ -91,8 +138,9 @@ class Narrator:
                 return None
         return None
 
-    def request(self, key: str, spoken: Spoken, voice: str, speed: float, priority: int, done: Done) -> None:
-        """Voice `spoken` unless cached; `done(result)` runs on the speech thread or immediately."""
+    def request(self, key: str, spoken: Spoken, voice: str, speed: float, priority: int, done: Done, user: str = "") -> None:
+        """Voice `spoken` unless cached; `done(result)` runs on the speech thread or immediately.
+        `user` picks the queue it waits in (hosted mode); local mode has one."""
         hit = self.cached(key)
         if hit is not None:
             self.stats["cache_hits"] += 1
@@ -103,7 +151,7 @@ class Narrator:
                 self._waiting[key].append(done)
                 return
             self._waiting[key] = [done]
-        self._q.put((priority, next(self._seq), _Job(key, spoken, voice, speed)))
+        self._q.put(user, (priority, next(self._seq), _Job(key, spoken, voice, speed)))
 
     def audio_path(self, key: str) -> Path:
         return self.cache_dir / f"{key}.wav"
