@@ -84,14 +84,24 @@ class BrowserSessions:
 
 
 class Login(Protocol):
-    """Where users come from. Phase 2's provider sign-in implements the same three members."""
+    """Where users come from: the stub (`StubLogin`) or the company's provider (`signin.OIDCLogin`)."""
 
     name: str
 
-    def user_for_token(self, token: str) -> User | None: ...
+    def user_for_token(self, token: str) -> User | None:
+        """The user a bearer token on `/mcp` speaks for."""
+        ...
+
+    def login_url(self, next_: str) -> str | None:
+        """Where a browser without a session goes to sign in, or None to just refuse it."""
+        ...
+
+    def challenge(self) -> str:
+        """The `WWW-Authenticate` value for a 401 on `/mcp`."""
+        ...
 
     def routes(self, identity: Identity) -> list:
-        """Sign-in pages, as (path, methods, endpoint)."""
+        """Its pages, as Starlette routes."""
         ...
 
 
@@ -120,6 +130,12 @@ class Identity:
 
     def routes(self) -> list:
         return self.login.routes(self)
+
+    def login_url(self, next_: str) -> str | None:
+        return self.login.login_url(next_)
+
+    def challenge(self) -> str:
+        return self.login.challenge()
 
 
 class StubLogin:
@@ -152,6 +168,12 @@ class StubLogin:
     def tokens(self) -> dict[str, str]:
         return {email: tok for tok, email in self._users.items()}
 
+    def login_url(self, next_: str) -> str | None:
+        return None  # sign in with a link from the start-up log
+
+    def challenge(self) -> str:
+        return 'Bearer realm="showntell"'
+
     def user_for_token(self, token: str) -> User | None:
         for tok, email in self._users.items():
             if secrets.compare_digest(tok, token):
@@ -160,6 +182,7 @@ class StubLogin:
 
     def routes(self, identity: Identity) -> list:
         from starlette.responses import HTMLResponse, RedirectResponse
+        from starlette.routing import Route
 
         async def login(request):
             user = self.user_for_token(request.query_params.get("token", ""))
@@ -171,4 +194,4 @@ class StubLogin:
             r.headers.append("set-cookie", identity.cookie(s))
             return r
 
-        return [("/dev/login", ["GET"], login)]
+        return [Route("/dev/login", login, methods=["GET"])]

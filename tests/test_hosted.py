@@ -121,7 +121,7 @@ def wid_of(handle: str) -> str:
         ({"public_url": "http://showntell.example.com"}, "must be https://"),
         ({"public_url": "https://showntell.example.com/app"}, "must be an origin"),
         ({"public_url": "ftp://localhost"}, "must be an origin"),
-        ({"dev_users": ""}, "no sign-in yet"),
+        ({"dev_users": ""}, "hosted mode needs sign-in"),
         ({"host": "0.0.0.0"}, "only with a loopback"),
         ({"public_url": "https://showntell.example.com"}, "only with a loopback"),
         ({"deliver": "file"}, "delivers links"),
@@ -132,10 +132,9 @@ def test_hosted_mode_refuses_to_start_on_unsafe_settings(tmp_path, change, says)
         hosted.check_config(hosted_cfg(4799, tmp_path, **change))
 
 
-def test_hosted_mode_refuses_provider_sign_in_until_it_is_built(tmp_path, monkeypatch):
-    monkeypatch.setenv("SHOWNTELL_OIDC", "google")
-    with pytest.raises(SystemExit, match="not built yet"):
-        hosted.check_config(hosted_cfg(4799, tmp_path))
+def test_the_dev_login_never_runs_beside_provider_sign_in(tmp_path):
+    with pytest.raises(SystemExit, match="not both"):
+        hosted.check_config(hosted_cfg(4799, tmp_path, oidc="google", oidc_client_id="i", oidc_client_secret="s"))
 
 
 def test_a_trial_on_localhost_starts(tmp_path):

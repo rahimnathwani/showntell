@@ -131,8 +131,7 @@ def build_app(cfg: Config, service: LocalService, rpc_token: str, started: float
     if h:
         from .hosted import HostedGuard
 
-        for path, methods, endpoint in h.identity.routes():
-            mcp.custom_route(path, methods=methods)(endpoint)
+        mcp._custom_starlette_routes.extend(h.identity.routes())  # sign-in pages and the OAuth endpoints
         pub = urlparse(cfg.public_url)
         hosts += [pub.netloc, f"{pub.hostname}:*"]
         origins.append(f"{pub.scheme}://{pub.netloc}")
@@ -202,19 +201,23 @@ def serve(cfg: Config) -> None:
                 await asyncio.sleep(3600)
 
         holder["log"] = asyncio.create_task(keep_log_small())
-        if h and cfg.limits.retention_days > 0:
+        if h:
 
             async def expire() -> None:
+                """Daily: drop spent sign-in records, and walkthroughs unseen past the retention."""
                 from .prune import prune
 
                 while True:
-                    gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
-                    for row in gone["walkthroughs"]:
-                        store.sessions.pop(row["id"], None)
-                    if gone["walkthroughs"]:
-                        log.info(
-                            "retention: deleted %d walkthrough(s) unseen for %g days", len(gone["walkthroughs"]), cfg.limits.retention_days
-                        )
+                    db = getattr(h.identity.login, "db", None)
+                    if db is not None:
+                        db.sweep()
+                    if cfg.limits.retention_days > 0:
+                        gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
+                        for row in gone["walkthroughs"]:
+                            store.sessions.pop(row["id"], None)
+                        if gone["walkthroughs"]:
+                            n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
+                            log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
                     await asyncio.sleep(86400)
 
             holder["expire"] = asyncio.create_task(expire())

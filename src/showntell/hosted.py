@@ -13,6 +13,7 @@ import functools
 import ipaddress
 import json
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -38,8 +39,12 @@ SECURITY_HEADERS = [
     (b"x-frame-options", b"DENY"),
 ]
 CSRF_HEADER = "x-csrf-token"
-OPEN_PATHS = ("/static/", "/health", "/dev/login")
-WRITING_STALE_S = 3600.0  # a walkthrough untouched this long no longer counts as in progress
+OPEN_PATHS = ("/static/", "/health", "/dev/login", "/login", "/oidc/", "/oauth/consent", "/.well-known/")
+# The OAuth endpoints MCP clients call directly: form posts from other origins, no session, no CSRF.
+OAUTH_PATHS = ("/authorize", "/token", "/register", "/revoke")
+PAGE_RE = re.compile(r"^/(w/[A-Za-z0-9_-]{16,64}/?)?$")  # the gallery and the player: worth a sign-in redirect
+WRITING_STALE_S = 3600.0
+REGISTRATIONS_PER_MIN = 30  # a walkthrough untouched this long no longer counts as in progress
 
 
 @functools.cache
@@ -78,12 +83,15 @@ def check_config(cfg: Config) -> None:
         raise SystemExit("SHOWNTELL_PUBLIC_URL must be https:// (http:// only on localhost, for trials)")
     if cfg.deliver != "link":
         raise SystemExit("hosted mode delivers links: unset SHOWNTELL_DELIVER")
-    if _env_set("OIDC"):
-        raise SystemExit("sign-in with SHOWNTELL_OIDC is not built yet (hosted mode phase 2); for a local trial use SHOWNTELL_DEV_USERS")
+    if cfg.oidc and cfg.dev_users.strip():
+        raise SystemExit("set SHOWNTELL_OIDC or SHOWNTELL_DEV_USERS, not both: the dev login must never run beside real sign-in")
+    if cfg.oidc:
+        _check_oidc(cfg)
+        return
     if not cfg.dev_users.strip():
         raise SystemExit(
-            "hosted mode has no sign-in yet (phase 2). For a trial on this machine set SHOWNTELL_DEV_USERS to a comma-separated list "
-            "of emails, with a loopback SHOWNTELL_HOST and an http://localhost public URL"
+            "hosted mode needs sign-in: set SHOWNTELL_OIDC (google, entra or generic) with its client ID and secret "
+            "(docs/self-hosting.md). For a trial on this machine only, SHOWNTELL_DEV_USERS lists emails for a stand-in login"
         )
     if not cfg.loopback or not _is_loopback(url.hostname):
         raise SystemExit(
@@ -91,10 +99,28 @@ def check_config(cfg: Config) -> None:
         )
 
 
-def _env_set(name: str) -> bool:
-    import os
+def _check_oidc(cfg: Config) -> None:
+    from .oidc import GUID_RE, PRESETS
 
-    return bool(os.environ.get(f"SHOWNTELL_{name}", "").strip())
+    if cfg.oidc not in PRESETS:
+        raise SystemExit(f"SHOWNTELL_OIDC={cfg.oidc!r} must be one of {', '.join(PRESETS)}")
+    if not cfg.oidc_client_id or not cfg.oidc_client_secret:
+        raise SystemExit(
+            "SHOWNTELL_OIDC needs SHOWNTELL_OIDC_CLIENT_ID and SHOWNTELL_OIDC_CLIENT_SECRET from the provider's app registration"
+        )
+    if cfg.oidc in ("google", "generic") and not domains(cfg):
+        raise SystemExit(f"SHOWNTELL_OIDC={cfg.oidc} needs SHOWNTELL_ALLOWED_DOMAINS: without it anyone with an account could sign in")
+    if cfg.oidc == "entra" and not GUID_RE.match(cfg.entra_tenant):
+        raise SystemExit("SHOWNTELL_OIDC=entra needs SHOWNTELL_ENTRA_TENANT, the directory (tenant) ID: a GUID, not a domain")
+    if cfg.oidc == "generic":
+        iss = urlparse(cfg.oidc_issuer)
+        if not cfg.oidc_issuer or iss.scheme not in ("https", "http") or (iss.scheme == "http" and not _is_loopback(iss.hostname or "")):
+            raise SystemExit("SHOWNTELL_OIDC=generic needs SHOWNTELL_OIDC_ISSUER, the provider's https:// issuer URL")
+    try:
+        import authlib  # noqa: F401
+        import joserfc  # noqa: F401
+    except ImportError:
+        raise SystemExit("sign-in needs the hosted extra: install showntell[hosted]") from None
 
 
 def dev_emails(cfg: Config) -> list[str]:
@@ -153,11 +179,30 @@ class Hosted:
 
 
 def build(cfg: Config) -> Hosted:
-    """The hosted context for `serve`, after `check_config`. Phase 1 knows only the dev login."""
-    login = StubLogin.from_emails(dev_emails(cfg), cfg.data_dir)
-    identity = Identity(login, secure_cookie=cfg.public_url.startswith("https://"))
+    """The hosted context for `serve`, after `check_config`: sign-in with the provider, or the dev login."""
     host = cfg.host if cfg.host not in ("0.0.0.0", "::", "") else "127.0.0.1"
     internal = f"http://{'[' + host + ']' if ':' in host else host}:{cfg.port}"
+    secure = cfg.public_url.startswith("https://")
+    if cfg.oidc:
+        from .authdb import AuthDB, DBSessions
+        from .oidc import Provider, issuer_for
+        from .signin import OIDCLogin
+
+        db = AuthDB(cfg.data_dir / "auth.db")
+        provider = Provider(
+            cfg.oidc,
+            cfg.oidc_client_id,
+            cfg.oidc_client_secret,
+            issuer_for(cfg.oidc, cfg.entra_tenant, cfg.oidc_issuer),
+            cfg.base_url + "/oidc/callback",
+            domains(cfg),
+            cfg.entra_tenant,
+        )
+        identity = Identity(OIDCLogin(provider, db, cfg.base_url), sessions=DBSessions(db), secure_cookie=secure)
+        log.info("sign-in with %s (%s); MCP authorization at %s", cfg.oidc, provider.issuer, cfg.base_url)
+        return Hosted(cfg.limits, identity, internal, cfg.base_url, domains(cfg))
+    login = StubLogin.from_emails(dev_emails(cfg), cfg.data_dir)
+    identity = Identity(login, secure_cookie=secure)
     banner = "\n".join(
         f"    {email}: MCP header 'Authorization: Bearer {tok}'  browser {cfg.base_url}/dev/login?token={tok}"
         for email, tok in login.tokens().items()
@@ -193,6 +238,7 @@ class HostedGuard:
         pub = urlparse(cfg.public_url)
         self.public_host = (pub.hostname or "").lower()
         self.origins = {f"{pub.scheme}://{pub.netloc}".lower(), hosted.internal_url.lower()}
+        self.registrations = RateLimiter(REGISTRATIONS_PER_MIN)  # unauthenticated, so capped server-wide
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan" and self.on_shutdown:
@@ -221,8 +267,13 @@ class HostedGuard:
         if path == "/mcp" or path.startswith("/mcp/"):
             user = self.identity.from_bearer(headers)
             if user is None:
-                return await deny(send, 401, "sign in required", [(b"www-authenticate", b'Bearer realm="showntell"')])
+                challenge = self.identity.challenge().encode()
+                return await deny(send, 401, "sign in required", [(b"www-authenticate", challenge)])
             scope[SCOPE_KEY] = user
+            return await self.app(scope, receive, send)
+        if path in OAUTH_PATHS:
+            if path == "/register" and not self.registrations.allow(("register",)):
+                return await deny(send, 429, "too many client registrations; try again in a minute")
             return await self.app(scope, receive, send)
         session = self.identity.from_cookie(headers)
         if session is not None:
@@ -239,6 +290,9 @@ class HostedGuard:
             if session is None or not secrets.compare_digest(headers.get(CSRF_HEADER, ""), session.csrf):
                 return await deny(send, 403, "missing or wrong CSRF token")
         if session is None and not path.startswith(OPEN_PATHS):
+            login = self.identity.login_url(path + ("?" + scope["query_string"].decode() if scope.get("query_string") else ""))
+            if login and scope["method"] == "GET" and PAGE_RE.match(path):
+                return await deny(send, 303, "Sign in first.", [(b"location", login.encode())])
             return await deny(send, 401, "Sign in to see this page.")
         return await self.app(scope, receive, send)
 

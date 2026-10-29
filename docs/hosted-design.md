@@ -1,6 +1,6 @@
 # Hosted mode: design
 
-Status: phase 1 built on branch `hosted-mode`, 2026-10-28 (see **Phase 1 as built**). Phases 2 and 3 not started.
+Status: phases 1 and 2 built on branch `hosted-mode`, 2026-10-28 and 2026-10-29 (see **Phase 1 as built** and **Phase 2 as built**). Not yet tried against real Google or Entra.
 
 One showntell server for a whole company. Anyone at the company adds it to Claude (claude.ai connector, Claude Code, Desktop) by URL and signs in with the company's Google or Entra account. Walkthroughs belong to the person who made them; others see one only when the owner shares it.
 
@@ -26,9 +26,9 @@ Hosted mode is `SHOWNTELL_MODE=hosted`. Everything else about it is off unless t
 | `SHOWNTELL_ENTRA_TENANT` | `entra` only: the tenant ID (a GUID, not a domain) |
 | `SHOWNTELL_ALLOWED_DOMAINS` | Comma-separated. Required for `google` and `generic`. Empty for `entra` means anyone in the tenant |
 | `SHOWNTELL_QUOTA_*` | Per-user limits, below |
-| `SHOWNTELL_DEV_USERS` | Phase 1 only: comma-separated emails for the stub login, below |
+| `SHOWNTELL_DEV_USERS` | Trials on one machine only: comma-separated emails for the stub login, instead of `SHOWNTELL_OIDC` |
 
-The server refuses to start in hosted mode with any of these missing or with a `http://` public URL other than localhost. It also refuses `SHOWNTELL_DELIVER=file` (a hosted server delivers links) and, until phase 2, `SHOWNTELL_OIDC` (not built yet). With neither OIDC nor the stub configured it refuses with a message naming both.
+The server refuses to start in hosted mode with any of these missing or with a `http://` public URL other than localhost. It also refuses `SHOWNTELL_DELIVER=file` (a hosted server delivers links), both `SHOWNTELL_OIDC` and `SHOWNTELL_DEV_USERS` at once, an Entra tenant that is not a GUID, a generic issuer that is not HTTPS, and sign-in without the `hosted` extra (Authlib and joserfc). With neither OIDC nor the stub configured it refuses with a message naming both.
 
 ## Sign-in
 
@@ -38,9 +38,10 @@ showntell is both the MCP resource server and its own OAuth authorization server
 MCP client ──/mcp, no token──▶ 401 + WWW-Authenticate: resource_metadata
            ──discovery──────▶ /.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server
            ──register───────▶ client ID metadata document, or dynamic registration
-           ──/authorize (PKCE S256)──▶ showntell ──OIDC──▶ Google / Entra ──▶ /oidc/callback
+           ──/authorize (PKCE S256)──▶ showntell ──no session: OIDC──▶ Google / Entra ──▶ /oidc/callback
                                         checks identity and domain, records the user
-           ◀──code──  ──/token──▶ showntell access + refresh tokens (audience = <url>/mcp)
+                                        consent page: names the client and where it returns
+           ◀──code + iss──  ──/token──▶ showntell access + refresh tokens (audience = <url>/mcp)
 ```
 
 - **Spec version:** implement the latest published MCP authorization spec (check modelcontextprotocol.io at build time) and the negotiated protocol version on `/mcp`. Support client ID metadata documents and dynamic client registration both, since clients differ.
@@ -186,6 +187,43 @@ What phase 1 decided where the design was open, and where it changed the design.
 
 - **An owner index:** listings and limit checks read every `state.json`. Fine for hundreds of walkthroughs; an in-memory index by owner is the fix when it is not.
 - **Admins, uploads, retention per company:** as under **Open questions**.
+
+## Phase 2 as built
+
+### MCP authorization
+
+- **Spec:** the MCP authorization specification of 2026-07-28, the latest published when built. Dynamic client registration is deprecated there in favour of client ID metadata documents; both are served.
+- **Discovery:** a 401 on `/mcp` carries `WWW-Authenticate: Bearer resource_metadata="<url>/.well-known/oauth-protected-resource/mcp"`. Protected resource metadata is served there and at the root well-known path, naming `<url>/mcp` and showntell itself as the one authorization server. Authorization server metadata at `/.well-known/oauth-authorization-server` advertises `S256` only, `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported`, and the `none` client auth method for public clients.
+- **No scopes:** showntell has one permission, acting as the signed-in user, so it advertises no scopes and the challenge names none. A client may still register and ask for scopes; they are recorded and change nothing.
+- **Resource:** an authorization or token request naming another `resource` is refused with `invalid_target`; scheme and host case and a trailing slash are forgiven. A request without one gets a token for `<url>/mcp`, the only resource there is. Every token records its resource and `/mcp` checks it.
+- **Consent (a design addition):** the spec requires an OAuth proxy with a static client ID at the upstream provider, which showntell is, to get the user's consent for each client. After sign-in, `/oauth/consent` names the client, where its metadata lives (or that it registered itself), the host it returns to, and warns when that is the user's own computer. The buttons post JSON and the page navigates by script, because `form-action 'self'` would stop a form's redirect to the client.
+- **Issuer in the response:** the redirect back carries `iss` (RFC 9207), on errors too.
+- **Tokens:** `sta_` and `str_` prefixed random strings, SHA-256 hashed in `auth.db`. A chain starts at each code exchange; refreshing spends the old refresh token and the old access token. Reusing a spent refresh token or a used code revokes the whole chain. Code exchange and refresh both run the sign-in rule again on the claims kept from the user's last sign-in, under the current settings, and revoke the chain if it fails.
+- **Client ID metadata documents:** fetched only from public addresses (every resolved address must be global), without redirects, at most 16 KB, kept for the response's `max-age` between one minute and a day (five minutes by default). The document's `client_id` must equal its URL; redirect URIs must be HTTPS or loopback HTTP; only public clients (`none`), so `private_key_jwt` is refused. The address is checked when resolved, not pinned for the connection, so a DNS rebinding race remains in principle; the container's outbound rules are the backstop.
+- **Registration:** redirect URIs must be HTTPS or loopback HTTP. Registration is unauthenticated, so it is capped at 30 a minute server-wide. Registered clients are kept; clearing unused ones is left for later.
+
+### Where the SDK fit and where it didn't
+
+| Piece | Used | Why or why not |
+|---|---|---|
+| **Authorize, token, registration, revocation handlers** | Yes | `AuthServer` in `oauth.py` is their provider |
+| **`OAuthClientInformationFull`, the token models** | Yes | |
+| **`get_client` for metadata documents** | Yes | the provider fetches the document there when the client ID is an HTTPS URL; the handlers need nothing else |
+| **Its metadata routes** | No | they leave out `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported` and the `none` auth method |
+| **The token handler's `resource`** | Wrapped | it parses `resource` but never passes it on, so `ResourceCheck` refuses a wrong one before the handler runs |
+| **Its bearer middleware and `AuthSettings`** | No | `HostedGuard` already resolves every request; it asks the login for the challenge and the token's user |
+
+### Browser sign-in
+
+- **Library:** Authlib's HTTPX client for the code exchange, joserfc (Authlib's JOSE library; `authlib.jose` is deprecated) for the ID token: signature from the provider's JWKS, refetched once for an unknown key, `iss`, `aud` (and `azp` when there are several audiences), `exp`, `iat` and `nonce`, with a minute's leeway. Discovery is one GET whose `issuer` must equal the configured one.
+- **The flow:** `/login` keeps the state, nonce and PKCE verifier server-side and sets a ten-minute `showntell_login` cookie on `/oidc` holding the state; the callback must arrive in the same browser, which stops login CSRF. After sign-in the browser returns only to a path on this server.
+- **Sessions:** in `auth.db` (hashed ids), so restarts keep viewers signed in. Signed-out page requests (`/` and `/w/{id}/`) are sent to `/login?next=...`; other routes get 401. `POST /logout` ends the session.
+- **No signing key (a design change):** every piece of sign-in state is a random value looked up server-side, so nothing needs signing and the generated key the design mentioned is not made.
+
+### Left for later
+
+- **Clearing unused registered clients**, and per-address limits on `/register` (behind a proxy every request comes from the proxy).
+- **Pinning a metadata document's resolved address** for its fetch.
 
 ## Open questions
 

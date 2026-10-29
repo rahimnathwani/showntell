@@ -50,7 +50,12 @@ class Config:
     finish_check: bool = field(default_factory=lambda: _env("FINISH_CHECK", "1") != "0")  # layout check at finish
     mode: str = field(default_factory=lambda: _env("MODE", "local"))  # local, or hosted: docs/hosted-design.md
     dev_users: str = field(default_factory=lambda: _env("DEV_USERS", ""))  # hosted trials: emails for the stub login
-    allowed_domains: str = field(default_factory=lambda: _env("ALLOWED_DOMAINS", ""))  # hosted: who may be shared with
+    allowed_domains: str = field(default_factory=lambda: _env("ALLOWED_DOMAINS", ""))  # hosted: who may sign in and be shared with
+    oidc: str = field(default_factory=lambda: _env("OIDC", ""))  # hosted sign-in: google, entra or generic
+    oidc_client_id: str = field(default_factory=lambda: _env("OIDC_CLIENT_ID", ""))
+    oidc_client_secret: str = field(default_factory=lambda: _env("OIDC_CLIENT_SECRET", ""))
+    oidc_issuer: str = field(default_factory=lambda: _env("OIDC_ISSUER", ""))  # generic only
+    entra_tenant: str = field(default_factory=lambda: _env("ENTRA_TENANT", ""))  # entra only: the tenant ID
     limits: Limits = field(default_factory=Limits)
 
     @property
