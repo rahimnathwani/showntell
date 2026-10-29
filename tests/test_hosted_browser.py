@@ -243,18 +243,27 @@ async def test_diagrams_formulas_and_code_draw_under_the_csp(tmp_path, narrator,
             await pw.stop()
 
 
+async def pointed_off_server(s, voiced, listener) -> tuple[str, object]:
+    """A voiced walkthrough whose `pic` slide shows an image on `listener`, set past the builder's refusal."""
+    handle = await written(s, "## Picture {#pic}\n\nA [picture](#pic) of it.\n")
+    sess = s.store.get(wid_of(handle))
+    await voiced(sess)
+    slide = next(x for x in sess.w.slides if x.id == "pic")
+    slide.kind, slide.visual = "image", {"src": f"{listener.url}/metadata.png", "alt": "x"}
+    sess._changed({"pic"})
+    sess.save_now()
+    return handle, sess
+
+
 async def test_the_servers_chromium_reaches_only_showntell(tmp_path, narrator, free_port, voiced, caplog):
     """The finish check, preview and MP4 export draw the slides signed in as the owner, through the
-    guard, and abort anything addressed elsewhere, here a slide whose image points off the server."""
+    guard, and fetch nothing addressed elsewhere: here a slide whose image points off the server.
+    The finish check and preview open pages with the CSP, which stops the image in the browser;
+    the MP4 export's page has none, so there the request allowlist stops it (next test)."""
     listener = Listener()
     try:
         async with running(tmp_path, free_port, narrator, layout_check=True) as s:
-            handle = await written(s, "## Picture {#pic}\n\nA [picture](#pic) of it.\n")
-            sess = s.store.get(wid_of(handle))
-            await voiced(sess)
-            slide = next(x for x in sess.w.slides if x.id == "pic")
-            slide.kind, slide.visual = "image", {"src": f"{listener.url}/metadata.png", "alt": "x"}  # past the builder's refusal
-            sess._changed({"pic"})
+            handle, sess = await pointed_off_server(s, voiced, listener)
             async with mcp_as(s, "alice@example.com") as alice:
                 r = await alice.call_tool("finish_walkthrough", {"handle": handle})
                 assert not r.is_error, text(r)
@@ -269,6 +278,29 @@ async def test_the_servers_chromium_reaches_only_showntell(tmp_path, narrator, f
                     assert r.structured_content["download"].endswith(".mp4")
             assert listener.hits == []
             blocked = [r.getMessage() for r in caplog.records if "blocked a request" in r.getMessage()]
+            assert all(listener.url in m for m in blocked)
+    finally:
+        listener.close()
+
+
+async def test_the_request_allowlist_stops_what_no_csp_covers(tmp_path, narrator, free_port, voiced, caplog):
+    """The page MP4 export draws is a plain export folder with no CSP. Without the allowlist the
+    browser fetches the off-server image; with it the request is aborted before it leaves the
+    browser, and logged. Needs no ffmpeg: it draws one frame the way the exporter does."""
+    from showntell.capture import capture_frames_async
+    from showntell.export import export
+
+    listener = Listener()
+    try:
+        async with running(tmp_path, free_port, narrator) as s:
+            _, sess = await pointed_off_server(s, voiced, listener)
+            folder = export(s.store.data_dir, sess.w.id, tmp_path / "site")
+            at = [_end_times(sess.w)["pic"]]
+            await capture_frames_async(folder, at, only_origin=True)
+            assert listener.hits == []
+            blocked = [r.getMessage() for r in caplog.records if "blocked a request" in r.getMessage()]
             assert blocked and all(listener.url in m for m in blocked)  # asked for, and stopped in the browser
+            await capture_frames_async(folder, at)  # the control: without the allowlist the image is fetched
+            assert listener.hits == ["/metadata.png"]
     finally:
         listener.close()
