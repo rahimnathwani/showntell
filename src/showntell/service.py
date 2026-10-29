@@ -174,7 +174,13 @@ class LocalService:
             raise ValueError(
                 say("share_local", "Sharing is for hosted servers; on this machine the link works for anyone who can reach it.")
             )
-        s = self.store.by_handle(handle, user)
+        return self.share_session(self.store.by_handle(handle, user), add, remove, company)
+
+    def share_session(self, s, add: list[str] | None = None, remove: list[str] | None = None, company: bool | None = None) -> dict:
+        """The checks and the change behind both `share_walkthrough` and the page's Share control;
+        the caller has already made sure the user owns `s`. All or nothing."""
+        from .hosted import say
+
         allowed = self.store.hosted.allowed_domains
         shares = list(s.w.shares)
         for raw in add or []:

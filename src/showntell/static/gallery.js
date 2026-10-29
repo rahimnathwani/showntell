@@ -7,3 +7,9 @@ document.getElementById("list").addEventListener("click", async (e) => {
   const r = await fetch(`/w/${li.dataset.id}/delete`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": document.body.dataset.csrf || "" }, body: "{}" });
   if (r.ok) li.remove();
 });
+
+// Hosted mode with provider sign-in: the footer's Sign out button.
+document.querySelector(".signout")?.addEventListener("click", async () => {
+  await fetch("/logout", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": document.body.dataset.csrf || "" }, body: "{}" });
+  location.href = "/login";
+});

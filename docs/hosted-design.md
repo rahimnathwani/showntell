@@ -158,7 +158,7 @@ What phase 1 decided where the design was open, and where it changed the design.
 - **Unknown handles:** a write tool given someone else's handle gets the same "unknown handle" as a made-up one. The handle's key is still checked, so knowing an ID is not enough even for the owner.
 - **Live updates:** the event stream checks access again on every event and keepalive; sharing changes push an event, so removing a share or deleting the walkthrough ends open streams within moments.
 - **Walkthroughs without an owner** (a data folder reused from local mode) are visible to nobody in hosted mode.
-- **`share_walkthrough` is in phase 1:** it fell out of the data model. Emails must be in `SHOWNTELL_ALLOWED_DOMAINS` when that is set; the owner's own email is ignored. The Share control on the page is still phase 2.
+- **`share_walkthrough` is in phase 1:** it fell out of the data model. Emails must be in `SHOWNTELL_ALLOWED_DOMAINS` when that is set; the owner's own email is ignored. The Share control on the page came in phase 2.
 
 ### Disk, network and Chromium
 
@@ -219,6 +219,12 @@ What phase 1 decided where the design was open, and where it changed the design.
 - **The flow:** `/login` keeps the state, nonce and PKCE verifier server-side and sets a ten-minute `showntell_login` cookie on `/oidc` holding the state; the callback must arrive in the same browser, which stops login CSRF. After sign-in the browser returns only to a path on this server.
 - **Sessions:** in `auth.db` (hashed ids), so restarts keep viewers signed in. Signed-out page requests (`/` and `/w/{id}/`) are sent to `/login?next=...`; other routes get 401. `POST /logout` ends the session.
 - **No signing key (a design change):** every piece of sign-in state is a random value looked up server-side, so nothing needs signing and the generated key the design mentioned is not made.
+
+### The Share control
+
+- **Where:** a "Share…" row in the player's settings menu, on the owner's view only: the page gets `share.js` and `share.css` only when the viewer owns it, so local pages and shared viewers' pages are unchanged. It opens a dialog listing who it is shared with (each with Remove), an address to add, and the company-wide switch.
+- **Checks:** `GET` and `POST /w/{id}/shares`, owner only (404 for anyone else), POSTs behind the CSRF token. Both they and `share_walkthrough` call `LocalService.share_session`, so the shape and domain checks and the wake-up of open streams are the same.
+- **Sign out:** with provider sign-in, the gallery's footer has a Sign out button (`POST /logout`).
 
 ### Left for later
 

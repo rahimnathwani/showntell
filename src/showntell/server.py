@@ -20,7 +20,7 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import __version__
+from . import __version__, access
 from .build import LIMITS
 from .hosted import user_of
 from .issues import as_dict, line_text, summarize
@@ -652,7 +652,10 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
     @mcp.custom_route("/", methods=["GET"])
     async def index(request: Request) -> Response:
         user = user_of(request)
-        page = render_index(store.list(200, user), store.link_suffix, csrf=request.scope.get("showntell.csrf", ""), hosted=hosted)
+        signout = hosted and store.hosted.identity.login_url("/") is not None  # provider sign-in, not the dev login
+        page = render_index(
+            store.list(200, user), store.link_suffix, csrf=request.scope.get("showntell.csrf", ""), hosted=hosted, signout=signout
+        )
         return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/w/{wid}", methods=["GET"])
@@ -678,6 +681,7 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                 description=s.w.description,
                 poster=f"{s.url}/poster.png" if (store.walk_dir(s.w.id) / "poster.png").is_file() else "",
                 csrf=request.scope.get("showntell.csrf", ""),
+                share=hosted and access.owns(s.w, user_of(request)),
             ),
             headers={"Cache-Control": "no-store"},
         )
@@ -783,6 +787,27 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
 
     if hosted:
 
+        @mcp.custom_route("/w/{wid}/shares", methods=["GET", "POST"])
+        async def shares(request: Request) -> Response:
+            """The page's Share control, for the owner only: who it is shared with, and changes to that
+            through the same checks as share_walkthrough."""
+            s = store.owned(request.path_params["wid"], user_of(request))
+            if s is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
+            if request.method == "POST":
+                try:
+                    body = await request.json()
+                    add, remove, company = body.get("add") or [], body.get("remove") or [], body.get("company")
+                    if not all(isinstance(x, str) for x in [*add, *remove]) or company not in (None, True, False):
+                        raise ValueError("bad request")
+                    service.share_session(s, add, remove, company)
+                except ValueError as e:
+                    return JSONResponse({"error": str(e)}, status_code=400)
+                except Exception:
+                    return JSONResponse({"error": "bad request"}, status_code=400)
+            domains = store.hosted.allowed_domains
+            return JSONResponse({"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains})
+
         @mcp.custom_route("/w/{wid}/exports/{name}", methods=["GET"])
         async def exported(request: Request) -> Response:
             """An MP4 or page made by export_walkthrough, for the owner only."""
@@ -875,6 +900,7 @@ def render_player(
     description: str = "",
     poster: str = "",
     csrf: str = "",
+    share: bool = False,
 ) -> str:
     from .themes import THEMES, clean_tokens, style_attr
 
@@ -893,13 +919,18 @@ def render_player(
         .replace("{{TOKENS}}", style)
         .replace("{{REPORT_KEY}}", report_key if live else "")
         .replace("{{CSRF}}", html.escape(csrf))
+        .replace("</head>", SHARE_HEAD + "</head>" if share else "</head>")
         .replace("{{STATIC}}", static)
         .replace("{{LIVE}}", "1" if live else "0")
         .replace("{{VERSION}}", __version__)
     )
 
 
-def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = False) -> str:
+# The owner's Share control in hosted mode: a row in the settings menu and its dialog.
+SHARE_HEAD = '<link rel="stylesheet" href="{{STATIC}}/share.css">\n<script type="module" src="{{STATIC}}/share.js"></script>\n'
+
+
+def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = False, signout: bool = False) -> str:
     """The gallery. Hosted: the viewer's own walkthroughs, then those shared with them, which
     have no Delete button."""
     items = []
@@ -920,4 +951,6 @@ def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = F
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
     page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    if signout:
+        page = page.replace("</footer>", ' · <button class="signout">Sign out</button></footer>')
     return page.replace("{{CSRF}}", html.escape(csrf))

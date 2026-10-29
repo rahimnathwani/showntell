@@ -304,3 +304,48 @@ async def test_the_request_allowlist_stops_what_no_csp_covers(tmp_path, narrator
             assert listener.hits == ["/metadata.png"]
     finally:
         listener.close()
+
+
+async def saved(page) -> None:
+    """Wait for the Share dialog to report a save (a selector, not a script: the page's CSP forbids eval)."""
+    await page.wait_for_selector("#share .share-status:text-is('Saved.')")
+    await page.evaluate("() => { document.querySelector('#share .share-status').textContent = ''; }")
+
+
+async def test_the_owner_shares_from_the_page(tmp_path, narrator, free_port, voiced):
+    """The settings menu's Share… row opens the dialog; adding, removing and the company switch
+    reach the walkthrough, with no CSP violation on the way."""
+    from playwright.async_api import async_playwright
+
+    async with running(tmp_path, free_port, narrator) as s:
+        handle = await written(s, "")
+        wid = wid_of(handle)
+        await voiced(s.store.get(wid))
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch()
+            ctx = await browser.new_context(viewport={"width": 1280, "height": 720})
+            session = s.hosted.identity.sessions.create(ALICE)
+            await ctx.add_cookies([{"name": SESSION_COOKIE, "value": session.id, "url": s.url}])
+            await ctx.add_init_script(WATCH)
+            page = await ctx.new_page()
+            await page.goto(f"{s.url}/w/{wid}/")
+            await page.wait_for_selector("#share-open", state="attached")
+            await page.click("#more")
+            await page.click("#share-open")
+            await page.fill("#share input[type=email]", "bob@example.com")
+            await page.click("#share .share-add button")
+            await saved(page)
+            assert s.store.get(wid).w.shares == ["bob@example.com"]
+            await page.fill("#share input[type=email]", "eve@elsewhere.org")
+            await page.click("#share .share-add button")
+            await page.wait_for_selector("#share .share-status:text('outside')")
+            await page.check("#share-company")
+            await saved(page)
+            assert s.store.get(wid).w.company is True
+            await page.click("#share .share-list button")
+            await page.wait_for_selector("#share .share-none")
+            assert s.store.get(wid).w.shares == []
+            await page.click("#share .share-done")
+            assert await page.is_hidden("#share")
+            assert await page.evaluate("window.__csp") == []
+            await browser.close()

@@ -563,3 +563,42 @@ async def test_chromium_jobs_share_a_server_wide_limit(srv):
     assert sem._value == 2
     async with sem, sem:
         assert sem.locked()
+
+
+# -- the Share control on the page ---------------------------------------------------------------------
+
+
+async def test_the_share_control_is_for_the_owner_only(srv):
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["bob@example.com"]})
+    wid = wid_of(handle)
+    async with browser_as(srv, "alice@example.com") as (c, csrf):
+        page = (await c.get(f"/w/{wid}/")).text
+        assert "share.js" in page and "share.css" in page
+        r = await c.get(f"/w/{wid}/shares")
+        assert r.json() == {"shares": ["bob@example.com"], "company": False, "owner": "alice@example.com", "domains": ["example.com"]}
+    async with browser_as(srv, "bob@example.com") as (c, csrf):
+        assert "share.js" not in (await c.get(f"/w/{wid}/")).text  # shared with, but not the owner
+        assert (await c.get(f"/w/{wid}/shares")).status_code == 404
+        r = await c.post(f"/w/{wid}/shares", json={"company": True}, headers={"X-CSRF-Token": csrf})
+        assert r.status_code == 404 and srv.store.get(wid).w.company is False
+    async with browser_as(srv, "carol@example.com") as (c, _):
+        assert (await c.get(f"/w/{wid}/shares")).status_code == 404
+
+
+async def test_the_share_control_changes_shares_through_the_same_checks(srv):
+    async with mcp_as(srv, "alice@example.com") as alice:
+        wid = wid_of((await start(alice))["handle"])
+    async with browser_as(srv, "alice@example.com") as (c, csrf):
+        post = {"X-CSRF-Token": csrf}
+        r = await c.post(f"/w/{wid}/shares", json={"add": ["Carol@Example.com"], "company": True}, headers=post)
+        assert r.status_code == 200 and r.json()["shares"] == ["carol@example.com"] and r.json()["company"] is True
+        r = await c.post(f"/w/{wid}/shares", json={"add": ["x@elsewhere.org"]}, headers=post)
+        assert r.status_code == 400 and "outside this company's domains" in r.json()["error"]
+        r = await c.post(f"/w/{wid}/shares", json={"add": [3]}, headers=post)
+        assert r.status_code == 400
+        r = await c.post(f"/w/{wid}/shares", json={"remove": ["carol@example.com"], "company": False}, headers=post)
+        assert r.json()["shares"] == [] and r.json()["company"] is False
+        assert (await c.post(f"/w/{wid}/shares", json={"company": True})).status_code == 403  # no CSRF token
+    assert srv.store.get(wid).w.company is False
