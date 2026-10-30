@@ -249,6 +249,9 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
                     except Exception:
                         pass
             assert p is not None
+            # Voiced while this call waited: report the counts as they are now. (An older daemon
+            # behind the stdio shim leaves them out.)
+            r.update({k: p[k] for k in ("voiced", "total_says", "narration_s") if k in p})
             if p["status"] == "ready":
                 status = "playable"
                 parts.append(

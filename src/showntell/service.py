@@ -85,16 +85,13 @@ class LocalService:
         s = self.store.by_handle(handle, user)
         r = s.add(markdown)
         r["issues"] = _dicts(r["issues"] + s.take_late_issues())
-        says = [x for sl in s.w.slides for x in sl.says if x.text]
         return {
             **r,
             "url": s.url,
             "frame": s.w.frame,
             "link_shared": s.w.link_shared,
             "total_slides": len(s.w.slides),
-            "total_says": len(says),
-            "voiced": sum(1 for x in says if x.status == "ready"),
-            "narration_s": round(narration_seconds(s.w), 1),
+            **_counts(s),
             "player_issues": _dicts(s.take_player_issues()),
             "slide_ids": [sl.id for sl in s.w.slides],
             "speech": self.speech_status(),
@@ -107,7 +104,8 @@ class LocalService:
         status = await s.wait_playable(timeout) if timeout > 0 else (s.first_say().status if s.first_say() else "empty")
         if give_up and status == "pending":
             s.w.link_shared = True
-        out: dict[str, Any] = {"status": status, "url": s.url, "speech": self.speech_status(), "frame": s.w.frame}
+        # The counts after the wait: an add's reply that waited for the opening reports these.
+        out: dict[str, Any] = {"status": status, "url": s.url, "speech": self.speech_status(), "frame": s.w.frame, **_counts(s)}
         if status == "error":
             first = s.first_say()
             out["error"] = first.error if first else ""
@@ -464,6 +462,16 @@ PREVIEW_MAX = 12
 LAYOUT_CHECK_MAX = 60  # slides drawn by the finish-time layout check
 LAYOUT_CHECK_S = 25.0
 ALIKE_SHOTS_MAX = 6  # pictures of alike slides in the finish reply
+
+
+def _counts(s) -> dict:
+    """Narration paragraphs, how many are voiced, and the narration's length so far."""
+    says = [x for sl in s.w.slides for x in sl.says if x.text]
+    return {
+        "total_says": len(says),
+        "voiced": sum(1 for x in says if x.status == "ready"),
+        "narration_s": round(narration_seconds(s.w), 1),
+    }
 
 
 def _end_times(w) -> dict[str, float]:
