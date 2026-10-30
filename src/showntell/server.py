@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from mcp.server.mcpserver.resolve import ListRoots, Resolve
 from mcp_types import CallToolResult, ImageContent, ListRootsResult, TextContent, ToolAnnotations
 from pydantic import Field
@@ -610,7 +611,17 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         mime_type="text/markdown",
     )
     async def walkthrough_resource(wid: str, ctx: Context = None) -> str:  # type: ignore[assignment]
-        return await service.source(wid, **who(ctx))
+        try:
+            return await service.source(wid, **who(ctx))
+        except ValueError:
+            # Anything but ResourceError reaches the client as "Error creating resource from template".
+            raise ResourceNotFoundError(
+                reply(
+                    "no_walkthrough",
+                    "No walkthrough {wid}. list_walkthroughs lists yours; the id is the part of the handle before the dot.",
+                    wid=wid,
+                )
+            ) from None
 
     return mcp
 

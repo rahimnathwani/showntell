@@ -238,7 +238,7 @@ async def b_is_locked_out(srv, handle: str, bob: Client) -> None:
         assert r.is_error and "unknown handle" in text(r), (tool, text(r))
     listed = await bob.call_tool("list_walkthroughs", {})
     assert wid not in json.dumps(listed.structured_content)
-    with pytest.raises(Exception, match="Error creating resource"):
+    with pytest.raises(Exception, match=f"No walkthrough {wid}. list_walkthroughs lists yours"):
         await bob.read_resource(f"showntell://walkthroughs/{wid}")
     async with browser_as(srv, "bob@example.com") as (c, csrf):
         s = srv.store.get(wid)
