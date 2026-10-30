@@ -299,6 +299,26 @@ async def test_two_users_share_and_unshare(srv, voiced):
         await b_is_locked_out(srv, handle, bob)
 
 
+async def test_an_open_player_stops_when_its_session_ends(srv, voiced):
+    """A live player re-checks the viewer's session, not only the share: signing out (or the
+    session expiring) ends its stream at the next event."""
+    from showntell.identity import SESSION_COOKIE
+
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle, wid = (r := await start(alice))["handle"], wid_of(r["handle"])
+        async with browser_as(srv, "alice@example.com") as (c, _):
+            async with c.stream("GET", f"/w/{wid}/events") as stream:
+                lines = stream.aiter_lines()
+                assert (await anext(lines)).startswith("data: ")
+                srv.store.hosted.identity.sessions.end(c.cookies[SESSION_COOKIE])  # signed out in another tab
+                await alice.call_tool("add_slides", {"handle": handle, "markdown": "## More\n\nAnother slide here.\n"})
+
+                async def drain() -> list[str]:
+                    return [x async for x in lines if x.startswith("data: ")]
+
+                assert await asyncio.wait_for(drain(), 5) == []  # ended without sending the change
+
+
 async def test_sharing_with_the_company(srv, voiced):
     async with mcp_as(srv, "alice@example.com") as alice:
         r = await start(alice)

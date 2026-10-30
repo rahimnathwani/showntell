@@ -702,9 +702,19 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         wid, user = s.w.id, user_of(request)
 
         def allowed() -> bool:
-            # Hosted: access is checked again on every event, so a removed share or a deleted
-            # walkthrough ends the stream.
-            return not hosted or store.viewable(wid, user) is s
+            # Hosted: access is checked again on every event and keepalive, so a removed share, a
+            # deleted walkthrough, signing out, an expired session or a sign-in rule the user no
+            # longer meets ends the stream within 15 s.
+            if not hosted:
+                return True
+            if store.viewable(wid, user) is not s:
+                return False
+            identity = store.hosted.identity
+            now = identity.from_cookie(request.headers)
+            if now is None or now.user.key != user.key:
+                return False
+            rule = getattr(identity.login, "allowed", None)
+            return rule is None or rule(user)
 
         async def stream():
             q = s.subscribe()
