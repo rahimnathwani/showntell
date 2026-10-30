@@ -5,9 +5,11 @@
 2. **Frames:** workers each open the player in capture mode and render a contiguous range of
    frames; each screenshot is piped straight into its own ffmpeg (image2pipe) as one H.264
    segment. A frame whose state key repeats reuses the previous screenshot.
-3. **Sound:** the narration clips are placed at their timeline start times with numpy.
-4. **Mux:** segments are joined without re-encoding, with AAC audio, the captions as a mov_text
-   track and `+faststart`; the result's duration is checked against the timeline.
+3. **Sound:** the narration clips are placed at their timeline start times with numpy, and the
+   track's loudness is measured (ffmpeg's ebur128).
+4. **Mux:** segments are joined without re-encoding, with AAC audio levelled to one loudness and
+   a true-peak ceiling, the captions as a mov_text track and `+faststart`; the result's duration is
+   checked against the timeline.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +52,36 @@ def default_workers() -> int:
 
 
 # -- sound ----------------------------------------------------------------------------------
+
+
+# Loudness: -16 LUFS integrated with peaks under -1.5 dBTP, the usual level for spoken word online
+# (AES TD1008, Apple podcasts): loud enough in apps that play files as they are, and at or under the
+# level YouTube and others turn louder videos down to. Kokoro's clips sit within about a decibel of
+# each other (gallery: 0.2 to 0.3 LU standard deviation), so one gain for the whole track is enough.
+# Speech peaks run about 20 dB over its loudness, so reaching -16 needs a limiter: a 4x oversampled
+# sample-peak limit at -2 dBFS keeps true peaks near -1.8 dBTP, AAC included. One measuring pass
+# without true peak takes about 0.1 s on three minutes; ffmpeg's loudnorm would take 3 to 4 s.
+LOUDNESS = -16.0  # LUFS
+PEAK_LIMIT = -2.0  # dBFS, 4x oversampled
+SILENT = -70.0  # LUFS ebur128 reports for silence
+
+
+def loudness(path: Path) -> float | None:
+    """Integrated loudness of an audio file in LUFS (EBU R128), or None for silence."""
+    r = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128", "-f", "null", "-"], capture_output=True, text=True
+    )
+    m = re.search(r"Summary:.*?\bI:\s+(-?[\d.]+) LUFS", r.stderr, re.S)
+    return float(m.group(1)) if m and float(m.group(1)) > SILENT else None
+
+
+def level_filter(measured: float | None, rate: int) -> list[str]:
+    """ffmpeg audio filter arguments that bring a track measured at `measured` LUFS to LOUDNESS."""
+    if measured is None:
+        return []
+    limit = 10 ** (PEAK_LIMIT / 20)
+    gain = LOUDNESS - measured
+    return ["-af", f"volume={gain:.2f}dB,aresample={rate * 4},alimiter=limit={limit:.4f}:level=false:attack=5:release=50,aresample={rate}"]
 
 
 def soundtrack(folder: Path, total: float, dest: Path) -> int:
@@ -219,6 +252,9 @@ def _has_cues(vtt: Path) -> bool:
 
 
 def _mux(segs: list[Path], wav: Path, vtt: Path, out: Path, work: Path, title: str = "", description: str = "") -> None:
+    import soundfile as sf
+
+    level = level_filter(loudness(wav), sf.info(wav).samplerate)
     listing = work / "segments.txt"
     listing.write_text("".join(f"file '{s.name}'\n" for s in segs))
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-i", str(wav)]
@@ -226,7 +262,9 @@ def _mux(segs: list[Path], wav: Path, vtt: Path, out: Path, work: Path, title: s
     if subs:
         cmd += ["-i", str(vtt)]
     cmd += ["-map", "0:v", "-map", "1:a"] + (["-map", "2:s"] if subs else [])
-    cmd += ["-c:v", "copy", "-c:a", "aac", "-b:a", "128k"] + (["-c:s", "mov_text", "-metadata:s:s:0", "language=eng"] if subs else [])
+    cmd += ["-c:v", "copy", *level, "-c:a", "aac", "-b:a", "128k"] + (
+        ["-c:s", "mov_text", "-metadata:s:s:0", "language=eng"] if subs else []
+    )
     # Tags: the title (©nam) and description (desc) the file carries into players and chat apps, and
     # the encoder (©too), naming showntell and its version. libavformat always overwrites `encoder`
     # with its own name, but the MP4 muxer prefers `encoding_tool` for that atom.

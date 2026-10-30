@@ -99,7 +99,8 @@ graph TB
   end
   subgraph mux [Mux]
     C[Concat segments] --> M[MP4 with AAC and mov_text]
-    A[Narration clips placed with numpy] --> M
+    A[Narration clips placed with numpy] --> L[Loudness measured then gain and peak limit]
+    L --> M
     V[captions.vtt] --> M
     M --> P[ffprobe duration check]
   end

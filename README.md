@@ -292,7 +292,7 @@ uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0
 | Part | What you get |
 |---|---|
 | **Picture** | H.264, 30 fps (`--fps`), 1920x1080 for landscape, 1080x1080 square, 1080x1920 portrait; only the slide, no player controls |
-| **Sound** | AAC, built from the narration clips at their places on the timeline |
+| **Sound** | AAC, built from the narration clips at their places on the timeline, levelled to -16 LUFS with true peaks under -1.5 dBTP |
 | **Captions** | a mov_text subtitle track; `--burn-captions` also draws them into the picture |
 | **Speed** | `--workers` browsers render frame ranges in parallel (default: up to 4); unchanged frames reuse the last screenshot |
 | **Motion** | camera moves, entrances and reveals as in the player; the idle motion (a drawing breathing, a held close-up creeping in) is left out so held frames repeat, and `--motion` keeps it at the cost of a screenshot per frame |
