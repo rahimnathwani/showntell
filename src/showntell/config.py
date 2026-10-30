@@ -56,6 +56,9 @@ class Config:
     oidc_client_secret: str = field(default_factory=lambda: _env("OIDC_CLIENT_SECRET", ""))
     oidc_issuer: str = field(default_factory=lambda: _env("OIDC_ISSUER", ""))  # generic only
     entra_tenant: str = field(default_factory=lambda: _env("ENTRA_TENANT", ""))  # entra only: the tenant ID
+    # MCP refreshes stop this long after the user last signed in at the provider, so someone the
+    # provider no longer lets in loses access without anyone changing showntell's settings.
+    signin_days: float = field(default_factory=lambda: _num("SIGNIN_DAYS", 7))
     limits: Limits = field(default_factory=Limits)
 
     @property

@@ -15,7 +15,10 @@ check of the token request's `resource` (the SDK's token handler does not pass i
 |---|---|---|
 | authorization code | 5 min | one use; a second use revokes the tokens it gave |
 | access token | 1 h | audience `<public url>/mcp`, refused for any other |
-| refresh token | 30 days | rotates on every use; reusing a spent one revokes its whole chain |
+| refresh token | 30 days | rotates on every use; reusing a spent one revokes its whole chain, except within a minute of its rotation (two refreshes racing) |
+
+Refreshing also needs a provider sign-in within `SHOWNTELL_SIGNIN_DAYS` (7): the provider is the one that
+knows someone has left, and only a sign-in asks it.
 """
 
 from __future__ import annotations
@@ -53,6 +56,8 @@ CODE_S = 300
 ACCESS_S = 3600
 REFRESH_S = 30 * 86400
 CONSENT_S = 600
+REFRESH_GRACE_S = 60  # a rotated refresh token still works this long: two refreshes racing, not a replay
+LIVE, ROTATED, REVOKED = 0, 1, 2  # tokens.spent
 METADATA_MAX_BYTES = 16_384
 METADATA_CACHE_S = (60, 300, 86400)  # least, default, most seconds a client metadata document is kept
 
@@ -104,6 +109,11 @@ class Client(OAuthClientInformationFull):
         if any(same_redirect(str(u), str(redirect_uri)) for u in self.redirect_uris):
             return redirect_uri
         raise InvalidRedirectUriError(f"Redirect URI '{redirect_uri}' not registered for client")
+
+
+def _in_grace(spent: int, spent_at: float | None) -> bool:
+    """A refresh token rotated moments ago, not revoked: a second refresh racing the first."""
+    return spent == ROTATED and spent_at is not None and time.time() - spent_at <= REFRESH_GRACE_S
 
 
 def is_metadata_url(client_id: str) -> bool:
@@ -286,13 +296,13 @@ class AuthServer:
 
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
         rows = self.db.run(
-            "select chain, client_id, iss, sub, resource, scopes, expires, spent from tokens where hash = ? and kind = 'refresh'",
+            "select chain, client_id, iss, sub, resource, scopes, expires, spent, spent_at from tokens where hash = ? and kind = 'refresh'",
             (digest(refresh_token),),
         )
         if not rows:
             return None
-        chain, client_id, iss, sub, resource, scopes, expires, spent = rows[0]
-        if spent:
+        chain, client_id, iss, sub, resource, scopes, expires, spent, spent_at = rows[0]
+        if spent and not _in_grace(spent, spent_at):
             self.revoke_chain(chain)
             log.warning("refresh token reused for %s; its chain is revoked", client_id[:120])
             return None
@@ -309,17 +319,21 @@ class AuthServer:
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
         h = digest(refresh_token.token)
-        if self.db.change("update tokens set spent = 1 where hash = ? and spent = 0", (h,)) != 1:
-            chain = self.db.run("select chain from tokens where hash = ?", (h,))
-            if chain:
-                self.revoke_chain(chain[0][0])
-            raise TokenError("invalid_grant", "refresh token already used")
+        if self.db.change("update tokens set spent = ?, spent_at = ? where hash = ? and spent = ?", (ROTATED, time.time(), h, LIVE)) != 1:
+            row = self.db.run("select chain, spent, spent_at from tokens where hash = ?", (h,))
+            if not row or not _in_grace(row[0][1], row[0][2]):
+                if row:
+                    self.revoke_chain(row[0][0])
+                raise TokenError("invalid_grant", "refresh token already used")
+            log.info("refresh token used again within %d s of its rotation; issued another pair", REFRESH_GRACE_S)
         chain, iss, sub, email = self.db.run("select chain, iss, sub, email from tokens where hash = ?", (h,))[0]
-        user = User(iss, sub, email)
+        last = self.db.last_sign_in(iss, sub)
+        user = User(iss, sub, last[1] if last and last[1] else email)  # the address from the latest sign-in, not the first
         if not self.allowed(user):
             self.revoke_chain(chain)
-            raise TokenError("invalid_grant", "this account may no longer use this server")
-        self.db.run("update tokens set spent = 1 where chain = ? and kind = 'access'", (chain,))  # the old access token goes too
+            raise TokenError("invalid_grant", "sign in again: this account's sign-in has lapsed or it may no longer use this server")
+        # The old access token stays live until it expires (an hour at most): another client sharing
+        # these credentials may still be using it.
         return self._issue(chain, client.client_id, user, refresh_token.resource or self.resource, scopes)
 
     async def load_access_token(self, token: str) -> AccessToken | None:
@@ -354,17 +368,17 @@ class AuthServer:
         access, refresh, now = f"sta_{secrets.token_urlsafe(32)}", f"str_{secrets.token_urlsafe(32)}", time.time()
         for token, kind, ttl in ((access, "access", ACCESS_S), (refresh, "refresh", REFRESH_S)):
             self.db.run(
-                "insert into tokens values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                "insert into tokens values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, null)",
                 (digest(token), kind, chain, client_id, user.issuer, user.sub, user.email, resource, json.dumps(scopes), now + ttl),
             )
         return OAuthToken(access_token=access, expires_in=ACCESS_S, refresh_token=refresh, scope=" ".join(scopes) or None)
 
     def revoke_chain(self, chain: str) -> None:
         if chain:
-            self.db.run("update tokens set spent = 1 where chain = ?", (chain,))
+            self.db.run("update tokens set spent = ? where chain = ?", (REVOKED, chain))
 
     def revoke_user(self, user: User) -> None:
-        self.db.run("update tokens set spent = 1 where iss = ? and sub = ?", (user.issuer, user.sub))
+        self.db.run("update tokens set spent = ? where iss = ? and sub = ?", (REVOKED, user.issuer, user.sub))
 
     # -- metadata --------------------------------------------------------------------------------
 

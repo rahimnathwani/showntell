@@ -204,7 +204,9 @@ def build(cfg: Config) -> Hosted:
             domains(cfg),
             cfg.entra_tenant,
         )
-        identity = Identity(OIDCLogin(provider, db, cfg.base_url), sessions=DBSessions(db), secure_cookie=secure)
+        identity = Identity(
+            OIDCLogin(provider, db, cfg.base_url, signin_max_s=cfg.signin_days * 86400), sessions=DBSessions(db), secure_cookie=secure
+        )
         log.info("sign-in with %s (%s); MCP authorization at %s", cfg.oidc, provider.issuer, cfg.base_url)
         return Hosted(cfg.limits, identity, internal, cfg.base_url, domains(cfg))
     login = StubLogin.from_emails(dev_emails(cfg), cfg.data_dir)

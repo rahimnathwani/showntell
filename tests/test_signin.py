@@ -431,14 +431,69 @@ async def test_refresh_rotates_and_reuse_revokes_the_chain(srv):
         assert r.status_code == 200, r.text
         second = r.json()
         assert second["refresh_token"] != first["refresh_token"]
-        assert await mcp_status(srv, first["access_token"]) == 401  # replaced
+        # The old access token lives out its hour: another client sharing the credentials may hold it.
+        assert await mcp_status(srv, first["access_token"]) == 200
         assert await mcp_status(srv, second["access_token"]) == 200
+        # Long after its rotation the spent token comes back: someone else has it, so the chain goes.
+        srv.db.run("update tokens set spent_at = ? where hash = ?", (time.time() - 120, digest(first["refresh_token"])))
         r = await tokens(c, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=cid)
         assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
-        # The spent token came back: someone else has it, so the whole chain goes.
         assert await mcp_status(srv, second["access_token"]) == 401
+        assert await mcp_status(srv, first["access_token"]) == 401
         r = await tokens(c, grant_type="refresh_token", refresh_token=second["refresh_token"], client_id=cid)
         assert r.status_code == 400
+
+
+async def test_two_refreshes_racing_both_succeed(srv):
+    """Two sessions sharing stored credentials, or one client retrying, refresh with the same token
+    within moments: both get tokens, and nothing is revoked."""
+    async with browser(srv, GENERIC) as c:
+        cid, first = await signed_in_tokens(srv, c)
+        a, b = await asyncio.gather(
+            *(tokens(c, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=cid) for _ in range(2))
+        )
+        assert a.status_code == b.status_code == 200, (a.text, b.text)
+        for t in (a.json(), b.json()):
+            assert await mcp_status(srv, t["access_token"]) == 200
+            r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+            assert r.status_code == 200, r.text
+
+
+async def test_refresh_stops_when_the_provider_sign_in_is_too_old(srv):
+    """Only a sign-in asks the provider whether the account still exists, so an hourly refresh
+    chain must not go on for ever on the strength of one sign-in."""
+    async with browser(srv, GENERIC) as c:
+        cid, t = await signed_in_tokens(srv, c)
+        srv.db.run("update users set seen = ?", (time.time() - 8 * 86400,))
+        r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+        assert r.status_code == 400 and "sign in again" in r.json()["error_description"]
+        assert await mcp_status(srv, t["access_token"]) == 401  # the chain is revoked with it
+
+
+async def test_refresh_takes_the_address_from_the_latest_sign_in(srv):
+    async with browser(srv, GENERIC) as c:
+        cid, t = await signed_in_tokens(srv, c)
+        srv.db.run("update users set email = ?", ("renamed@example.com",))  # signed in again after a rename
+        r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+        assert r.status_code == 200, r.text
+        assert srv.auth.user_for_access_token(r.json()["access_token"]).email == "renamed@example.com"
+
+
+def test_an_auth_db_from_0_2_1_gains_the_rotation_column(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "auth.db"
+    old = sqlite3.connect(path)
+    old.execute(
+        "create table tokens (hash text primary key, kind text, chain text, client_id text, iss text, sub text, email text,"
+        " resource text, scopes text, expires real, spent integer default 0)"
+    )
+    old.execute("insert into tokens values ('h', 'refresh', 'c', 'x', 'i', 's', 'e', 'r', '[]', 0, 0)")
+    old.commit()
+    old.close()
+    db = AuthDB(path)
+    assert "spent_at" in [r[1] for r in db.run("pragma table_info(tokens)")]
+    assert db.run("select spent, spent_at from tokens") == [(0, None)]
 
 
 async def test_a_removed_domain_stops_the_refresh(srv):

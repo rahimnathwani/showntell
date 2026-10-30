@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import logging
 import secrets
+import time
 from urllib.parse import quote, urlparse
 
 from starlette.requests import Request
@@ -62,16 +63,20 @@ class OIDCLogin:
 
     name = "provider sign-in"
 
-    def __init__(self, provider: Provider, db: AuthDB, public_url: str, fetch_metadata=None) -> None:
+    def __init__(self, provider: Provider, db: AuthDB, public_url: str, fetch_metadata=None, signin_max_s: float = 7 * 86400) -> None:
         self.provider = provider
         self.db = db
+        self.signin_max_s = signin_max_s
         self.secure = public_url.startswith("https://")
         self.auth = oauth.AuthServer(db, public_url, self.allowed, fetch=fetch_metadata)
 
     def allowed(self, user: User) -> bool:
-        """The sign-in rule again, on the claims from the user's last sign-in and today's settings."""
+        """The sign-in rule again, on the claims from the user's last sign-in and today's settings,
+        and that sign-in recent enough: only signing in asks the provider whether the account still
+        exists, so a refresh chain must not outlive it by more than `signin_max_s`."""
         claims = self.db.claims(user.issuer, user.sub)
-        if claims is None:
+        last = self.db.last_sign_in(user.issuer, user.sub)
+        if claims is None or last is None or (self.signin_max_s > 0 and time.time() - last[0] > self.signin_max_s):
             return False
         try:
             check_claims(self.provider.preset, claims, self.provider.domains, self.provider.tenant)

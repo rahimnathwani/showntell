@@ -25,6 +25,7 @@ Hosted mode is `SHOWNTELL_MODE=hosted`. Everything else about it is off unless t
 | `SHOWNTELL_OIDC_ISSUER` | `generic` only; `entra` derives it from the tenant |
 | `SHOWNTELL_ENTRA_TENANT` | `entra` only: the tenant ID (a GUID, not a domain) |
 | `SHOWNTELL_ALLOWED_DOMAINS` | Comma-separated. Required for `google` and `generic`. Empty for `entra` means anyone in the tenant |
+| `SHOWNTELL_SIGNIN_DAYS` | How long one provider sign-in carries MCP refreshes (default 7; 0 for no limit) |
 | `SHOWNTELL_QUOTA_*` | Per-user limits, below |
 | `SHOWNTELL_DEV_USERS` | Trials on one machine only: comma-separated emails for the stub login, instead of `SHOWNTELL_OIDC` |
 
@@ -45,7 +46,7 @@ MCP client ──/mcp, no token──▶ 401 + WWW-Authenticate: resource_metada
 ```
 
 - **Spec version:** implement the latest published MCP authorization spec (check modelcontextprotocol.io at build time) and the negotiated protocol version on `/mcp`. Support client ID metadata documents and dynamic client registration both, since clients differ.
-- **Tokens:** opaque random strings, stored hashed. Access tokens last an hour, refresh tokens 30 days and rotate on use; reuse of a spent refresh token revokes the chain. Every token records its audience (the resource parameter) and is refused elsewhere.
+- **Tokens:** opaque random strings, stored hashed. Access tokens last an hour, refresh tokens 30 days and rotate on use; reuse of a spent refresh token revokes the chain, except within a minute of its rotation, which is two refreshes racing. Refreshing needs a provider sign-in within `SHOWNTELL_SIGNIN_DAYS` (7), since only a sign-in asks the provider whether the account still exists: someone disabled at the provider loses MCP access within that time. Every token records its audience (the resource parameter) and is refused elsewhere.
 - **Browser sessions:** the viewer pages use the same OIDC login with a cookie: `HttpOnly`, `Secure`, `SameSite=Lax`, 12 hours. State-changing POSTs also need a CSRF token.
 - **Library:** use the MCP Python SDK's authorization server building blocks where they fit, and Authlib or similar for the OIDC client side. Don't hand-roll JWT validation.
 
@@ -60,7 +61,7 @@ The user's key is `(issuer, sub)`. Email is for display and for matching shares,
 | **Never trust** | The email suffix without `hd` | The `email` claim: it is editable and unverified ("nOAuth") | — |
 | **App registration** | Internal OAuth client in the company's Google Cloud project | Single-tenant app registration | Per the provider |
 
-The domain check runs at every sign-in and every refresh, so removing a domain from the list takes effect within the access token's hour.
+The domain check runs at every sign-in and every refresh, so removing a domain from the list takes effect within the access token's hour. An account disabled at the provider can't sign in again, so its refreshes stop `SHOWNTELL_SIGNIN_DAYS` after its last sign-in.
 
 ## Ownership and sharing
 
@@ -198,7 +199,7 @@ What phase 1 decided where the design was open, and where it changed the design.
 - **Resource:** an authorization or token request naming another `resource` is refused with `invalid_target`; scheme and host case and a trailing slash are forgiven. A request without one gets a token for `<url>/mcp`, the only resource there is. Every token records its resource and `/mcp` checks it.
 - **Consent (a design addition):** the spec requires an OAuth proxy with a static client ID at the upstream provider, which showntell is, to get the user's consent for each client. After sign-in, `/oauth/consent` names the client, where its metadata lives (or that it registered itself), the host it returns to, and warns when that is the user's own computer. The buttons post JSON and the page navigates by script, because `form-action 'self'` would stop a form's redirect to the client.
 - **Issuer in the response:** the redirect back carries `iss` (RFC 9207), on errors too.
-- **Tokens:** `sta_` and `str_` prefixed random strings, SHA-256 hashed in `auth.db`. A chain starts at each code exchange; refreshing spends the old refresh token and the old access token. Reusing a spent refresh token or a used code revokes the whole chain. Code exchange and refresh both run the sign-in rule again on the claims kept from the user's last sign-in, under the current settings, and revoke the chain if it fails.
+- **Tokens:** `sta_` and `str_` prefixed random strings, SHA-256 hashed in `auth.db`. A chain starts at each code exchange; refreshing spends the old refresh token; the old access token lives out its hour, since another client sharing the credentials may hold it. Reusing a spent refresh token more than a minute after its rotation, or a used code, revokes the whole chain. Refresh also needs a provider sign-in within `SHOWNTELL_SIGNIN_DAYS`, and takes the user's address from the latest sign-in. Code exchange and refresh both run the sign-in rule again on the claims kept from the user's last sign-in, under the current settings, and revoke the chain if it fails.
 - **Client ID metadata documents:** fetched only from public addresses (every resolved address must be global), without redirects, at most 16 KB, kept for the response's `max-age` between one minute and a day (five minutes by default). The document's `client_id` must equal its URL; redirect URIs must be HTTPS or loopback HTTP; only public clients (`none`), so `private_key_jwt` is refused. The address is checked when resolved, not pinned for the connection, so a DNS rebinding race remains in principle; the container's outbound rules are the backstop.
 - **Registration:** redirect URIs must be HTTPS or loopback HTTP. Registration is unauthenticated, so it is capped at 30 a minute server-wide. Registered clients are kept; clearing unused ones is left for later.
 

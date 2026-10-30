@@ -95,7 +95,7 @@ The gallery at `https://<your name>/` lists each person's walkthroughs and those
 
 Everything lives in the `showntell-data` volume: walkthroughs and their exports, the shared audio cache, the models, and `auth.db` (users, registered clients, sessions and tokens, every secret stored only as a hash). Back up the volume; losing `auth.db` signs everyone out and makes clients register again, nothing more.
 
-Walkthroughs nobody has opened or changed for 180 days are deleted (`SHOWNTELL_QUOTA_RETENTION_DAYS`; 0 keeps them). The other limits are in `deploy/.env.example` and [hosted-design.md](hosted-design.md#fair-use).
+Claude stays connected for `SHOWNTELL_SIGNIN_DAYS` (7) after a person last signed in at the provider, then asks them to sign in again; that is how someone disabled at Google or Entra loses access without anyone changing showntell. Walkthroughs nobody has opened or changed for 180 days are deleted (`SHOWNTELL_QUOTA_RETENTION_DAYS`; 0 keeps them). The other limits are in `deploy/.env.example` and [hosted-design.md](hosted-design.md#fair-use).
 
 ## Updating
 
