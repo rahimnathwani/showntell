@@ -962,6 +962,13 @@ def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = F
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
     page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    # A hosted server voices them itself, and its users have no showntell to run.
+    where, hint = (
+        ("this server", "Ask your agent for a walkthrough.")
+        if hosted
+        else ("this machine", "Ask your agent for a walkthrough, or run <code>showntell play file.md</code>.")
+    )
+    page = page.replace("{{WHERE}}", where).replace("{{HINT}}", hint)
     if signout:
         page = page.replace("</footer>", ' · <button class="signout">Sign out</button></footer>')
     return page.replace("{{CSRF}}", html.escape(csrf))

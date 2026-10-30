@@ -283,6 +283,7 @@ async def test_two_users_share_and_unshare(srv, voiced):
             assert (await c.post(f"/w/{wid}/delete", json={}, headers=post)).status_code == 404
             gallery = (await c.get("/")).text
             assert wid in gallery and "shared by alice@example.com" in gallery and 'class="del"' not in gallery
+            assert "voiced on this server" in gallery and "showntell play" not in gallery
 
             # Bob's live player is cut off as soon as Alice removes the share.
             async with c.stream("GET", f"/w/{wid}/events") as stream:

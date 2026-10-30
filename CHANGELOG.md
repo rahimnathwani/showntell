@@ -2,6 +2,7 @@
 
 ## 0.2.2 (unreleased)
 
+- **Hosted gallery wording:** the gallery of a hosted server said walkthroughs were "voiced on this machine" and suggested running `showntell play file.md`, which its users can't. It now says they are voiced on this server and leaves the command out.
 - **Reading a walkthrough that isn't there says so:** `showntell://walkthroughs/{id}` for an unknown id, or one that isn't yours on a hosted server, answered only "Error creating resource from template" and logged a traceback. It now says no such walkthrough and where to find the ids of yours.
 - **Findings once, across restarts:** which findings a walkthrough had already been given lived only in memory, so after the server restarted, the next `add_slides` repeated the hints on the last slide sent before it (`zoom_unused`, `decode_unused` and the like). Loading a walkthrough from disk now checks its slides again quietly first.
 - **Previews show one slide:** `preview_slides`, the pictures in `finish_walkthrough`'s reply (alike slides), its layout checks and the gallery poster drew each slide 0.35 s before the next one started, but since 0.1.9 the next slide comes in 0.45 s early, so every picture caught the crossfade, two slides over each other. They now draw the moment after the slide's narration ends, everything revealed, before the next slide comes in.
