@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -383,15 +384,34 @@ class LocalService:
 class RemoteService:
     """Forwards calls to the daemon's `/api/rpc/{method}` route."""
 
-    def __init__(self, base: str, token: str) -> None:
+    def __init__(self, base: str, token: str, reconnect: Callable[[], tuple[str, str]] | None = None) -> None:
         import httpx
 
         self.base = base.rstrip("/")
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(70.0, connect=5.0), headers={"Authorization": f"Bearer {token}"})
+        # The daemon now, (base, token), started if need be. A stdio client lives as long as its
+        # agent session, and the daemon it found at the start may since have been stopped or
+        # replaced: then nothing answers, or a new daemon refuses the old token.
+        self.reconnect = reconnect
 
     async def _call(self, method: str, http_timeout: float | None = None, **kw) -> Any:
+        import asyncio
+
+        import httpx
+
         extra = {"timeout": http_timeout} if http_timeout else {}
-        r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
+        try:
+            r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
+        except httpx.ConnectError:
+            if not self.reconnect:
+                raise
+            r = None
+        # Neither a refused connection nor a refused token ran the call, so sending it again is safe.
+        if self.reconnect and (r is None or r.status_code == 403):
+            base, token = await asyncio.to_thread(self.reconnect)
+            self.base = base.rstrip("/")
+            self.client.headers["Authorization"] = f"Bearer {token}"
+            r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
         try:
             data = r.json()
         except ValueError:  # a plain-text refusal, or not the daemon at all
