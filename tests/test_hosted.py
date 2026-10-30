@@ -593,6 +593,30 @@ def blocking(gate: threading.Event, result=None):
     return lambda: (gate.wait(10), result)[1]
 
 
+async def test_the_daily_expiry_survives_a_failing_round(store, monkeypatch, caplog, wait_until):
+    import showntell.prune
+    from showntell.app import expire
+
+    s = store.create("Old")
+    calls = []
+
+    def prune(data_dir, older_than):
+        calls.append(older_than)
+        if len(calls) == 1:
+            raise OSError("disk hiccup")
+        return {"walkthroughs": [{"id": s.w.id}], "audio_files": 0, "audio_bytes": 0}
+
+    monkeypatch.setattr(showntell.prune, "prune", prune)
+    h = SimpleNamespace(identity=SimpleNamespace(login=object()))
+    cfg = SimpleNamespace(data_dir=store.data_dir, limits=Limits(retention_days=1))
+    task = asyncio.create_task(expire(store, h, cfg, every=0.01))
+    try:
+        await wait_until(lambda: len(calls) >= 2)
+    finally:
+        task.cancel()
+    assert "disk hiccup" in caplog.text and s.deleted and s.w.id not in store.sessions
+
+
 async def test_chromium_jobs_share_a_server_wide_limit(srv):
     c = srv.hosted.chromium
     assert c.slots == 2
