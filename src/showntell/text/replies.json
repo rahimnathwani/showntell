@@ -14,5 +14,6 @@
   "exported": "Saved {path} ({mb} MB, {duration}).\nSend this file to the user as an attachment, through the channel you talk to them on, with a line on what it covers. The path is not a link: give it as one only if the user works on this machine. Don't repeat the script.",
   "export_shrunk": "Shrunk to fit {limit} MB: {what}. If the user's channel takes larger files and quality matters, export again with a higher max_mb.",
   "export_silent": "{n} narration paragraph(s) failed to voice and are silent in this file. Revise those slides to voice them again, then export again before sending.",
-  "alike": "Slides {ids} in a row look alike ({look}); pictures of them follow when they could be drawn. Before you tell the user, give one of them a different look with revise_slide: takeaways beside the visual with `.side`, a second visual with `.pair`, `.full`, or another kind of visual. Keep a run only if it is one sequence the viewer should read as such."
+  "alike": "Slides {ids} in a row look alike ({look}); pictures of them follow when they could be drawn. Before you tell the user, give one of them a different look with revise_slide: takeaways beside the visual with `.side`, a second visual with `.pair`, `.full`, or another kind of visual. Keep a run only if it is one sequence the viewer should read as such.",
+  "no_walkthrough": "No walkthrough {wid}. list_walkthroughs lists yours; the id is the part of the handle before the dot."
 }

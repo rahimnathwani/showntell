@@ -56,9 +56,10 @@ def _domain(address: str) -> str:
     return address.rsplit("@", 1)[1].lower() if "@" in (address or "") else ""
 
 
-def check_claims(preset: str, claims: dict, domains: list[str], tenant: str = "") -> str:
+def check_claims(preset: str, claims: dict, domains: list[str], tenant: str = "", guests: bool = False) -> str:
     """The address a user is known by (verified email or UPN, lower case), if the preset's rule
-    lets these claims sign in; raises SignInRefused otherwise."""
+    lets these claims sign in; raises SignInRefused otherwise. Entra B2B guests sit in the tenant
+    too, so they are refused unless `guests`: Entra marks them with an `idp` other than the issuer."""
     domains = [d.lower() for d in domains]
     if preset == "google":
         hd = (claims.get("hd") or "").lower()
@@ -77,6 +78,9 @@ def check_claims(preset: str, claims: dict, domains: list[str], tenant: str = ""
             raise SignInRefused(f"Accounts from {_domain(upn) or 'that directory'} cannot use this server.")
         if not upn:
             raise SignInRefused("The sign-in did not say who you are (no preferred_username).")
+        idp = (claims.get("idp") or "").rstrip("/")
+        if not guests and ((idp and idp != (claims.get("iss") or "").rstrip("/")) or "#ext#" in upn):
+            raise SignInRefused("Guest accounts from other organisations cannot use this server.")
         return upn
     if claims.get("email_verified") is not True:
         raise SignInRefused("Your email address is not verified with the sign-in provider.")
@@ -86,7 +90,7 @@ def check_claims(preset: str, claims: dict, domains: list[str], tenant: str = ""
     return email
 
 
-KEPT_CLAIMS = ("iss", "sub", "email", "email_verified", "hd", "tid", "preferred_username")
+KEPT_CLAIMS = ("iss", "sub", "email", "email_verified", "hd", "tid", "preferred_username", "idp")
 
 
 @dataclass
@@ -100,6 +104,7 @@ class Provider:
     redirect_uri: str  # <public url>/oidc/callback
     domains: list[str] = field(default_factory=list)
     tenant: str = ""
+    guests: bool = False  # entra: admit B2B guests
     http: httpx.AsyncClient | None = None  # tests pass one; otherwise made on first use
     _meta: dict | None = None
     _jwks: object = None
@@ -168,7 +173,7 @@ class Provider:
         if not id_token:
             raise SignInRefused("the provider returned no ID token")
         claims = await self.validate(id_token, nonce)
-        email = check_claims(self.preset, claims, self.domains, self.tenant)
+        email = check_claims(self.preset, claims, self.domains, self.tenant, self.guests)
         return User(claims["iss"], claims["sub"], email), {k: claims[k] for k in KEPT_CLAIMS if k in claims}
 
     async def validate(self, id_token: str, nonce: str) -> dict:

@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from .issues import as_dict
-from .store import Store, narration_seconds
+from .store import UNKNOWN_HANDLE, Store, check_questions, narration_seconds
 
 log = logging.getLogger("showntell")
 _browser_warned = False
@@ -84,16 +86,13 @@ class LocalService:
         s = self.store.by_handle(handle, user)
         r = s.add(markdown)
         r["issues"] = _dicts(r["issues"] + s.take_late_issues())
-        says = [x for sl in s.w.slides for x in sl.says if x.text]
         return {
             **r,
             "url": s.url,
             "frame": s.w.frame,
             "link_shared": s.w.link_shared,
             "total_slides": len(s.w.slides),
-            "total_says": len(says),
-            "voiced": sum(1 for x in says if x.status == "ready"),
-            "narration_s": round(narration_seconds(s.w), 1),
+            **_counts(s),
             "player_issues": _dicts(s.take_player_issues()),
             "slide_ids": [sl.id for sl in s.w.slides],
             "speech": self.speech_status(),
@@ -106,7 +105,8 @@ class LocalService:
         status = await s.wait_playable(timeout) if timeout > 0 else (s.first_say().status if s.first_say() else "empty")
         if give_up and status == "pending":
             s.w.link_shared = True
-        out: dict[str, Any] = {"status": status, "url": s.url, "speech": self.speech_status(), "frame": s.w.frame}
+        # The counts after the wait: an add's reply that waited for the opening reports these.
+        out: dict[str, Any] = {"status": status, "url": s.url, "speech": self.speech_status(), "frame": s.w.frame, **_counts(s)}
         if status == "error":
             first = s.first_say()
             out["error"] = first.error if first else ""
@@ -138,11 +138,14 @@ class LocalService:
         from .export import slide_starts, timeline_total
 
         s = self.store.by_handle(handle, user)
+        check_questions(questions or [])  # before drawing, so a refusal is quick
         layout = self.layout_check and check
         runs = [[x.id for x in run] for run in alike_runs(s.w.slides)]
         shots: dict[str, bytes] = {}
         want = [sid for run in runs for sid in run][:ALIKE_SHOTS_MAX]
         unchecked = await self._check_layout(s, want, shots) if layout else None
+        if s.deleted:  # while the slides were drawn
+            raise ValueError(UNKNOWN_HANDLE)
         issues = s.finish(questions, unchecked=unchecked) + s.take_late_issues()
         says = [x for sl in s.w.slides for x in sl.says if x.text]
         starts = slide_starts(s.w)
@@ -180,24 +183,36 @@ class LocalService:
         """The checks and the change behind both `share_walkthrough` and the page's Share control;
         the caller has already made sure the user owns `s`. All or nothing."""
         from .hosted import say
+        from .identity import signs_in_as
 
         allowed = self.store.hosted.allowed_domains
-        shares = list(s.w.shares)
+        shares, seen = list(s.w.shares), set(s.w.shares)
+        before = set(shares)
         for raw in add or []:
             email = (raw or "").strip().lower()
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=raw))
+            shown = raw if len(raw or "") <= 80 else raw[:77] + "..."
+            if len(email) > MAX_EMAIL or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=shown))
             if allowed and email.rsplit("@", 1)[1] not in allowed:
-                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=raw, domains=", ".join(allowed)))
-            if email not in shares and email != (s.w.owner.get("email") or "").lower():
+                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=shown, domains=", ".join(allowed)))
+            if email not in seen and email != (s.w.owner.get("email") or "").lower():
                 shares.append(email)
+                seen.add(email)
         gone = {(x or "").strip().lower() for x in remove or []}
-        s.w.shares = [x for x in shares if x not in gone]
+        shares = [x for x in shares if x not in gone]
+        if len(shares) > MAX_SHARES and len(shares) > len(s.w.shares):
+            raise ValueError(
+                say("share_too_many", "That would share it with {n} people; the limit is {limit}.", n=len(shares), limit=MAX_SHARES)
+            )
+        s.w.shares = shares
         if company is not None:
             s.w.company = bool(company)
         s._changed(set(), meta=True)  # wakes open event streams, which check access again
         s.save_now()
-        return {"url": s.url, "shares": list(s.w.shares), "company": s.w.company}
+        # Added all the same, since people may sign in later; but a share matches the address
+        # someone signs in with, which for Entra is the UPN and can differ from their mail.
+        unknown = [x for x in s.w.shares if x not in before and signs_in_as(self.store.hosted.identity, x) is False]
+        return {"url": s.url, "shares": list(s.w.shares), "company": s.w.company, "unknown": unknown}
 
     async def _check_layout(self, s, shoot: list[str] = (), shots: dict | None = None) -> tuple[str, str]:
         """Draw every slide fully revealed in headless Chromium, so the player's render and layout
@@ -216,8 +231,8 @@ class LocalService:
 
         async def run() -> None:
             async with self._browser(), Capturer(**self._capture_target(s, limit), short=360) as c:
-                for i, (sid, t) in enumerate(list(ends.items())[:LAYOUT_CHECK_MAX]):
-                    await c.seek(t, measure=True)
+                for i, sid in enumerate(list(ends)[:LAYOUT_CHECK_MAX]):
+                    await c.seek_slide(sid, measure=True)
                     if i == 0:  # the settled title slide: the poster for the gallery and link previews
                         (self.store.walk_dir(s.w.id) / "poster.png").write_bytes(await c.shot())
                     if sid in shoot and shots is not None:
@@ -238,11 +253,11 @@ class LocalService:
             return "not_checked", f"the headless player failed: {str(e).splitlines()[0][:200]}"
         return "", ""
 
-    def _browser(self):
-        """Hosted: one of the server's few Chromium slots, held for the whole job."""
+    def _browser(self, timeout: float | None = None):
+        """Hosted: one of the server's few Chromium slots, held for the whole job; waits at most `timeout` s for it."""
         import contextlib
 
-        return self.store.hosted.browsers if self.store.hosted else contextlib.nullcontext()
+        return self.store.hosted.chromium.short(timeout) if self.store.hosted else contextlib.nullcontext()
 
     def _capture_target(self, s, ttl: float) -> dict:
         """Where headless Chromium opens a walkthrough. Hosted: this process's own address with a
@@ -265,7 +280,7 @@ class LocalService:
         import asyncio
         import base64
 
-        from .capture import CaptureUnavailable, capture_frames_async
+        from .capture import CaptureUnavailable, capture_slides_async
 
         s = self.store.by_handle(handle, user)
         ends = _end_times(s.w)
@@ -274,16 +289,15 @@ class LocalService:
         unknown = [x for x in (slides or []) if x not in ends]
         if len(want) > PREVIEW_MAX:
             want = want[-PREVIEW_MAX:] if not slides else want[:PREVIEW_MAX]
-        times = [ends[sid] for sid in want]
         limit = self.store.hosted.limits.check_s if self.store.hosted else None
         try:
-            if not times:
-                pngs = []
+            if not want:
+                shots = []
             else:
-                async with self._browser():
+                async with self._browser(limit):
                     t = self._capture_target(s, limit or 0)
-                    shoot = capture_frames_async(t.pop("url"), times, short=short, measure=True, **t)
-                    pngs = await (asyncio.wait_for(shoot, limit) if limit else shoot)
+                    shoot = capture_slides_async(t.pop("url"), want, short=short, measure=True, **t)
+                    shots = await (asyncio.wait_for(shoot, limit) if limit else shoot)
         except CaptureUnavailable as e:
             raise ValueError(str(e)) from e
         except TimeoutError:
@@ -294,10 +308,11 @@ class LocalService:
                 {
                     "id": sid,
                     "title": next(x.title for x in s.w.slides if x.id == sid),
-                    "at_s": round(t, 1),
-                    "png": base64.b64encode(png).decode(),
+                    "at_s": round(shot[0], 1),
+                    "png": base64.b64encode(shot[1]).decode(),
                 }
-                for sid, t, png in zip(want, times, pngs, strict=True)
+                for sid, shot in zip(want, shots, strict=True)
+                if shot  # a slide revised away while the picture was being drawn
             ],
             "unknown": unknown,
             "player_issues": _dicts(s.take_player_issues()),
@@ -308,9 +323,18 @@ class LocalService:
     ) -> dict:
         """Write the walkthrough to a file the agent can attach: an MP4, or one HTML page that plays
         offline. A relative or empty `path` is in the project folder. Waits for the narration first.
-        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download."""
+        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download,
+        and each user and walkthrough has one export under way at a time."""
+        h = self.store.hosted
+        if not h:
+            return await self._export(handle, path, format, max_mb, wait_s, user)
+        s = self.store.by_handle(handle, user)
+        async with h.chromium.exporting(((s.w.owner.get("iss"), s.w.owner.get("sub")), s.w.id)) as job:
+            return await self._export(handle, path, format, max_mb, wait_s, user, job=job)
+
+    async def _export(self, handle: str, path: str, format: str, max_mb: float, wait_s: float | None, user, job=None) -> dict:
         import asyncio
-        import contextlib
+        import functools
 
         from .export import export_html, timeline_total
         from .video import render_mp4
@@ -333,8 +357,10 @@ class LocalService:
         if not says:
             raise ValueError("nothing to export yet: the walkthrough has no narration")
         t0 = time.monotonic()
-        while any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
+        while not s.deleted and any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
             await asyncio.sleep(0.5)
+        if s.deleted:  # while waiting for the voice
+            raise ValueError(UNKNOWN_HANDLE)
         pending = sum(1 for x in says if x.status == "pending")
         if pending:
             raise ValueError(f"{pending} paragraph(s) are still being voiced after {wait_s:.0f} s; try again shortly")
@@ -345,9 +371,8 @@ class LocalService:
         hosted_kw = {"workers": 1, "only_origin": True, "sandbox": h.chromium_sandbox} if h else {}
         try:
             if format == "mp4":
-                async with self._browser() if h else contextlib.nullcontext():
-                    job = asyncio.to_thread(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
-                    r = await (asyncio.wait_for(job, h.limits.export_min * 60) if h else job)
+                render = functools.partial(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
+                r = await (job.run(render, h.limits.export_min * 60) if h else asyncio.to_thread(render))
                 shrunk, errors = r["shrunk"], r["errors"]
             else:
                 await asyncio.to_thread(export_html, data_dir, s.w.id, out)
@@ -360,6 +385,11 @@ class LocalService:
             raise ValueError(str(e)) from None
         except TimeoutError:
             raise ValueError(f"the export took over {h.limits.export_min:g} minutes") from None
+        finally:
+            if s.deleted and h:  # deleted while rendering: leave nothing of it behind
+                shutil.rmtree(self.store.walk_dir(s.w.id), ignore_errors=True)
+        if s.deleted:
+            raise ValueError(UNKNOWN_HANDLE)
         extra = {"download": f"{s.store.base_url}/w/{s.w.id}/exports/{out.name}"} if h else {}
         return {
             **extra,
@@ -383,15 +413,34 @@ class LocalService:
 class RemoteService:
     """Forwards calls to the daemon's `/api/rpc/{method}` route."""
 
-    def __init__(self, base: str, token: str) -> None:
+    def __init__(self, base: str, token: str, reconnect: Callable[[], tuple[str, str]] | None = None) -> None:
         import httpx
 
         self.base = base.rstrip("/")
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(70.0, connect=5.0), headers={"Authorization": f"Bearer {token}"})
+        # The daemon now, (base, token), started if need be. A stdio client lives as long as its
+        # agent session, and the daemon it found at the start may since have been stopped or
+        # replaced: then nothing answers, or a new daemon refuses the old token.
+        self.reconnect = reconnect
 
     async def _call(self, method: str, http_timeout: float | None = None, **kw) -> Any:
+        import asyncio
+
+        import httpx
+
         extra = {"timeout": http_timeout} if http_timeout else {}
-        r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
+        try:
+            r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
+        except httpx.ConnectError:
+            if not self.reconnect:
+                raise
+            r = None
+        # Neither a refused connection nor a refused token ran the call, so sending it again is safe.
+        if self.reconnect and (r is None or r.status_code == 403):
+            base, token = await asyncio.to_thread(self.reconnect)
+            self.base = base.rstrip("/")
+            self.client.headers["Authorization"] = f"Bearer {token}"
+            r = await self.client.post(f"{self.base}/api/rpc/{method}", json=kw, **extra)
         try:
             data = r.json()
         except ValueError:  # a plain-text refusal, or not the daemon at all
@@ -435,25 +484,46 @@ class RemoteService:
 
 RPC_METHODS = {"start", "add", "playable", "revise", "finish", "list", "source", "preview", "export"}
 EXPORT_WAIT_S = 300.0  # for the narration to finish voicing before an export
+MAX_SHARES = 100  # people one walkthrough is shared with, by address; beyond that, the whole company
+MAX_EMAIL = 254  # characters in an address (RFC 5321)
 PREVIEW_MAX = 12
 LAYOUT_CHECK_MAX = 60  # slides drawn by the finish-time layout check
 LAYOUT_CHECK_S = 25.0
 ALIKE_SHOTS_MAX = 6  # pictures of alike slides in the finish reply
 
 
-def _end_times(w) -> dict[str, float]:
-    """Slide id -> a moment just before the slide ends, when everything on it is revealed."""
-    from .export import timeline, timeline_total
+def _counts(s) -> dict:
+    """Narration paragraphs, how many are voiced, and the narration's length so far."""
+    says = [x for sl in s.w.slides for x in sl.says if x.text]
+    return {
+        "total_says": len(says),
+        "voiced": sum(1 for x in says if x.status == "ready"),
+        "narration_s": round(narration_seconds(s.w), 1),
+    }
 
-    starts: dict[str, float] = {}
-    for t, slide, _ in timeline(w):
-        starts.setdefault(slide.id, t)
-    order = [sl.id for sl in w.slides if sl.id in starts]
+
+def _end_times(w) -> dict[str, float]:
+    """Slide id -> a moment when the slide shows alone with everything on it revealed: after its
+    last paragraph (the player reveals all once the narration is over) and before the next slide
+    starts coming in, SCENE_LEAD before its first word. Pictures are taken by `revealedAt` in
+    timeline.js, the same rule on the page's own timeline; this is the estimate from here."""
+    from .export import EMPTY, SCENE_LEAD, _estimate, slide_starts, timeline, timeline_total
+
+    starts = slide_starts(w)
+    spoken: dict[str, float] = {}  # slide id -> when its last paragraph ends
+    for t, slide, say in timeline(w):
+        spoken[slide.id] = t + _estimate(say)
+    order = [sl.id for sl in w.slides]
     total = timeline_total(w)
     out = {}
     for i, sid in enumerate(order):
+        start = starts[sid]
         end = starts[order[i + 1]] if i + 1 < len(order) else total
-        out[sid] = max(starts[sid], end - 0.35)
+        lo = spoken.get(sid, start + EMPTY)
+        hi = end - SCENE_LEAD if i + 1 < len(order) else end
+        # A slide ending on a pause has no silence after it; just before the next one comes in,
+        # every cue has fired.
+        out[sid] = lo + min(0.1, (hi - lo) / 2) if hi > lo else max(start, end - 0.05)
     return out
 
 

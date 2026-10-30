@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from mcp.server.mcpserver.resolve import ListRoots, Resolve
 from mcp_types import CallToolResult, ImageContent, ListRootsResult, TextContent, ToolAnnotations
 from pydantic import Field
@@ -248,6 +249,9 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
                     except Exception:
                         pass
             assert p is not None
+            # Voiced while this call waited: report the counts as they are now. (An older daemon
+            # behind the stdio shim leaves them out.)
+            r.update({k: p[k] for k in ("voiced", "total_says", "narration_s") if k in p})
             if p["status"] == "ready":
                 status = "playable"
                 parts.append(
@@ -575,6 +579,12 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
                 company="yes" if r["company"] else "no",
                 url=r["url"],
             )
+            if r.get("unknown"):
+                text += "\n" + reply(
+                    "share_unknown",
+                    "Nobody has signed in here as {emails} yet: added anyway.",
+                    emails=", ".join(r["unknown"]),
+                )
             return _result(text, {"status": "shared", **r})
 
     for name, p in texts(deliver, hosted)["prompts"].items():
@@ -610,7 +620,17 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         mime_type="text/markdown",
     )
     async def walkthrough_resource(wid: str, ctx: Context = None) -> str:  # type: ignore[assignment]
-        return await service.source(wid, **who(ctx))
+        try:
+            return await service.source(wid, **who(ctx))
+        except ValueError:
+            # Anything but ResourceError reaches the client as "Error creating resource from template".
+            raise ResourceNotFoundError(
+                reply(
+                    "no_walkthrough",
+                    "No walkthrough {wid}. list_walkthroughs lists yours; the id is the part of the handle before the dot.",
+                    wid=wid,
+                )
+            ) from None
 
     return mcp
 
@@ -702,9 +722,21 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         wid, user = s.w.id, user_of(request)
 
         def allowed() -> bool:
-            # Hosted: access is checked again on every event, so a removed share or a deleted
-            # walkthrough ends the stream.
-            return not hosted or store.viewable(wid, user) is s
+            # Access is checked again on every event and keepalive, so a deleted walkthrough ends
+            # the stream, and (hosted) so do a removed share, signing out, an expired session or a
+            # sign-in rule the user no longer meets, within 15 s.
+            if s.deleted:
+                return False
+            if not hosted:
+                return True
+            if store.viewable(wid, user) is not s:
+                return False
+            identity = store.hosted.identity
+            now = identity.from_cookie(request.headers)
+            if now is None or now.user.key != user.key:
+                return False
+            rule = getattr(identity.login, "allowed", None)
+            return rule is None or rule(user)
 
         async def stream():
             q = s.subscribe()
@@ -718,12 +750,14 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                             return
                         yield ": keepalive\n\n"
                         continue
-                    if not allowed():
+                    if item is None or not allowed():  # None: the server is stopping
                         return
                     await asyncio.sleep(0.05)  # coalesce bursts
                     ids, meta = set(item["slides"]), item["meta"]
                     while not q.empty():
                         more = q.get_nowait()
+                        if more is None:
+                            return
                         ids |= more["slides"]
                         meta = meta or more["meta"]
                     yield f"data: {json.dumps(s.delta(ids, meta))}\n\n"
@@ -800,13 +834,17 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                     add, remove, company = body.get("add") or [], body.get("remove") or [], body.get("company")
                     if not all(isinstance(x, str) for x in [*add, *remove]) or company not in (None, True, False):
                         raise ValueError("bad request")
-                    service.share_session(s, add, remove, company)
+                    unknown = service.share_session(s, add, remove, company)["unknown"]
                 except ValueError as e:
                     return JSONResponse({"error": str(e)}, status_code=400)
                 except Exception:
                     return JSONResponse({"error": "bad request"}, status_code=400)
+            else:
+                unknown = []
             domains = store.hosted.allowed_domains
-            return JSONResponse({"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains})
+            return JSONResponse(
+                {"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains, "unknown": unknown}
+            )
 
         @mcp.custom_route("/w/{wid}/exports/{name}", methods=["GET"])
         async def exported(request: Request) -> Response:
@@ -951,6 +989,13 @@ def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = F
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
     page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    # A hosted server voices them itself, and its users have no showntell to run.
+    where, hint = (
+        ("this server", "Ask your agent for a walkthrough.")
+        if hosted
+        else ("this machine", "Ask your agent for a walkthrough, or run <code>showntell play file.md</code>.")
+    )
+    page = page.replace("{{WHERE}}", where).replace("{{HINT}}", hint)
     if signout:
         page = page.replace("</footer>", ' · <button class="signout">Sign out</button></footer>')
     return page.replace("{{CSRF}}", html.escape(csrf))

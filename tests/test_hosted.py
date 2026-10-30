@@ -12,6 +12,7 @@ import contextlib
 import json
 import re
 import sys
+import threading
 import time
 from types import SimpleNamespace
 
@@ -238,7 +239,7 @@ async def b_is_locked_out(srv, handle: str, bob: Client) -> None:
         assert r.is_error and "unknown handle" in text(r), (tool, text(r))
     listed = await bob.call_tool("list_walkthroughs", {})
     assert wid not in json.dumps(listed.structured_content)
-    with pytest.raises(Exception, match="Error creating resource"):
+    with pytest.raises(Exception, match=f"No walkthrough {wid}. list_walkthroughs lists yours"):
         await bob.read_resource(f"showntell://walkthroughs/{wid}")
     async with browser_as(srv, "bob@example.com") as (c, csrf):
         s = srv.store.get(wid)
@@ -283,6 +284,7 @@ async def test_two_users_share_and_unshare(srv, voiced):
             assert (await c.post(f"/w/{wid}/delete", json={}, headers=post)).status_code == 404
             gallery = (await c.get("/")).text
             assert wid in gallery and "shared by alice@example.com" in gallery and 'class="del"' not in gallery
+            assert "voiced on this server" in gallery and "showntell play" not in gallery
 
             # Bob's live player is cut off as soon as Alice removes the share.
             async with c.stream("GET", f"/w/{wid}/events") as stream:
@@ -297,6 +299,26 @@ async def test_two_users_share_and_unshare(srv, voiced):
 
                 await asyncio.wait_for(drain(), 5)
         await b_is_locked_out(srv, handle, bob)
+
+
+async def test_an_open_player_stops_when_its_session_ends(srv, voiced):
+    """A live player re-checks the viewer's session, not only the share: signing out (or the
+    session expiring) ends its stream at the next event."""
+    from showntell.identity import SESSION_COOKIE
+
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle, wid = (r := await start(alice))["handle"], wid_of(r["handle"])
+        async with browser_as(srv, "alice@example.com") as (c, _):
+            async with c.stream("GET", f"/w/{wid}/events") as stream:
+                lines = stream.aiter_lines()
+                assert (await anext(lines)).startswith("data: ")
+                srv.store.hosted.identity.sessions.end(c.cookies[SESSION_COOKIE])  # signed out in another tab
+                await alice.call_tool("add_slides", {"handle": handle, "markdown": "## More\n\nAnother slide here.\n"})
+
+                async def drain() -> list[str]:
+                    return [x async for x in lines if x.startswith("data: ")]
+
+                assert await asyncio.wait_for(drain(), 5) == []  # ended without sending the change
 
 
 async def test_sharing_with_the_company(srv, voiced):
@@ -318,6 +340,21 @@ async def test_shares_are_checked_for_shape_and_domain(srv):
         r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["not an email"]})
         assert r.is_error and "not an email address" in text(r)
         assert srv.store.get(wid_of(handle)).w.shares == []
+
+
+async def test_shares_are_limited_in_count_and_address_length(srv):
+    from showntell.service import MAX_SHARES
+
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["a" * 300 + "@example.com"]})
+        assert r.is_error and "is not an email address" in text(r) and len(text(r)) < 400
+        many = [f"p{i}@example.com" for i in range(MAX_SHARES + 1)]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": many})
+        assert r.is_error and f"limit of {MAX_SHARES}" in text(r)
+        assert srv.store.get(wid_of(handle)).w.shares == []  # all or nothing
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": many[:MAX_SHARES]})
+        assert not r.is_error and len(r.structured_content["shares"]) == MAX_SHARES
 
 
 async def test_owner_sees_their_own_with_handles_and_can_delete(srv):
@@ -572,11 +609,124 @@ async def test_retention_counts_from_the_last_view(tmp_path):
     assert [g["id"] for g in gone["walkthroughs"]] == ["unseen"]
 
 
+def blocking(gate: threading.Event, result=None):
+    """A render that runs until `gate` is set."""
+    return lambda: (gate.wait(10), result)[1]
+
+
+async def test_the_daily_expiry_survives_a_failing_round(store, monkeypatch, caplog, wait_until):
+    import showntell.prune
+    from showntell.app import expire
+
+    s = store.create("Old")
+    calls = []
+
+    def prune(data_dir, older_than):
+        calls.append(older_than)
+        if len(calls) == 1:
+            raise OSError("disk hiccup")
+        return {"walkthroughs": [{"id": s.w.id}], "audio_files": 0, "audio_bytes": 0}
+
+    monkeypatch.setattr(showntell.prune, "prune", prune)
+    h = SimpleNamespace(identity=SimpleNamespace(login=object()))
+    cfg = SimpleNamespace(data_dir=store.data_dir, limits=Limits(retention_days=1))
+    task = asyncio.create_task(expire(store, h, cfg, every=0.01))
+    try:
+        await wait_until(lambda: len(calls) >= 2)
+    finally:
+        task.cancel()
+    assert "disk hiccup" in caplog.text and s.deleted and s.w.id not in store.sessions
+
+
 async def test_chromium_jobs_share_a_server_wide_limit(srv):
-    sem = srv.hosted.browsers
-    assert sem._value == 2
-    async with sem, sem:
-        assert sem.locked()
+    c = srv.hosted.chromium
+    assert c.slots == 2
+    async with c.short(), c.short():
+        assert c.busy == 2
+        with pytest.raises(ValueError, match="busy for 0.1 s"):
+            async with c.short(0.1):
+                pass
+    assert c.busy == 0
+
+
+async def test_exports_leave_a_slot_for_finish_checks_and_previews():
+    c = hosted.Chromium(2)
+    gate = threading.Event()
+    async with c.exporting(("alice", "w1")) as job:
+        first = asyncio.create_task(job.run(blocking(gate), 10))
+        await asyncio.sleep(0.05)
+        async with c.exporting(("bob", "w2")) as other:
+            second = asyncio.create_task(other.run(blocking(gate), 10))
+            await asyncio.sleep(0.05)
+            assert not second.done() and c.exports == 1  # the other slot is kept for short jobs
+            async with c.short(0.1):
+                assert c.busy == 2
+            gate.set()
+            await asyncio.gather(first, second)
+    assert (c.busy, c.exports, c.running) == (0, 0, set())
+
+
+async def test_finish_checks_and_previews_go_before_waiting_exports():
+    c = hosted.Chromium(1)
+    order = []
+
+    async def short():
+        async with c.short(5):
+            order.append("short")
+
+    async def export():
+        async with c.exporting(("bob", "w2")) as job:
+            await job.run(lambda: order.append("export"), 5)
+
+    async with c.short():
+        tasks = [asyncio.create_task(export()), asyncio.create_task(short())]
+        await asyncio.sleep(0.05)
+    await asyncio.gather(*tasks)
+    assert order == ["short", "export"]
+
+
+async def test_a_timed_out_render_keeps_its_slot_until_its_thread_ends(wait_until):
+    c = hosted.Chromium(1)
+    gate = threading.Event()
+    with pytest.raises(TimeoutError):
+        async with c.exporting(("alice", "w1")) as job:
+            await job.run(blocking(gate), 0.1)
+    assert c.busy == 1 and "w1" in c.running  # Chromium and ffmpeg are still running
+    with pytest.raises(ValueError, match="busy"):
+        async with c.short(0.1):
+            pass
+    with pytest.raises(ValueError, match="still running"):
+        async with c.exporting(("alice", "w1")):
+            pass
+    gate.set()
+    await wait_until(lambda: c.busy == 0 and not c.running)
+
+
+async def test_one_export_per_user_at_a_time(srv, voiced, monkeypatch):
+    import showntell.video
+
+    gate = threading.Event()
+
+    def render(data_dir, wid, out, **kw):
+        gate.wait(10)
+        out.write_bytes(b"mp4")
+        return {"shrunk": "", "errors": []}
+
+    monkeypatch.setattr(showntell.video, "render_mp4", render)
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handles = [(await start(alice))["handle"], (await start(alice, title="Other"))["handle"]]
+    sessions = [srv.store.get(wid_of(h)) for h in handles]
+    for s in sessions:
+        await voiced(s)
+    user = User.from_owner(sessions[0].w.owner)
+    first = asyncio.create_task(srv.service.export(handles[0], user=user))
+    await asyncio.sleep(0.2)
+    for h in handles:  # the same walkthrough again, or another of hers
+        with pytest.raises(ValueError, match="another export of yours is still running"):
+            await srv.service.export(h, user=user)
+    gate.set()
+    assert (await first)["path"].endswith("caching.mp4")
+    assert not srv.hosted.chromium.running
 
 
 # -- the Share control on the page ---------------------------------------------------------------------
@@ -591,7 +741,13 @@ async def test_the_share_control_is_for_the_owner_only(srv):
         page = (await c.get(f"/w/{wid}/")).text
         assert "share.js" in page and "share.css" in page
         r = await c.get(f"/w/{wid}/shares")
-        assert r.json() == {"shares": ["bob@example.com"], "company": False, "owner": "alice@example.com", "domains": ["example.com"]}
+        assert r.json() == {
+            "shares": ["bob@example.com"],
+            "company": False,
+            "owner": "alice@example.com",
+            "domains": ["example.com"],
+            "unknown": [],
+        }
     async with browser_as(srv, "bob@example.com") as (c, csrf):
         assert "share.js" not in (await c.get(f"/w/{wid}/")).text  # shared with, but not the owner
         assert (await c.get(f"/w/{wid}/shares")).status_code == 404
@@ -618,6 +774,38 @@ async def test_the_share_control_changes_shares_through_the_same_checks(srv):
     assert srv.store.get(wid).w.company is False
 
 
+async def test_a_share_nobody_signs_in_as_is_added_with_a_warning(srv):
+    # With Entra a share matches the sign-in name, which can differ from the mail address.
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["bob@example.com", "B.Jones@example.com"]})
+        assert not r.is_error and r.structured_content["shares"] == ["bob@example.com", "b.jones@example.com"]
+        assert r.structured_content["unknown"] == ["b.jones@example.com"]
+        assert "Nobody has signed in to this server as b.jones@example.com yet" in text(r) and "bob@example.com yet" not in text(r)
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["b.jones@example.com"], "company": True})
+        assert r.structured_content["unknown"] == [] and "Nobody has signed in" not in text(r)  # said once, when added
+    async with browser_as(srv, "alice@example.com") as (c, csrf):
+        r = await c.post(
+            f"/w/{wid_of(handle)}/shares", json={"add": ["d.smith@example.com", "carol@example.com"]}, headers={"X-CSRF-Token": csrf}
+        )
+        assert r.status_code == 200 and r.json()["unknown"] == ["d.smith@example.com"]
+        assert (await c.get(f"/w/{wid_of(handle)}/shares")).json()["unknown"] == []
+
+
+def test_who_signs_in_comes_from_the_users_table(tmp_path):
+    from showntell.authdb import AuthDB, DBSessions
+    from showntell.identity import signs_in_as
+
+    db = AuthDB(tmp_path / "auth.db")
+    db.remember(User("https://login.example", "s1", "jdoe@corp.com"), {})
+    ident = Identity(StubLogin({}), sessions=DBSessions(db))
+    ident.login = object()  # a provider sign-in, not the stand-in list
+    assert signs_in_as(ident, "jdoe@corp.com") is True and signs_in_as(ident, "john.doe@corp.com") is False
+    assert signs_in_as(Identity(StubLogin(TOKENS)), "carol@example.com") is True
+    assert signs_in_as(Identity(StubLogin(TOKENS)), "dave@example.com") is False
+    assert signs_in_as(Identity(object()), "dave@example.com") is None  # no list and no table: no warning
+
+
 async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):
     secret = "the narration is private"
     with caplog.at_level("INFO", logger="showntell.hosted"):
@@ -626,7 +814,7 @@ async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):
             await alice.call_tool("add_slides", {"handle": handle, "markdown": f"## S\n\n{secret}.\n"})
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("tool ")]
     assert any(m.startswith("tool start_walkthrough by alice@example.com") for m in lines)
-    assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: ") for m in lines)
+    assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: 200 in ") for m in lines)
     assert not any(secret in r.getMessage() or "tok-alice" in r.getMessage() for r in caplog.records)
 
 

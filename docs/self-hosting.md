@@ -36,7 +36,7 @@ Settings: `SHOWNTELL_OIDC=google`, the client ID and secret, and `SHOWNTELL_ALLO
 5. **Certificates & secrets → New client secret:** copy its value now; it is shown once. Note when it expires and put a reminder in the calendar: sign-in stops when it does.
 6. **API permissions:** the default delegated Microsoft Graph `User.Read` is enough; `openid`, `email` and `profile` are granted with it.
 
-Settings: `SHOWNTELL_OIDC=entra`, the client ID and secret, `SHOWNTELL_ENTRA_TENANT` set to the tenant ID (not a domain). Leave `SHOWNTELL_ALLOWED_DOMAINS` empty to admit anyone in the tenant, or list domains to admit only users whose user principal name (UPN) is in them. showntell reads the UPN (`preferred_username`), never Entra's `email` claim, which users and admins can edit.
+Settings: `SHOWNTELL_OIDC=entra`, the client ID and secret, `SHOWNTELL_ENTRA_TENANT` set to the tenant ID (not a domain). Leave `SHOWNTELL_ALLOWED_DOMAINS` empty to admit anyone in the tenant, or list domains to admit only users whose user principal name (UPN) is in them. showntell reads the UPN (`preferred_username`), never Entra's `email` claim, which users and admins can edit. B2B guests are in the tenant too but are refused unless `SHOWNTELL_ENTRA_GUESTS=1`. Shares match the UPN, which in some tenants differs from the mail address (`jdoe@` for `john.doe@`), so share with the address people sign in with.
 
 ### Another OIDC provider
 
@@ -95,7 +95,7 @@ The gallery at `https://<your name>/` lists each person's walkthroughs and those
 
 Everything lives in the `showntell-data` volume: walkthroughs and their exports, the shared audio cache, the models, and `auth.db` (users, registered clients, sessions and tokens, every secret stored only as a hash). Back up the volume; losing `auth.db` signs everyone out and makes clients register again, nothing more.
 
-Walkthroughs nobody has opened or changed for 180 days are deleted (`SHOWNTELL_QUOTA_RETENTION_DAYS`; 0 keeps them). The other limits are in `deploy/.env.example` and [hosted-design.md](hosted-design.md#fair-use).
+Claude stays connected for `SHOWNTELL_SIGNIN_DAYS` (7) after a person last signed in at the provider, then asks them to sign in again; that is how someone disabled at Google or Entra loses access without anyone changing showntell. Walkthroughs nobody has opened or changed for 180 days are deleted (`SHOWNTELL_QUOTA_RETENTION_DAYS`; 0 keeps them). The other limits are in `deploy/.env.example` and [hosted-design.md](hosted-design.md#fair-use).
 
 ## Updating
 

@@ -150,8 +150,11 @@ def run_shim(cfg: Config) -> None:
     def say(msg: str) -> None:
         print(msg, file=sys.stderr)
 
-    lock = daemon.ensure(cfg, log=say)
-    service = RemoteService(f"http://127.0.0.1:{lock['port']}", lock["token"])
+    def find() -> tuple[str, str]:
+        lock = daemon.ensure(cfg, log=say)
+        return f"http://127.0.0.1:{lock['port']}", lock["token"]
+
+    service = RemoteService(*find(), reconnect=find)
     mcp = create_mcp(service, project_dir_default=os.getcwd(), deliver=cfg.deliver)
     asyncio.run(mcp.run_stdio_async())
 

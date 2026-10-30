@@ -14,10 +14,14 @@
   "writing_limit": "Not started: you have {n} walkthroughs in progress, this server's limit. Finish one with finish_walkthrough first: {handles}.",
   "stored_limit": "Not started: you have {n} walkthroughs stored, this server's limit. Ask the user to delete old ones from the gallery page.",
   "storage_limit": "Not started: your walkthroughs use {gb:.1f} GB, over this server's limit of {limit:g} GB. Ask the user to delete old ones from the gallery page.",
+  "export_busy": "Not exported: another export of yours is still running on this server, which makes one per user at a time. Wait for it to finish, then call export_walkthrough again.",
+  "chromium_busy": "The server's browsers stayed busy for {s:g} s with other people's checks; try again in a minute.",
   "rate_limit": "Too many calls: this server allows {n} tool calls a minute per user. Wait a minute, then send more slides per call.",
   "share_bad_email": "{email} is not an email address; nothing was changed.",
   "share_domain": "{email} is outside this company's domains ({domains}); nothing was changed.",
+  "share_too_many": "Not shared: that would make {n} people, over this server's limit of {limit} per walkthrough; nothing was changed. Share it with the whole company instead (company=true).",
   "share_local": "Sharing is for hosted servers; this one runs on the user's machine.",
   "shared": "Shared with: {people}. Whole company: {company}. Link: {url}\nTell the user who can open it now.",
-  "shared_nobody": "only the owner"
+  "shared_nobody": "only the owner",
+  "share_unknown": "Nobody has signed in to this server as {emails} yet; added anyway, since they may not have signed in. A share matches the address people sign in with: for Entra, their sign-in name, which can differ from their email. Tell the user, and if one of them still gets \"not found\" after signing in, share with the address they sign in as."
 }

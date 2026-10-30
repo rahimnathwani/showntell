@@ -28,12 +28,12 @@ from .identity import BrowserSession, BrowserSessions, User
 
 SCHEMA = """
 create table if not exists users (iss text, sub text, email text, claims text, seen real, primary key (iss, sub));
-create table if not exists clients (client_id text primary key, info text, created real);
+create table if not exists clients (client_id text primary key, info text, created real, used integer default 0);
 create table if not exists pending (id text primary key, kind text, data text, expires real);
 create table if not exists codes (hash text primary key, data text, expires real, used integer default 0, chain text);
 create table if not exists tokens (
   hash text primary key, kind text, chain text, client_id text, iss text, sub text, email text,
-  resource text, scopes text, expires real, spent integer default 0
+  resource text, scopes text, expires real, spent integer default 0, spent_at real
 );
 create index if not exists tokens_chain on tokens (chain);
 create table if not exists sessions (hash text primary key, iss text, sub text, email text, csrf text, expires real);
@@ -53,6 +53,10 @@ class AuthDB:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(SCHEMA)
+            if "spent_at" not in [r[1] for r in self._db.execute("pragma table_info(tokens)")]:  # made by 0.2.0 or 0.2.1
+                self._db.execute("alter table tokens add column spent_at real")
+            if "used" not in [r[1] for r in self._db.execute("pragma table_info(clients)")]:
+                self._db.execute("alter table clients add column used integer default 0")
         if new:
             os.chmod(path, 0o600)
 
@@ -69,6 +73,7 @@ class AuthDB:
         now = time.time()
         for table in ("pending", "codes", "tokens", "sessions"):
             self.run(f"delete from {table} where expires < ?", (now - 86400,))  # a day's grace keeps reuse detectable
+        self.run("delete from clients where used = 0 and created < ?", (now - 86400,))  # registered, never signed in with
 
     # -- users ---------------------------------------------------------------------------------
 
@@ -76,6 +81,11 @@ class AuthDB:
         self.run(
             "insert or replace into users values (?, ?, ?, ?, ?)", (user.issuer, user.sub, user.email, json.dumps(claims), time.time())
         )
+
+    def last_sign_in(self, iss: str, sub: str) -> tuple[float, str] | None:
+        """When the user last signed in at the provider, and the address it gave then."""
+        rows = self.run("select seen, email from users where iss = ? and sub = ?", (iss, sub))
+        return (float(rows[0][0] or 0), rows[0][1]) if rows else None
 
     def claims(self, iss: str, sub: str) -> dict | None:
         rows = self.run("select claims from users where iss = ? and sub = ?", (iss, sub))

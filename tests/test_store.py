@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 
 import pytest
@@ -173,6 +174,51 @@ async def test_revise_while_watched_keeps_the_old_slide_until_voiced(service, st
     s.unsubscribe(q)
 
 
+async def test_revising_a_watched_slide_twice_keeps_each_revisions_audio_apart(service, store, voiced, wait_until):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + BODY)
+    s = store.by_handle(r["handle"])
+    await voiced(s)
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.3
+    first = BODY.replace("It never touches the database.", "It reads memory.")
+    second = BODY.replace("It never touches the database.", "It reads from memory and never waits on the disk at all.")
+    a = await service.revise(r["handle"], "lookup", first)
+    b = await service.revise(r["handle"], "lookup", second)
+    assert (a["rev"], b["rev"]) == (2, 3) and s.staged["lookup"].says[1].id == "lookup.2.3"
+    jobs = store.narrator.stats["jobs"]
+    await wait_until(lambda: store.narrator.stats["jobs"] > jobs)  # the first revision's audio
+    await asyncio.sleep(0.05)
+    assert s.w.slides[1].rev == 1 and s.staged["lookup"].says[1].status == "pending"
+    await wait_until(lambda: s.w.slides[1].rev == 3)
+    store.narrator.backend.delay = 0
+    say = s.w.slides[1].says[1]
+    assert say.text.startswith("It reads from memory and never") and len(say.words) == len(say.text.split())
+    assert store.narrator.audio_path(say.key).is_file()
+    s.unsubscribe(q)
+
+
+async def test_a_staged_revision_survives_a_restart(service, store, wait_until):
+    """source.md has the revision as soon as it is staged, so the slide it names must come back too."""
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + BODY)
+    s = store.by_handle(r["handle"])
+    await wait_until(lambda: all(x.status == "ready" for sl in s.w.slides for x in sl.says if x.text))
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.3
+    v = await service.revise(r["handle"], "lookup", BODY.replace("It never touches the database.", "It reads memory only."))
+    assert v["staged"]
+    s.save_now()
+    fresh = Store(store.data_dir, "http://localhost:4799", store.narrator)
+    fresh.loop = asyncio.get_running_loop()
+    t = fresh.get(s.w.id)
+    assert "It reads memory only." in t.source and "lookup" in t.staged
+    await wait_until(lambda: t.w.slides[1].rev == 2)
+    store.narrator.backend.delay = 0
+    assert t.w.slides[1].says[1].text == "It reads memory only." and t.w.slides[1].says[1].status == "ready" and not t.staged
+    s.unsubscribe(q)
+
+
 async def test_revise_without_heading_keeps_the_title(service, store):
     r = await started(service)
     await service.add(r["handle"], OPENING + "\n" + BODY)
@@ -262,6 +308,34 @@ async def test_finish_caps_questions_at_four(service):
     assert len((await service.finish(r["handle"], [f"Q{i}?" for i in range(6)]))["questions"]) == 4
 
 
+async def test_finish_refuses_a_question_that_is_too_long(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    with pytest.raises(ValueError, match="question 2 is 301 characters"):
+        await service.finish(r["handle"], ["Why?", "x" * 301])
+    assert store.by_handle(r["handle"]).w.status == "writing"
+
+
+async def test_listings_read_each_state_file_once_until_it_changes(service, store, monkeypatch):
+    for title in ("A", "B", "C"):
+        await started(service, title=title)
+    assert sorted(x["title"] for x in store.list()) == ["A", "B", "C"]
+    reads = []
+    original = Store._remember
+    monkeypatch.setattr(Store, "_remember", lambda self, wid, data, mtime: reads.append(wid) or original(self, wid, data, mtime))
+    store.list()
+    assert reads == []  # nothing parsed again
+    a = next(x for x in store.list() if x["title"] == "A")
+    st = store.walk_dir(a["id"]) / "state.json"
+    data = json.loads(st.read_text())
+    st.write_text(json.dumps({**data, "title": "Changed outside"}))  # e.g. another process
+    later = st.stat().st_mtime_ns + 1_000_000
+    os.utime(st, ns=(later, later))
+    assert "Changed outside" in [x["title"] for x in store.list()] and reads == [a["id"]]
+    store.delete(a["id"])
+    assert sorted(x["title"] for x in store.list()) == ["B", "C"]
+
+
 async def test_the_last_slides_problems_arrive_with_its_call_and_only_once(service):
     r = await started(service)
     a = await service.add(r["handle"], OPENING + "\n## Silent {#silent}\n\n```python\nx = 1\n```\n")
@@ -308,6 +382,24 @@ async def test_line_numbers_continue_after_a_reload(service, store, tmp_path):
     a = await LocalService(fresh).add(r["handle"], "## Silent {#silent}\n\n```python\nx = 1\n```\n")
     silent = next(i for i in a["issues"] if i["slide"] == "silent")
     assert silent["line"] == s.source.count("\n") + 1
+
+
+async def test_findings_already_given_are_not_repeated_after_a_reload(service, store, tmp_path):
+    drawing = (
+        '## Parts {#parts}\n\n```svg\n<svg viewBox="0 0 1150 560">\n'
+        + "".join(f'<g id="p{i}"><rect x="{i * 200}" y="100" width="150" height="150"/></g>\n' for i in range(4))
+        + "</svg>\n```\n\n"
+        + " ".join(f"Then comes [part {i}](#p{i}), which does one more small thing in the picture." for i in range(4))
+        + "\n"
+    )
+    r = await started(service)
+    first = await service.add(r["handle"], OPENING + "\n" + drawing)
+    assert "zoom_unused" in [i["code"] for i in first["issues"]]
+    store.by_handle(r["handle"]).save_now()
+    fresh = Store(tmp_path / "data", "http://localhost:4799", store.narrator)
+    fresh.loop = asyncio.get_running_loop()
+    a = await LocalService(fresh).add(r["handle"], "## Next\n\nOne more slide.\n")
+    assert [i for i in a["issues"] if i["slide"] == "parts"] == []
 
 
 async def test_finish_reports_and_drops_an_unclosed_fence(service, store):
@@ -362,9 +454,9 @@ async def test_finish_layout_check_passes_player_findings_on(store, monkeypatch)
         async def __aexit__(self, *exc):
             return False
 
-        async def seek(self, t, measure=False):
-            seen.append((t, measure))
-            return ""
+        async def seek_slide(self, sid, measure=False):
+            seen.append((sid, measure))
+            return "", 1.0
 
         async def shot(self):
             return b"\x89PNG poster"
@@ -573,6 +665,46 @@ async def test_delete_removes_walkthrough(store):
     assert store.delete(s.w.id) is True
     assert store.get(s.w.id) is None and store.list() == []
     assert store.delete(s.w.id) is False
+
+
+async def test_a_pending_save_does_not_bring_a_deleted_walkthrough_back(tmp_path, idle_narrator):
+    store = Store(tmp_path / "data", "http://localhost:4799", idle_narrator)
+    store.loop = asyncio.get_running_loop()
+    s = store.create("T")
+    s.add(OPENING)  # schedules a save
+    assert s._save_handle is not None
+    store.delete(s.w.id)
+    s._changed(set(), meta=True)  # an open stream or tool call still holding the session
+    await asyncio.sleep(0.5)
+    assert not store.walk_dir(s.w.id).exists() and store.get(s.w.id) is None
+
+
+async def test_late_audio_does_not_bring_a_deleted_walkthrough_back(service, store, wait_until):
+    store.narrator.backend.delay = 0.2
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    s = store.by_handle(r["handle"])
+    jobs = store.narrator.stats["jobs"]
+    store.delete(s.w.id)
+    await wait_until(lambda: store.narrator.stats["jobs"] > jobs)  # the audio arrives after the delete
+    await asyncio.sleep(0.5)
+    assert not store.walk_dir(s.w.id).exists() and store.list() == []
+    store.narrator.backend.delay = 0
+
+
+async def test_an_export_waiting_for_the_voice_stops_when_its_walkthrough_is_deleted(service, store, tmp_path):
+    store.narrator.backend.delay = 0.3
+    r = await started(service, project_dir=str(tmp_path))
+    await service.add(r["handle"], OPENING)
+    s = store.by_handle(r["handle"])
+    job = asyncio.create_task(service.export(r["handle"], format="html", path=str(tmp_path / "x.html")))
+    await asyncio.sleep(0.05)
+    store.delete(s.w.id)
+    with pytest.raises(ValueError, match="unknown handle"):
+        await job
+    await asyncio.sleep(0.4)  # the speech job ends before the loop does
+    store.narrator.backend.delay = 0
+    assert not store.walk_dir(s.w.id).exists() and not (tmp_path / "x.html").exists()
 
 
 # -- live updates --------------------------------------------------------------------------------------

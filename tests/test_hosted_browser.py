@@ -332,19 +332,26 @@ async def test_the_owner_shares_from_the_page(tmp_path, narrator, free_port, voi
             await page.wait_for_selector("#share-open", state="attached")
             await page.click("#more")
             await page.click("#share-open")
+            hint = "#share .share-hint"
+            await page.wait_for_selector(f"{hint}:text('Only you can open it')")
             await page.fill("#share input[type=email]", "bob@example.com")
             await page.click("#share .share-add button")
             await saved(page)
             assert s.store.get(wid).w.shares == ["bob@example.com"]
+            assert (await page.text_content(hint)).startswith("The people below can watch it")
             await page.fill("#share input[type=email]", "eve@elsewhere.org")
             await page.click("#share .share-add button")
             await page.wait_for_selector("#share .share-status:text('outside')")
             await page.check("#share-company")
             await saved(page)
             assert s.store.get(wid).w.company is True
+            assert (await page.text_content(hint)).startswith("Everyone who can sign in")
             await page.click("#share .share-list button")
             await page.wait_for_selector("#share .share-none")
             assert s.store.get(wid).w.shares == []
+            await page.uncheck("#share-company")
+            await saved(page)
+            assert (await page.text_content(hint)).startswith("Only you can open it")
             await page.click("#share .share-done")
             assert await page.is_hidden("#share")
             assert await page.evaluate("window.__csp") == []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import httpx
@@ -258,6 +259,7 @@ async def test_index_lists_walkthroughs(http, walk):
         r = await c.get("/")
     assert r.status_code == 200 and f"/w/{walk.w.id}/" in r.text and "{{" not in r.text
     assert '<span class="desc">' not in r.text
+    assert "voiced on this machine" in r.text and "showntell play file.md" in r.text
     walk.w.description = "A read-through <cache>"
     walk.save_now()
     async with http() as c:
@@ -386,3 +388,29 @@ async def test_loopback_config_ignores_the_access_token(http, tmp_path, walk):
     cfg = Config(host="127.0.0.1", port=4799, data_dir=tmp_path, public_url="", access_token="ignored")
     async with http(cfg=cfg) as c:
         assert (await c.get(f"/w/{walk.w.id}/")).status_code == 200
+
+
+async def test_deleting_ends_an_open_event_stream(service, local_cfg, walk, store, free_port):
+    import uvicorn
+
+    s = walk
+    server = uvicorn.Server(uvicorn.Config(make_app(service, local_cfg), host="127.0.0.1", port=free_port, log_level="warning"))
+    task = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.01)
+    try:
+        async with httpx.AsyncClient(base_url=f"http://localhost:{free_port}", timeout=10) as c:
+            async with c.stream("GET", f"/w/{s.w.id}/events") as stream:
+                lines = stream.aiter_lines()
+                assert (await anext(lines)).startswith("data: ")
+                store.delete(s.w.id)
+
+                async def drain() -> None:
+                    async for _ in lines:
+                        pass
+
+                await asyncio.wait_for(drain(), 5)
+        assert not s.subscribers and not store.walk_dir(s.w.id).exists()
+    finally:
+        server.should_exit = True
+        await task

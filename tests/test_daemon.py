@@ -276,6 +276,39 @@ def _reap(pid: int, timeout: float) -> bool:
     return False
 
 
+async def test_the_shim_finds_a_replaced_daemon_again():
+    # A daemon replaced since the shim started has a new token and refuses the old one.
+    import httpx
+
+    def answer(req):
+        if req.headers["authorization"] == "Bearer new" and req.url.port == 2:
+            return httpx.Response(200, json={"result": ["listed"]})
+        return httpx.Response(403, json={"error": "forbidden"})
+
+    found = []
+    svc = RemoteService("http://127.0.0.1:1", "old", reconnect=lambda: found.append(1) or ("http://127.0.0.1:2", "new"))
+    svc.client = httpx.AsyncClient(transport=httpx.MockTransport(answer), headers={"Authorization": "Bearer old"})
+    assert await svc.list() == ["listed"] and found == [1]
+    assert await svc.list() == ["listed"] and found == [1]  # found once, then kept
+
+
+async def test_the_shim_finds_a_daemon_again_after_it_stopped():
+    import httpx
+
+    def answer(req):
+        if req.url.port == 1:
+            raise httpx.ConnectError("refused", request=req)
+        return httpx.Response(200, json={"result": []})
+
+    svc = RemoteService("http://127.0.0.1:1", "t", reconnect=lambda: ("http://127.0.0.1:2", "t"))
+    svc.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    assert await svc.list() == []
+    without = RemoteService("http://127.0.0.1:1", "t")
+    without.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    with pytest.raises(httpx.ConnectError):
+        await without.list()
+
+
 @pytest.fixture
 def fake_daemon_env(cfg, monkeypatch):
     """Environment for a child daemon: fake speech, data in tmp, no browser, no token."""
@@ -320,6 +353,25 @@ async def test_ensure_starts_a_daemon_that_serves_and_shuts_down(cfg, fake_daemo
 
     _shut_down(cfg, lock)
     assert daemon.health(cfg.port, 0.2) is None and daemon.running(cfg) is None
+
+
+@pytest.mark.slow
+async def test_a_shim_outlives_its_daemon(cfg, fake_daemon_env):
+    def find() -> tuple[str, str]:
+        lock = daemon.ensure(cfg, log=lambda m: None)
+        fake_daemon_env.append(int(lock["pid"]))
+        return f"http://127.0.0.1:{lock['port']}", lock["token"]
+
+    first = daemon.ensure(cfg, log=lambda m: None)
+    fake_daemon_env.append(int(first["pid"]))
+    svc = RemoteService(f"http://127.0.0.1:{first['port']}", first["token"], reconnect=find)
+    try:
+        assert await svc.list() == []
+        _shut_down(cfg, first)  # `showntell stop`, or another copy taking over
+        start = await svc.start("After a restart", "landscape", "", 1.0, None)
+        assert start["handle"] and daemon.read_lock(cfg)["pid"] != first["pid"]
+    finally:
+        await svc.client.aclose()
 
 
 @pytest.mark.slow

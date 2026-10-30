@@ -177,9 +177,16 @@ def serve(cfg: Config) -> None:
     rpc_token = secrets.token_urlsafe(24)
     holder: dict = {}
 
+    def close_streams() -> None:
+        # Open event streams never end on their own, and uvicorn waits for them before shutting
+        # down, so a page left open kept the server (and the save in cleanup) from stopping.
+        if store.loop:
+            store.loop.call_soon_threadsafe(lambda: [s.close_streams() for s in list(store.sessions.values())])
+
     def stop() -> None:
         if holder.get("server"):
             holder["server"].should_exit = True
+            close_streams()
 
     def cleanup() -> None:
         daemon.clear_lock(cfg)
@@ -190,8 +197,10 @@ def serve(cfg: Config) -> None:
 
     async def main() -> None:
         store.loop = asyncio.get_running_loop()
-        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on")
-        server = uvicorn.Server(config)
+        # A request still in flight (an MCP client's long poll, say) is cut after this long, so a
+        # stop always reaches cleanup, and within the 5 s `showntell stop` waits for it.
+        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on", timeout_graceful_shutdown=2)
+        server = _Server(config, on_exit=close_streams)
         holder["server"] = server
         daemon.write_lock(cfg, rpc_token)
 
@@ -202,25 +211,7 @@ def serve(cfg: Config) -> None:
 
         holder["log"] = asyncio.create_task(keep_log_small())
         if h:
-
-            async def expire() -> None:
-                """Daily: drop spent sign-in records, and walkthroughs unseen past the retention."""
-                from .prune import prune
-
-                while True:
-                    db = getattr(h.identity.login, "db", None)
-                    if db is not None:
-                        db.sweep()
-                    if cfg.limits.retention_days > 0:
-                        gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
-                        for row in gone["walkthroughs"]:
-                            store.sessions.pop(row["id"], None)
-                        if gone["walkthroughs"]:
-                            n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
-                            log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
-                    await asyncio.sleep(86400)
-
-            holder["expire"] = asyncio.create_task(expire())
+            holder["expire"] = asyncio.create_task(expire(store, h, cfg))
         log.info(
             "showntell %s at %s (MCP: http://localhost:%d/mcp, speech: %s)",
             _version(),
@@ -234,6 +225,40 @@ def serve(cfg: Config) -> None:
             cleanup()
 
     asyncio.run(main())
+
+
+class _Server(uvicorn.Server):
+    """uvicorn's server, telling showntell when a signal asks it to stop."""
+
+    def __init__(self, config: uvicorn.Config, on_exit) -> None:
+        super().__init__(config)
+        self.on_exit = on_exit
+
+    def handle_exit(self, sig, frame) -> None:
+        self.on_exit()
+        super().handle_exit(sig, frame)
+
+
+async def expire(store: Store, h, cfg: Config, every: float = 86400) -> None:
+    """Hosted, daily: drop spent sign-in records, and walkthroughs unseen past the retention. A
+    round that fails is logged, and the next one runs as planned."""
+    from . import prune
+
+    while True:
+        try:
+            db = getattr(h.identity.login, "db", None)
+            if db is not None:
+                db.sweep()
+            if cfg.limits.retention_days > 0:
+                gone = await asyncio.to_thread(prune.prune, cfg.data_dir, cfg.limits.retention_days * 86400)
+                for row in gone["walkthroughs"]:
+                    store.forget(row["id"])
+                if gone["walkthroughs"]:
+                    n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
+                    log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
+        except Exception:
+            log.exception("expiring sign-ins and old walkthroughs failed; trying again in %g h", every / 3600)
+        await asyncio.sleep(every)
 
 
 def load_lexicon(cfg: Config) -> dict[str, str]:

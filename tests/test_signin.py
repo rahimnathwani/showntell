@@ -38,6 +38,7 @@ from showntell.store import Store
 
 TENANT = "8f2f3c1e-2b0a-4c43-9d55-1a2b3c4d5e6f"
 GOOGLE = {"sub": "g-1", "email": "ann@example.com", "email_verified": True, "hd": "example.com"}
+ISS = f"https://login.microsoftonline.com/{TENANT}/v2.0"
 ENTRA = {"sub": "e-1", "tid": TENANT, "preferred_username": "ann@example.com", "email": "ann@example.com"}
 GENERIC = {"sub": "o-1", "email": "ann@example.com", "email_verified": True}
 REDIRECT = "http://localhost:53682/callback"
@@ -180,6 +181,10 @@ def test_good_settings_start(tmp_path):
         ("entra", {**ENTRA, "preferred_username": "ann@contractor.net"}, ["example.com"], "contractor.net cannot use"),
         # The editable `email` claim never gets someone in.
         ("entra", {**ENTRA, "preferred_username": "mallory@contractor.net", "email": "ceo@example.com"}, ["example.com"], "cannot use"),
+        # A B2B guest is in the tenant too; Entra names their home directory in `idp`.
+        ("entra", {**ENTRA, "iss": ISS, "idp": "https://sts.windows.net/9188040d-6c67-4c5b-b112-36a304b66dad/"}, [], "Guest accounts"),
+        ("entra", {**ENTRA, "idp": "live.com", "iss": ISS, "preferred_username": "ann@example.com"}, ["example.com"], "Guest accounts"),
+        ("entra", {**ENTRA, "preferred_username": "ann_gmail.com#ext#@corp.onmicrosoft.com"}, [], "Guest accounts"),
         ("generic", {**GENERIC, "email_verified": False}, ["example.com"], "not verified"),
         ("generic", {**GENERIC, "email_verified": "true"}, ["example.com"], "not verified"),
         ("generic", {**GENERIC, "email": "ann@other.org"}, ["example.com"], "other.org cannot use"),
@@ -194,6 +199,18 @@ def test_the_preset_rules_accept_and_name_the_user():
     assert check_claims("google", GOOGLE, ["example.com"]) == "ann@example.com"
     assert check_claims("entra", {**ENTRA, "email": "someone-else@example.com"}, [], TENANT) == "ann@example.com"
     assert check_claims("entra", ENTRA, ["Example.com"], TENANT.upper()) == "ann@example.com"
+    assert check_claims("entra", {**ENTRA, "iss": ISS, "idp": ISS}, [], TENANT) == "ann@example.com"  # idp is the tenant itself
+    guest = {**ENTRA, "iss": ISS, "idp": "live.com"}
+    assert check_claims("entra", guest, [], TENANT, guests=True) == "ann@example.com"  # SHOWNTELL_ENTRA_GUESTS=1
+
+
+def test_an_upper_case_entra_tenant_names_entras_issuer(monkeypatch):
+    """Entra's discovery document writes the tenant GUID in lower case; an issuer built from an
+    upper-case setting never matched it, so every sign-in failed."""
+    from showntell.oidc import issuer_for
+
+    monkeypatch.setenv("SHOWNTELL_ENTRA_TENANT", TENANT.upper())
+    assert issuer_for("entra", Config().entra_tenant) == ISS
     assert check_claims("generic", {**GENERIC, "email": "Ann@Example.com"}, ["example.com"]) == "ann@example.com"
 
 
@@ -253,6 +270,28 @@ async def test_a_callback_from_another_browser_is_refused(srv):
         assert r.status_code == 200
 
 
+async def test_two_sign_ins_at_once_in_one_browser_both_finish(srv):
+    """Connecting Claude and opening a walkthrough link at the same moment starts two sign-ins in one
+    browser; the second used to overwrite the first's state cookie."""
+    async with browser(srv) as c:
+        srv.fake.claims = GENERIC
+        callbacks = []
+        for nxt in ("/", "/w/x/"):
+            r = await c.get(f"/login?next={nxt}", follow_redirects=False)
+            callbacks.append((await c.get(r.headers["location"], follow_redirects=False)).headers["location"])
+        for cb in callbacks:
+            r = await c.get(cb, follow_redirects=False)
+            assert r.status_code == 303, r.text[:200]
+
+
+def test_iss_is_added_to_error_redirects_only():
+    assert oauth.with_iss("http://localhost:1/cb?error=invalid_scope&state=s", "https://x") == (
+        "http://localhost:1/cb?error=invalid_scope&state=s&iss=https%3A%2F%2Fx"
+    )
+    assert oauth.with_iss("http://localhost:1/cb?code=c&iss=https://x", "https://x") == "http://localhost:1/cb?code=c&iss=https://x"
+    assert oauth.with_iss("http://localhost:1/cb?error=x&iss=https://x", "https://x").count("iss=") == 1
+
+
 def test_after_sign_in_only_local_paths():
     assert local_path("/w/abc/?t=1") == "/w/abc/?t=1"
     for bad in ("//evil.example/", "https://evil.example/", "/\\evil.example", "", "evil"):
@@ -277,6 +316,29 @@ async def test_sessions_survive_a_restart_and_sign_out_ends_them(srv):
         r = await c.post("/logout", json={}, headers={"X-CSRF-Token": csrf})
         assert r.status_code == 200
         assert (await c.get("/", follow_redirects=False)).status_code == 303
+
+
+async def test_sign_out_in_the_gallery_stays_signed_out(srv):
+    # The provider still has its own session, so going on to /login would sign straight back in.
+    pw = pytest.importorskip("playwright.async_api")
+    srv.fake.claims = GENERIC
+    async with pw.async_playwright() as p:
+        try:
+            b = await p.chromium.launch()
+        except Exception as e:  # browsers not installed
+            pytest.skip(f"Chromium unavailable: {e}")
+        try:
+            page = await b.new_page()
+            await page.goto(f"{srv.url}/login?next=/")
+            await page.click(".signout")
+            await page.wait_for_selector("text=Signed out of showntell")
+            await page.wait_for_timeout(500)
+            assert page.url.rstrip("/") == srv.url
+            assert srv.db.run("select count(*) from sessions")[0][0] == 0
+            await page.click("text=Sign in again")
+            await page.wait_for_selector(".signout")  # and back in on purpose
+        finally:
+            await b.close()
 
 
 async def test_session_cookie_flags_and_csrf(tmp_path, narrator):
@@ -431,14 +493,69 @@ async def test_refresh_rotates_and_reuse_revokes_the_chain(srv):
         assert r.status_code == 200, r.text
         second = r.json()
         assert second["refresh_token"] != first["refresh_token"]
-        assert await mcp_status(srv, first["access_token"]) == 401  # replaced
+        # The old access token lives out its hour: another client sharing the credentials may hold it.
+        assert await mcp_status(srv, first["access_token"]) == 200
         assert await mcp_status(srv, second["access_token"]) == 200
+        # Long after its rotation the spent token comes back: someone else has it, so the chain goes.
+        srv.db.run("update tokens set spent_at = ? where hash = ?", (time.time() - 120, digest(first["refresh_token"])))
         r = await tokens(c, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=cid)
         assert r.status_code == 400 and r.json()["error"] == "invalid_grant"
-        # The spent token came back: someone else has it, so the whole chain goes.
         assert await mcp_status(srv, second["access_token"]) == 401
+        assert await mcp_status(srv, first["access_token"]) == 401
         r = await tokens(c, grant_type="refresh_token", refresh_token=second["refresh_token"], client_id=cid)
         assert r.status_code == 400
+
+
+async def test_two_refreshes_racing_both_succeed(srv):
+    """Two sessions sharing stored credentials, or one client retrying, refresh with the same token
+    within moments: both get tokens, and nothing is revoked."""
+    async with browser(srv, GENERIC) as c:
+        cid, first = await signed_in_tokens(srv, c)
+        a, b = await asyncio.gather(
+            *(tokens(c, grant_type="refresh_token", refresh_token=first["refresh_token"], client_id=cid) for _ in range(2))
+        )
+        assert a.status_code == b.status_code == 200, (a.text, b.text)
+        for t in (a.json(), b.json()):
+            assert await mcp_status(srv, t["access_token"]) == 200
+            r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+            assert r.status_code == 200, r.text
+
+
+async def test_refresh_stops_when_the_provider_sign_in_is_too_old(srv):
+    """Only a sign-in asks the provider whether the account still exists, so an hourly refresh
+    chain must not go on for ever on the strength of one sign-in."""
+    async with browser(srv, GENERIC) as c:
+        cid, t = await signed_in_tokens(srv, c)
+        srv.db.run("update users set seen = ?", (time.time() - 8 * 86400,))
+        r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+        assert r.status_code == 400 and "sign in again" in r.json()["error_description"]
+        assert await mcp_status(srv, t["access_token"]) == 401  # the chain is revoked with it
+
+
+async def test_refresh_takes_the_address_from_the_latest_sign_in(srv):
+    async with browser(srv, GENERIC) as c:
+        cid, t = await signed_in_tokens(srv, c)
+        srv.db.run("update users set email = ?", ("renamed@example.com",))  # signed in again after a rename
+        r = await tokens(c, grant_type="refresh_token", refresh_token=t["refresh_token"], client_id=cid)
+        assert r.status_code == 200, r.text
+        assert srv.auth.user_for_access_token(r.json()["access_token"]).email == "renamed@example.com"
+
+
+def test_an_auth_db_from_0_2_1_gains_the_rotation_column(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "auth.db"
+    old = sqlite3.connect(path)
+    old.execute(
+        "create table tokens (hash text primary key, kind text, chain text, client_id text, iss text, sub text, email text,"
+        " resource text, scopes text, expires real, spent integer default 0)"
+    )
+    old.execute("insert into tokens values ('h', 'refresh', 'c', 'x', 'i', 's', 'e', 'r', '[]', 0, 0)")
+    old.commit()
+    old.close()
+    db = AuthDB(path)
+    assert "spent_at" in [r[1] for r in db.run("pragma table_info(tokens)")]
+    assert db.run("select spent, spent_at from tokens") == [(0, None)]
 
 
 async def test_a_removed_domain_stops_the_refresh(srv):
@@ -490,6 +607,7 @@ async def test_the_resource_must_be_this_server(srv):
         }
         r = await c.get("/authorize?" + urlencode(q), follow_redirects=False)
         assert r.status_code == 302 and "error=invalid_target" in r.headers["location"]
+        assert parse_qs(urlparse(r.headers["location"]).query)["iss"] == [srv.url]  # RFC 9207, as the metadata says
         got = await authorize(c, cid, challenge)
         r = await tokens(
             c,
@@ -622,6 +740,70 @@ async def test_client_metadata_is_never_fetched_from_private_addresses():
     assert not oauth.is_metadata_url("https://client.example/") and not oauth.is_metadata_url("http://client.example/c.json")
 
 
+@pytest.mark.parametrize(
+    "addr, ok",
+    [
+        ("8.8.8.8", True),
+        ("2606:4700:4700::1111", True),
+        ("::ffff:127.0.0.1", False),
+        ("::127.0.0.1", False),  # IPv4-compatible: is_global alone passes it
+        ("64:ff9b::a9fe:a9fe", False),  # NAT64 to the cloud metadata service: is_global passes it too
+        ("64:ff9b::808:808", True),
+        ("2002:7f00:1::1", False),  # 6to4 around 127.0.0.1
+        ("fd00::1", False),
+    ],
+)
+def test_addresses_inside_addresses_are_checked(addr, ok):
+    import ipaddress
+
+    assert oauth.public_ip(ipaddress.ip_address(addr)) is ok
+
+
+async def test_a_slow_metadata_host_is_cut_off(monkeypatch):
+    """A host that drips its answer a byte at a time stays under every per-read timeout; the whole
+    fetch has a deadline."""
+
+    async def drip(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n")
+        with contextlib.suppress(ConnectionError):
+            while True:
+                writer.write(b" ")
+                await writer.drain()
+                await asyncio.sleep(0.2)
+
+    server = await asyncio.start_server(drip, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+
+    async def loopback(host):
+        return "127.0.0.1"
+
+    monkeypatch.setattr(oauth, "_public_address", loopback)
+    monkeypatch.setattr(oauth, "METADATA_DEADLINE_S", 1)
+    t0 = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await oauth.fetch_client_metadata(f"http://client.example:{port}/c.json")
+    assert time.monotonic() - t0 < 3
+    server.close()
+
+
+async def test_failed_metadata_documents_are_remembered_and_the_cache_is_bounded(tmp_path, monkeypatch):
+    calls = []
+
+    async def fetch(url):
+        calls.append(url)
+        raise ValueError("no such document")
+
+    monkeypatch.setattr(oauth, "METADATA_KEPT", 3)
+    server = oauth.AuthServer(AuthDB(tmp_path / "a.db"), "http://localhost:1", lambda u: True, fetch=fetch)
+    assert await server.get_client(CIMD_URL) is None
+    assert await server.get_client(CIMD_URL) is None
+    assert calls == [CIMD_URL]  # the failure is kept, so /authorize can't make it fetch again and again
+    for i in range(10):
+        await server.get_client(f"https://client{i}.example/c.json")
+    assert len(server._documents) <= 3
+
+
 async def test_client_metadata_documents_are_cached(tmp_path):
     calls = []
 
@@ -747,8 +929,44 @@ def test_users_key_is_issuer_and_subject():
     assert u.key == ("https://accounts.google.com", "123")
 
 
-async def test_client_registrations_are_capped(srv):
+async def test_client_registrations_are_capped_per_caller(srv):
+    """Behind the proxy (here, loopback), each caller has its own allowance: one using up its own
+    doesn't lock out the next person's Claude."""
     async with httpx.AsyncClient(base_url=srv.url) as c:
         body = {"client_name": "x", "redirect_uris": [REDIRECT], "token_endpoint_auth_method": "none"}
-        codes = [(await c.post("/register", json=body)).status_code for _ in range(hosted.REGISTRATIONS_PER_MIN + 1)]
-    assert codes[:-1] == [201] * hosted.REGISTRATIONS_PER_MIN and codes[-1] == 429
+        mallory = {"X-Forwarded-For": "203.0.113.9"}
+        codes = [(await c.post("/register", json=body, headers=mallory)).status_code for _ in range(hosted.REGISTRATIONS_PER_MIN + 1)]
+        assert codes[:-1] == [201] * hosted.REGISTRATIONS_PER_MIN and codes[-1] == 429
+        r = await c.post("/register", json=body, headers={"X-Forwarded-For": "spoofed, 198.51.100.4"})
+        assert r.status_code == 201  # the address the proxy appended last is the caller
+
+
+def test_the_caller_is_the_peer_unless_a_local_proxy_names_one():
+    xff = {"x-forwarded-for": "1.2.3.4, 5.6.7.8"}
+    assert hosted.client_address({"client": ("172.18.0.3", 1)}, xff) == "5.6.7.8"  # Caddy on the compose network
+    assert hosted.client_address({"client": ("127.0.0.1", 1)}, xff) == "5.6.7.8"
+    assert hosted.client_address({"client": ("8.8.4.4", 1)}, xff) == "8.8.4.4"  # a public peer can't name someone else
+    assert hosted.client_address({"client": ("172.18.0.3", 1)}, {}) == "172.18.0.3"
+
+
+async def test_registrations_never_used_are_swept(srv):
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        idle = await register(c)
+    async with browser(srv, GENERIC) as c:
+        used, _ = await signed_in_tokens(srv, c)
+    srv.db.run("update clients set created = ?", (time.time() - 2 * 86400,))
+    srv.db.sweep()
+    left = {r[0] for r in srv.db.run("select client_id from clients")}
+    assert used in left and idle not in left
+
+
+async def test_an_oversized_mcp_request_is_refused_before_it_is_read(srv):
+    async with browser(srv, GENERIC) as c:
+        _, t = await signed_in_tokens(srv, c)
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        r = await c.post(
+            "/mcp",
+            content=b" " * (hosted.MCP_BODY_MAX + 1),
+            headers={"Authorization": f"Bearer {t['access_token']}", "Content-Type": "application/json"},
+        )
+    assert r.status_code == 413
