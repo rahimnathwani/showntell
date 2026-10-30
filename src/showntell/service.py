@@ -217,8 +217,8 @@ class LocalService:
 
         async def run() -> None:
             async with self._browser(), Capturer(**self._capture_target(s, limit), short=360) as c:
-                for i, (sid, t) in enumerate(list(ends.items())[:LAYOUT_CHECK_MAX]):
-                    await c.seek(t, measure=True)
+                for i, sid in enumerate(list(ends)[:LAYOUT_CHECK_MAX]):
+                    await c.seek_slide(sid, measure=True)
                     if i == 0:  # the settled title slide: the poster for the gallery and link previews
                         (self.store.walk_dir(s.w.id) / "poster.png").write_bytes(await c.shot())
                     if sid in shoot and shots is not None:
@@ -266,7 +266,7 @@ class LocalService:
         import asyncio
         import base64
 
-        from .capture import CaptureUnavailable, capture_frames_async
+        from .capture import CaptureUnavailable, capture_slides_async
 
         s = self.store.by_handle(handle, user)
         ends = _end_times(s.w)
@@ -275,16 +275,15 @@ class LocalService:
         unknown = [x for x in (slides or []) if x not in ends]
         if len(want) > PREVIEW_MAX:
             want = want[-PREVIEW_MAX:] if not slides else want[:PREVIEW_MAX]
-        times = [ends[sid] for sid in want]
         limit = self.store.hosted.limits.check_s if self.store.hosted else None
         try:
-            if not times:
-                pngs = []
+            if not want:
+                shots = []
             else:
                 async with self._browser():
                     t = self._capture_target(s, limit or 0)
-                    shoot = capture_frames_async(t.pop("url"), times, short=short, measure=True, **t)
-                    pngs = await (asyncio.wait_for(shoot, limit) if limit else shoot)
+                    shoot = capture_slides_async(t.pop("url"), want, short=short, measure=True, **t)
+                    shots = await (asyncio.wait_for(shoot, limit) if limit else shoot)
         except CaptureUnavailable as e:
             raise ValueError(str(e)) from e
         except TimeoutError:
@@ -295,10 +294,11 @@ class LocalService:
                 {
                     "id": sid,
                     "title": next(x.title for x in s.w.slides if x.id == sid),
-                    "at_s": round(t, 1),
-                    "png": base64.b64encode(png).decode(),
+                    "at_s": round(shot[0], 1),
+                    "png": base64.b64encode(shot[1]).decode(),
                 }
-                for sid, t, png in zip(want, times, pngs, strict=True)
+                for sid, shot in zip(want, shots, strict=True)
+                if shot  # a slide revised away while the picture was being drawn
             ],
             "unknown": unknown,
             "player_issues": _dicts(s.take_player_issues()),
@@ -464,7 +464,8 @@ ALIKE_SHOTS_MAX = 6  # pictures of alike slides in the finish reply
 def _end_times(w) -> dict[str, float]:
     """Slide id -> a moment when the slide shows alone with everything on it revealed: after its
     last paragraph (the player reveals all once the narration is over) and before the next slide
-    starts coming in, SCENE_LEAD before its first word."""
+    starts coming in, SCENE_LEAD before its first word. Pictures are taken by `revealedAt` in
+    timeline.js, the same rule on the page's own timeline; this is the estimate from here."""
     from .export import EMPTY, SCENE_LEAD, _estimate, slide_starts, timeline, timeline_total
 
     starts = slide_starts(w)

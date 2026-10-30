@@ -583,6 +583,28 @@ def test_preview_times_show_each_slide_alone(daemon, browser):
     page.close()
 
 
+def test_slide_pictures_follow_the_page_timeline(daemon, browser):
+    # Narration voiced after the caller worked out its times moves every later slide; pictures
+    # timed on the page's own timeline still show each slide alone.
+    call = _rpc(daemon)
+    doc = "# Moving\n\nOpening line.\n\n" + "".join(f"## Slide {i} {{#s{i}}}\n\nSlide {i} says a short line.\n\n" for i in range(3))
+    r = call("start", title="Moving", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    call("add", handle=r["handle"], markdown=doc)
+    call("playable", handle=r["handle"], timeout=10)
+    page = browser.new_page()
+    page.goto(r["url"].replace("localhost", "127.0.0.1") + "/?capture=1")
+    page.wait_for_function("window.__showntell?.duration?.() > 0")
+    before = page.evaluate("window.__showntell.duration()")
+    call("revise", handle=r["handle"], slide="s0", markdown="This line is now a good deal longer, so every slide after it moves later.")
+    page.wait_for_function(f"window.__showntell.duration() > {before} + 1", timeout=15_000)
+    for sid in ("s0", "s1", "s2"):
+        key, _ = page.evaluate("(id) => window.__showntell.seekSlide(id)", sid)
+        shown = page.evaluate("[...document.querySelectorAll('#stage .slide')].map((e) => e.className)")
+        assert key.split("|")[0] == sid and len(shown) == 1 and "leaving" not in shown[0], (sid, shown)
+    assert page.evaluate("window.__showntell.seekSlide('nope')") is None
+    page.close()
+
+
 # -- code that evolves, scrolling code, packets, numbers, regions and zoom, checklists ---------------
 
 MORE = """# More kinds

@@ -380,9 +380,9 @@ async def test_finish_layout_check_passes_player_findings_on(store, monkeypatch)
         async def __aexit__(self, *exc):
             return False
 
-        async def seek(self, t, measure=False):
-            seen.append((t, measure))
-            return ""
+        async def seek_slide(self, sid, measure=False):
+            seen.append((sid, measure))
+            return "", 1.0
 
         async def shot(self):
             return b"\x89PNG poster"

@@ -172,6 +172,21 @@ export function rangeEnd(tl, slideIndex) {
   return tl.segs.some((s) => s.slide > slideIndex) ? end - SCENE_LEAD : end;
 }
 
+// When a slide shows alone with everything on it revealed, for pictures of it: after its last
+// paragraph (everything reveals once the narration is over) and before the next slide starts
+// coming in. A slide ending on a pause has no silence after it: just before the next one.
+// Kept in step with _end_times in service.py.
+export function revealedAt(tl, slideIndex) {
+  const own = tl.segs.filter((s) => s.slide === slideIndex);
+  if (!own.length) return null;
+  const last = own[own.length - 1];
+  const lo = last.start + last.dur;
+  const next = tl.segs.find((s) => s.slide > slideIndex);
+  const end = next ? next.start : tl.total;
+  const hi = next ? end - SCENE_LEAD : end;
+  return hi > lo ? lo + Math.min(0.1, (hi - lo) / 2) : Math.max(own[0].start, end - 0.05);
+}
+
 // Steps for presenting by hand: the start of every slide, plus, on step-reveal slides, the
 // moment each cue reveals another part, and the end where everything shows. [{t, slide, say}]
 export function steps(w, tl) {

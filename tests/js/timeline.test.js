@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { build, CAMERA, cameraPlan, CUE_LEAD, firedCues, revealLevel, SCENE_LEAD, segmentAt, slideCues, slideEnd, slideSpans, slideStart, stateAt, steps, wordAt } from "../../src/showntell/static/js/timeline.js";
+import { build, CAMERA, cameraPlan, CUE_LEAD, firedCues, revealedAt, revealLevel, SCENE_LEAD, segmentAt, slideCues, slideEnd, slideSpans, slideStart, stateAt, steps, wordAt } from "../../src/showntell/static/js/timeline.js";
 
 const say = (id, dur, cues = [], extra = {}) => ({ id, status: "ready", text: "one two three", duration: dur, cues, words: [], ...extra });
 const W = {
@@ -176,4 +176,19 @@ test("no zoom cue, no camera plan; a repeated shot does not move", () => {
   w = camSlide(["zoom", "zoom"]);
   w.slides[0].says[0].cues[1].id = "left";
   assert.deepEqual(cameraPlan(w, build(w), 0).map((m) => m.kind), ["in", "out"]);
+});
+
+test("revealedAt shows a slide alone, after its narration and before the next comes in", () => {
+  const tl = build(W);
+  // intro: 0-2 spoken, list starts at 2.6 and comes in from 2.15.
+  const t = revealedAt(tl, 0);
+  assert.ok(t >= 2 && t < 2.6 - SCENE_LEAD, t);
+  assert.equal(stateAt(W, tl, t).slide, 0);
+  assert.ok(stateAt(W, tl, t).revealAll);
+  const list = revealedAt(tl, 1);
+  assert.equal(stateAt(W, tl, list).slide, 1);
+  assert.ok(stateAt(W, tl, list).revealAll);
+  // The last slide ends on a pause: just before the end.
+  assert.equal(revealedAt(tl, 2), tl.total - 0.05);
+  assert.equal(revealedAt(tl, 9), null);
 });

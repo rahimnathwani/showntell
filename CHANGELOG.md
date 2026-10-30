@@ -2,6 +2,7 @@
 
 ## 0.2.2 (unreleased)
 
+- **Pictures timed by the player:** slide pictures were timed from the narration as it stood when the call came in, but the headless player loads a moment later; narration voiced in between moved every later slide, and a picture could land in a crossfade again (seen with `preview_slides` straight after `revise_slide`). The player now works out the moment itself (`seekSlide` in capture mode).
 - **The MCP client survives a daemon restart:** `showntell mcp` found the background daemon once, at the start of the agent's session, and kept its port and token. Once that daemon stopped or was replaced (`showntell stop`, a crash, another copy of showntell taking over), every call failed for the rest of the session, as "forbidden" when a new daemon held the port. A refused connection or token now finds the daemon again, starting one if need be, and sends the call once more.
 - **Hosted gallery wording:** the gallery of a hosted server said walkthroughs were "voiced on this machine" and suggested running `showntell play file.md`, which its users can't. It now says they are voiced on this server and leaves the command out.
 - **Reading a walkthrough that isn't there says so:** `showntell://walkthroughs/{id}` for an unknown id, or one that isn't yours on a hosted server, answered only "Error creating resource from template" and logged a traceback. It now says no such walkthrough and where to find the ids of yours.
