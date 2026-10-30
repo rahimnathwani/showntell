@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 (unreleased)
+
+- **Eval measures watching speed:** `scripts/eval.py` records first sound (seconds from the run's start until narration audio plays in the live player) and the longest single wait, next to the stall count and total, in the table and the results JSON. The player keeps `longestStall` in `window.__showntell`.
+
 ## 0.2.2 (2026-10-29)
 
 - **Offboarding reaches Claude:** an MCP refresh chain renewed itself every hour without ever asking the provider again, so someone disabled at Google or Entra kept access for as long as their Claude stayed connected. Refreshing now needs a provider sign-in within `SHOWNTELL_SIGNIN_DAYS` (7), and takes the address from the latest sign-in instead of the first.

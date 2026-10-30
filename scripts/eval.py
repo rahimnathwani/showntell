@@ -148,7 +148,7 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
                                 marks["playable_at"] = now
                                 url = m.group(0).rstrip("/") + "/"
                                 if play:
-                                    player_task = asyncio.create_task(play_live(url))
+                                    player_task = asyncio.create_task(play_live(url, t0))
                         if name == "finish_walkthrough":
                             marks["finished_at"] = now
                         if name == "start_walkthrough":
@@ -173,16 +173,29 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
     return marks
 
 
-async def play_live(url: str) -> dict:
+async def play_live(url: str, run_start: float) -> dict:
     """Play from the start at 1x in headless Chromium, as a viewer who clicked the link at once.
     A browser that fails to launch is recorded as an error rather than raised into the batch."""
     try:
-        return await _play_live(url)
+        return await _play_live(url, run_start)
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}".strip()[:300]}
 
 
-async def _play_live(url: str) -> dict:
+def watch_speed(m: dict, run_start: float) -> dict:
+    """How soon and how smoothly the viewer got the walkthrough, from the player's metrics:
+    seconds from the run's start (wall clock) to the first narration audio playing, the number
+    of waits after it, their total and the longest single one."""
+    starts = m.get("starts") or []
+    return {
+        "first_sound_s": round(starts[0]["at"] / 1000 - run_start, 1) if starts else None,
+        "stalls": m.get("stalls", 0),
+        "stall_s": round(m.get("stallSeconds", 0), 1),
+        "longest_stall_s": round(m.get("longestStall", 0), 1),
+    }
+
+
+async def _play_live(url: str, run_start: float) -> dict:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
@@ -200,8 +213,7 @@ async def _play_live(url: str) -> dict:
         m = await page.evaluate("window.__showntell") or {}
         await b.close()
         return {
-            "stalls": m.get("stalls", 0),
-            "stall_s": round(m.get("stallSeconds", 0), 1),
+            **watch_speed(m, run_start),
             "render_errors": m.get("renderErrors", []) + errors,
             "ended": m.get("ended", False),
             "findings": m.get("findings", []),
@@ -519,7 +531,7 @@ async def main() -> None:
 
 def print_table(results: list[dict]) -> None:
     head = (
-        "| run | model | link s | total s | cost | slides | min | issues | render err | stalls | cue acc | missing/min | preview "
+        "| run | model | link s | first sound s | total s | cost | slides | min | issues | render err | stalls | stall s | longest wait s | cue acc | missing/min | preview "
         "| s/slide | s/change | >20 s | zooms | multi-shot | forced | decode | quiz | small text | plain | fit | variety | layouts | takeaways | icons "
         "| alike | features |"
     )
@@ -527,9 +539,10 @@ def print_table(results: list[dict]) -> None:
     for r in sorted(results, key=lambda r: (r["model"], r["id"])):
         s, pl, a = r.get("summary", {}), r.get("player", {}), r.get("asr", {})
         print(
-            f"| {r['id']} | {r['model']} | {r.get('link_after_start', '-')} | {r.get('finished_at', 0):.0f} | "
+            f"| {r['id']} | {r['model']} | {r.get('link_after_start', '-')} | {pl.get('first_sound_s') or '-'} | {r.get('finished_at', 0):.0f} | "
             f"${r.get('cost') or 0:.2f} | {s.get('slides', '-')} | {s.get('duration_s', 0) / 60:.1f} | {r['issues']} | "
-            f"{len(pl.get('render_errors', [])) if pl else '-'} | {pl.get('stalls', '-') if pl else '-'} | "
+            f"{len(pl.get('render_errors', [])) if pl else '-'} | {pl.get('stalls', '-')} | {pl.get('stall_s', '-')} | "
+            f"{pl.get('longest_stall_s', '-')} | "
             f"{a.get('cue_accuracy', '-')} | {a.get('missing_per_min', '-')} | "
             f"{sum(1 for _, n in r.get('tool_calls', []) if n == 'preview_slides')} | {s.get('s_per_slide', '-')} | {s.get('s_per_change', '-')} | "
             f"{s.get('long_slides', '-')} | {s.get('zooms', '-')} | {s.get('multi_shot', '-')} | {s.get('forced_zooms', '-')} | "

@@ -24,7 +24,7 @@ export const prefetch = new Audio();
 prefetch.preload = "auto";
 
 // Read by the evaluation harness and the video recorder.
-export const metrics = { stalls: 0, stallSeconds: 0, renderErrors: [], ended: false, starts: [], startDelay: null, holds: 0 };
+export const metrics = { stalls: 0, stallSeconds: 0, longestStall: 0, renderErrors: [], ended: false, starts: [], startDelay: null, holds: 0 };
 window.__showntell = metrics;
 
 export const store = {

@@ -143,6 +143,7 @@ function unstall() {
   if (!S.waitingSince) return;
   const waited = (performance.now() - S.waitingSince) / 1000;
   metrics.stallSeconds += waited;
+  if (S.started) metrics.longestStall = Math.max(metrics.longestStall, waited);
   S.waitingSince = 0;
   $("#waiting").hidden = true;
   const seg = currentSeg();

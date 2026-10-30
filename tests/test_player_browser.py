@@ -1180,3 +1180,23 @@ def test_charts_and_pictures_move_by_the_clock(daemon, browser):
     a, b = (float(s[6:-1]) for s in scales)
     assert 1 <= a < b <= 1.06, scales
     page.close()
+
+
+def test_the_longest_wait_is_measured(daemon, browser):
+    # The viewer plays the opening, then waits for a slide the writer has not sent yet: the
+    # evaluation reads that single wait, which the total hides among short ones.
+    call = _rpc(daemon)
+    r = call("start", title="Waiting", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    call("add", handle=r["handle"], markdown="# Waiting\n\nA short opening.\n")
+    call("playable", handle=r["handle"], timeout=10)
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page.goto(r["url"].replace("localhost", "127.0.0.1") + "/")
+    page.wait_for_function("window.__showntell !== undefined && !document.querySelector('#big-play').disabled")
+    page.click("#big-play")
+    page.wait_for_selector("#waiting:not([hidden])", timeout=20000)
+    page.wait_for_timeout(2000)
+    call("add", handle=r["handle"], markdown="## Next {#next}\n\nThe slide that was waited for.\n")
+    page.wait_for_function("window.__showntell.longestStall > 0", timeout=20000)
+    m = page.evaluate("window.__showntell")
+    assert 1.8 <= m["longestStall"] <= m["stallSeconds"] + 0.01
+    page.close()
