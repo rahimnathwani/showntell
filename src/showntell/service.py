@@ -241,11 +241,11 @@ class LocalService:
             return "not_checked", f"the headless player failed: {str(e).splitlines()[0][:200]}"
         return "", ""
 
-    def _browser(self):
-        """Hosted: one of the server's few Chromium slots, held for the whole job."""
+    def _browser(self, timeout: float | None = None):
+        """Hosted: one of the server's few Chromium slots, held for the whole job; waits at most `timeout` s for it."""
         import contextlib
 
-        return self.store.hosted.browsers if self.store.hosted else contextlib.nullcontext()
+        return self.store.hosted.chromium.short(timeout) if self.store.hosted else contextlib.nullcontext()
 
     def _capture_target(self, s, ttl: float) -> dict:
         """Where headless Chromium opens a walkthrough. Hosted: this process's own address with a
@@ -283,7 +283,7 @@ class LocalService:
             if not times:
                 pngs = []
             else:
-                async with self._browser():
+                async with self._browser(limit):
                     t = self._capture_target(s, limit or 0)
                     shoot = capture_frames_async(t.pop("url"), times, short=short, measure=True, **t)
                     pngs = await (asyncio.wait_for(shoot, limit) if limit else shoot)
@@ -311,9 +311,18 @@ class LocalService:
     ) -> dict:
         """Write the walkthrough to a file the agent can attach: an MP4, or one HTML page that plays
         offline. A relative or empty `path` is in the project folder. Waits for the narration first.
-        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download."""
+        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download,
+        and each user and walkthrough has one export under way at a time."""
+        h = self.store.hosted
+        if not h:
+            return await self._export(handle, path, format, max_mb, wait_s, user)
+        s = self.store.by_handle(handle, user)
+        async with h.chromium.exporting(((s.w.owner.get("iss"), s.w.owner.get("sub")), s.w.id)) as job:
+            return await self._export(handle, path, format, max_mb, wait_s, user, job=job)
+
+    async def _export(self, handle: str, path: str, format: str, max_mb: float, wait_s: float | None, user, job=None) -> dict:
         import asyncio
-        import contextlib
+        import functools
 
         from .export import export_html, timeline_total
         from .video import render_mp4
@@ -350,9 +359,8 @@ class LocalService:
         hosted_kw = {"workers": 1, "only_origin": True, "sandbox": h.chromium_sandbox} if h else {}
         try:
             if format == "mp4":
-                async with self._browser() if h else contextlib.nullcontext():
-                    job = asyncio.to_thread(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
-                    r = await (asyncio.wait_for(job, h.limits.export_min * 60) if h else job)
+                render = functools.partial(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
+                r = await (job.run(render, h.limits.export_min * 60) if h else asyncio.to_thread(render))
                 shrunk, errors = r["shrunk"], r["errors"]
             else:
                 await asyncio.to_thread(export_html, data_dir, s.w.id, out)
