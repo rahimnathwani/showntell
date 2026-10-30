@@ -132,6 +132,12 @@ class Issue(str):
         obj.slide, obj.line, obj.source = slide, line, source
         return obj
 
+    def __getnewargs_ex__(self) -> tuple[tuple, dict]:
+        # str's own __getnewargs__ passes only the joined text, which breaks deepcopy and pickle
+        # (hosted mode deep-copies the builder, issues and all, before each add).
+        kw = {"slide": self.slide, "line": self.line, "severity": self.severity, "source": self.source}
+        return (self.code, self.message, self.fix), kw
+
     def to_dict(self) -> dict:
         d = {"code": self.code, "severity": self.severity, "message": self.message}
         if self.fix:

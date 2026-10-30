@@ -516,6 +516,16 @@ async def test_slide_and_narration_limits_refuse_the_call_and_keep_the_walkthrou
         assert r.is_error and "KB of Markdown" in text(r)
 
 
+async def test_adding_after_a_slide_with_issues_works(tight):
+    # Hosted mode deep-copies the builder before each add; issues left from the last add went with it.
+    async with mcp_as(tight, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("add_slides", {"handle": handle, "markdown": "## Bare\n\n```python\nx = 1\n```\n\nNo cue.\n"})
+        assert not r.is_error and "no_cues" in text(r), text(r)
+        r = await alice.call_tool("add_slides", {"handle": handle, "markdown": "## Next\n\nOne more slide here.\n"})
+        assert not r.is_error, text(r)
+
+
 async def test_walkthroughs_in_progress_and_stored_are_limited(tight):
     async with mcp_as(tight, "alice@example.com") as alice, mcp_as(tight, "bob@example.com") as bob:
         handle = (await start(alice))["handle"]

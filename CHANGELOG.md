@@ -3,6 +3,7 @@
 ## 0.2.1 (2026-10-29)
 
 - **Claude Code can sign in to a hosted server:** Claude Code catches the sign-in on a localhost port it picks each time, and the authorization server compared redirect URIs exactly, so a second sign-in was refused ("Redirect URI ... not registered for client"). Loopback HTTP redirect URIs now match on any port, as RFC 8252 requires; scheme, host, path and query must still match.
+- **Hosted walkthroughs no longer stick after a finding:** before each `add_slides`, hosted mode copies the builder so a call over a limit can be undone, and copying failed on any finding left from the previous call, even an info hint, so every later add on that walkthrough failed with an internal error. Findings now copy and pickle with all their fields. Local mode never took that copy.
 - **Tried with Entra:** a hosted server on localhost signed in through a real Entra tenant, in the browser and from Claude Code, and made walkthroughs. Google and claude.ai connectors are still tested only against the fake provider.
 
 ## 0.2.0 (2026-10-29)

@@ -32,6 +32,15 @@ def test_issue_is_its_text_and_carries_fields():
     }
 
 
+def test_issue_survives_deepcopy_and_pickle():
+    import copy
+    import pickle
+
+    i = Issue("code_too_tall", "Code shows 30 lines.", "Show fewer.", slide="s", line=4, severity="error", source="player")
+    for j in (copy.deepcopy(i), pickle.loads(pickle.dumps(i))):
+        assert j == i and j.to_dict() == i.to_dict()
+
+
 def test_unknown_code_is_refused():
     with pytest.raises(KeyError):
         Issue("made_up", "x")
