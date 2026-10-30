@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (unreleased)
+
+- **Stopping with a page open:** an open walkthrough page holds an events stream that never ends on its own, and the server waited for it, so `showntell stop`, Ctrl-C or SIGTERM (`docker stop`) left it running until killed, skipping the save on the way out. Streams now end when the server starts stopping, and any connection still open is cut after 5 s; it stops in well under a second.
+
 ## 0.2.1 (2026-10-29)
 
 - **Claude Code can sign in to a hosted server:** Claude Code catches the sign-in on a localhost port it picks each time, and the authorization server compared redirect URIs exactly, so a second sign-in was refused ("Redirect URI ... not registered for client"). Loopback HTTP redirect URIs now match on any port, as RFC 8252 requires; scheme, host, path and query must still match.

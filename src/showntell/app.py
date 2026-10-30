@@ -177,9 +177,16 @@ def serve(cfg: Config) -> None:
     rpc_token = secrets.token_urlsafe(24)
     holder: dict = {}
 
+    def close_streams() -> None:
+        # Open event streams never end on their own, and uvicorn waits for them before shutting
+        # down, so a page left open kept the server (and the save in cleanup) from stopping.
+        if store.loop:
+            store.loop.call_soon_threadsafe(lambda: [s.close_streams() for s in list(store.sessions.values())])
+
     def stop() -> None:
         if holder.get("server"):
             holder["server"].should_exit = True
+            close_streams()
 
     def cleanup() -> None:
         daemon.clear_lock(cfg)
@@ -190,8 +197,9 @@ def serve(cfg: Config) -> None:
 
     async def main() -> None:
         store.loop = asyncio.get_running_loop()
-        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on")
-        server = uvicorn.Server(config)
+        # A stream that still holds on is cut after this long, so a stop always reaches cleanup.
+        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on", timeout_graceful_shutdown=5)
+        server = _Server(config, on_exit=close_streams)
         holder["server"] = server
         daemon.write_lock(cfg, rpc_token)
 
@@ -234,6 +242,18 @@ def serve(cfg: Config) -> None:
             cleanup()
 
     asyncio.run(main())
+
+
+class _Server(uvicorn.Server):
+    """uvicorn's server, telling showntell when a signal asks it to stop."""
+
+    def __init__(self, config: uvicorn.Config, on_exit) -> None:
+        super().__init__(config)
+        self.on_exit = on_exit
+
+    def handle_exit(self, sig, frame) -> None:
+        self.on_exit()
+        super().handle_exit(sig, frame)
 
 
 def load_lexicon(cfg: Config) -> dict[str, str]:

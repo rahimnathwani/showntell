@@ -395,6 +395,11 @@ class Session:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self.subscribers.discard(q)
 
+    def close_streams(self) -> None:
+        """End every open event stream: the server is stopping, and an open stream would hold it."""
+        for q in self.subscribers:
+            q.put_nowait(None)
+
     def _changed(self, slide_ids: set[str], meta: bool = False) -> None:
         self.w.updated = time.time()
         for q in self.subscribers:

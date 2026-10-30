@@ -718,12 +718,14 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                             return
                         yield ": keepalive\n\n"
                         continue
-                    if not allowed():
+                    if item is None or not allowed():  # None: the server is stopping
                         return
                     await asyncio.sleep(0.05)  # coalesce bursts
                     ids, meta = set(item["slides"]), item["meta"]
                     while not q.empty():
                         more = q.get_nowait()
+                        if more is None:
+                            return
                         ids |= more["slides"]
                         meta = meta or more["meta"]
                     yield f"data: {json.dumps(s.delta(ids, meta))}\n\n"
