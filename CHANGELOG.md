@@ -2,6 +2,7 @@
 
 ## 0.2.2 (unreleased)
 
+- **Share dialog says who can open it now:** its note read "Only you can open it until you share it" even after sharing. It now follows the state: only you, the people listed, or everyone who can sign in.
 - **Sign out stays signed out:** the gallery's Sign out ended the session and went on to the sign-in page, which sent the browser to the provider; while the provider's own session lasted (Entra, Google), it signed straight back in, so Sign out seemed to do nothing. The gallery now says you are signed out, that the company sign-in may still be open, and offers Sign in again.
 - **Shares nobody signs in as are flagged:** a share matches the address people sign in with, which with Entra is their sign-in name and can differ from their mail address (`jdoe@corp.com`, not `john.doe@corp.com`); the owner shared with the address they knew and the colleague got "not found" with no warning. `share_walkthrough` and the page's Share control still add such an address, since people may not have signed in yet, but now name the ones nobody has signed in to the server as and say how shares match.
 - **Pictures timed by the player:** slide pictures were timed from the narration as it stood when the call came in, but the headless player loads a moment later; narration voiced in between moved every later slide, and a picture could land in a crossfade again (seen with `preview_slides` straight after `revise_slide`). The player now works out the moment itself (`seekSlide` in capture mode).

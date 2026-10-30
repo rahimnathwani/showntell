@@ -19,6 +19,7 @@ const email = el("input", { type: "email", placeholder: "name@company.com", auto
 const add = el("button", { type: "submit", textContent: "Add" });
 const company = el("input", { type: "checkbox", id: "share-company" });
 const status = el("p", { className: "share-status", role: "status" });
+const hint = el("p", { className: "share-hint" });
 const dialog = el(
   "div",
   { id: "share", className: "share", hidden: true, role: "dialog", ariaModal: "true", ariaLabel: "Share this walkthrough" },
@@ -26,7 +27,7 @@ const dialog = el(
     "div",
     { className: "share-card" },
     el("h2", { textContent: "Share this walkthrough" }),
-    el("p", { className: "share-hint", textContent: "Only you can open it until you share it. People you add can watch, not change it." }),
+    hint,
     list,
     el("form", { className: "share-add" }, email, add),
     el("label", { className: "share-company" }, company, " Everyone who can sign in to this server"),
@@ -46,6 +47,12 @@ function draw(state) {
     }),
   );
   company.checked = state.company;
+  // Who can open it now, not only before the first share.
+  hint.textContent = state.company
+    ? "Everyone who can sign in to this server can watch it, not change it."
+    : state.shares.length
+      ? "The people below can watch it, not change it. Anyone else gets \u201cnot found\u201d."
+      : "Only you can open it until you share it. People you add can watch, not change it.";
   email.placeholder = state.domains.length ? `name@${state.domains[0]}` : "name@company.com";
 }
 
