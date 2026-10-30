@@ -19,13 +19,21 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from . import oauth
-from .authdb import AuthDB
+from .authdb import AuthDB, digest
 from .identity import SESSION_COOKIE, Identity, User
 from .oidc import Provider, SignInRefused, check_claims, new_login
 
 log = logging.getLogger("showntell.signin")
 
 LOGIN_COOKIE = "showntell_login"
+
+
+def login_cookie(state: str) -> str:
+    """One cookie per sign-in in progress, so two at once in one browser (Claude's connector and a
+    walkthrough link) don't overwrite each other's state."""
+    return f"{LOGIN_COOKIE}_{digest(state)[:16]}"
+
+
 LOGIN_S = 600
 
 
@@ -113,12 +121,12 @@ class OIDCLogin:
                 )
             self.db.hold("login", {"nonce": started["nonce"], "verifier": started["verifier"], "next": nxt}, LOGIN_S, key=started["state"])
             r = RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
-            r.headers.append("set-cookie", self._cookie(LOGIN_COOKIE, started["state"], "/oidc", LOGIN_S))
+            r.headers.append("set-cookie", self._cookie(login_cookie(started["state"]), started["state"], "/oidc", LOGIN_S))
             return r
 
         async def callback(request: Request) -> Response:
             state = request.query_params.get("state", "")
-            cookie = request.cookies.get(LOGIN_COOKIE, "")
+            cookie = request.cookies.get(login_cookie(state), "") if state else ""
             # The state must come back to the browser that started the sign-in (no login CSRF).
             if not state or not cookie or not secrets.compare_digest(state, cookie):
                 return page(
@@ -141,7 +149,7 @@ class OIDCLogin:
             log.info("signed in %s", user.email)
             r = RedirectResponse(started["next"], status_code=303, headers={"Cache-Control": "no-store"})
             r.headers.append("set-cookie", identity.cookie(session))
-            r.headers.append("set-cookie", self._cookie(LOGIN_COOKIE, "", "/oidc", 0))
+            r.headers.append("set-cookie", self._cookie(login_cookie(state), "", "/oidc", 0))
             return r
 
         async def logout(request: Request) -> Response:

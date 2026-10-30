@@ -270,6 +270,28 @@ async def test_a_callback_from_another_browser_is_refused(srv):
         assert r.status_code == 200
 
 
+async def test_two_sign_ins_at_once_in_one_browser_both_finish(srv):
+    """Connecting Claude and opening a walkthrough link at the same moment starts two sign-ins in one
+    browser; the second used to overwrite the first's state cookie."""
+    async with browser(srv) as c:
+        srv.fake.claims = GENERIC
+        callbacks = []
+        for nxt in ("/", "/w/x/"):
+            r = await c.get(f"/login?next={nxt}", follow_redirects=False)
+            callbacks.append((await c.get(r.headers["location"], follow_redirects=False)).headers["location"])
+        for cb in callbacks:
+            r = await c.get(cb, follow_redirects=False)
+            assert r.status_code == 303, r.text[:200]
+
+
+def test_iss_is_added_to_error_redirects_only():
+    assert oauth.with_iss("http://localhost:1/cb?error=invalid_scope&state=s", "https://x") == (
+        "http://localhost:1/cb?error=invalid_scope&state=s&iss=https%3A%2F%2Fx"
+    )
+    assert oauth.with_iss("http://localhost:1/cb?code=c&iss=https://x", "https://x") == "http://localhost:1/cb?code=c&iss=https://x"
+    assert oauth.with_iss("http://localhost:1/cb?error=x&iss=https://x", "https://x").count("iss=") == 1
+
+
 def test_after_sign_in_only_local_paths():
     assert local_path("/w/abc/?t=1") == "/w/abc/?t=1"
     for bad in ("//evil.example/", "https://evil.example/", "/\\evil.example", "", "evil"):
@@ -562,6 +584,7 @@ async def test_the_resource_must_be_this_server(srv):
         }
         r = await c.get("/authorize?" + urlencode(q), follow_redirects=False)
         assert r.status_code == 302 and "error=invalid_target" in r.headers["location"]
+        assert parse_qs(urlparse(r.headers["location"]).query)["iss"] == [srv.url]  # RFC 9207, as the metadata says
         got = await authorize(c, cid, challenge)
         r = await tokens(
             c,

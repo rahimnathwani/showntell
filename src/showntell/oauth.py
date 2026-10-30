@@ -32,7 +32,7 @@ import secrets
 import socket
 import time
 from collections.abc import Awaitable, Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 from mcp.server.auth.provider import (
@@ -489,8 +489,42 @@ def routes(server: AuthServer) -> list:
             continue
         if r.path == "/token":
             r = Route(r.path, ResourceCheck(r.app, server), methods=["POST", "OPTIONS"])
+        elif r.path == "/authorize":
+            r = Route(r.path, IssOnErrors(r.app, server.issuer), methods=list(r.methods or ["GET", "POST"]))
         out.append(r)
     return out
+
+
+class IssOnErrors:
+    """In front of the SDK's authorize endpoint: its error redirects (invalid_target, invalid_scope
+    and the like) leave out `iss`, which the metadata promises (RFC 9207); a client that checks it
+    would report a mix-up instead of the real error."""
+
+    def __init__(self, app, issuer: str) -> None:
+        self.app = app
+        self.issuer = issuer
+
+    async def __call__(self, scope, receive, send):
+        async def send_with_iss(msg):
+            if msg["type"] == "http.response.start" and 300 <= msg["status"] < 400:
+                headers = []
+                for k, v in msg.get("headers", []):
+                    if k.lower() == b"location":
+                        v = with_iss(v.decode("latin-1"), self.issuer).encode("latin-1")
+                    headers.append((k, v))
+                msg = {**msg, "headers": headers}
+            await send(msg)
+
+        await self.app(scope, receive, send_with_iss)
+
+
+def with_iss(location: str, issuer: str) -> str:
+    """An error redirect to the client, with `iss` added if it lacks one."""
+    u = urlparse(location)
+    q = parse_qs(u.query)
+    if "error" not in q or "iss" in q:
+        return location
+    return u._replace(query=u.query + ("&" if u.query else "") + urlencode({"iss": issuer})).geturl()
 
 
 class ResourceCheck:
