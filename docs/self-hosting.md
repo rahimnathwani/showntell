@@ -36,7 +36,7 @@ Settings: `SHOWNTELL_OIDC=google`, the client ID and secret, and `SHOWNTELL_ALLO
 5. **Certificates & secrets → New client secret:** copy its value now; it is shown once. Note when it expires and put a reminder in the calendar: sign-in stops when it does.
 6. **API permissions:** the default delegated Microsoft Graph `User.Read` is enough; `openid`, `email` and `profile` are granted with it.
 
-Settings: `SHOWNTELL_OIDC=entra`, the client ID and secret, `SHOWNTELL_ENTRA_TENANT` set to the tenant ID (not a domain). Leave `SHOWNTELL_ALLOWED_DOMAINS` empty to admit anyone in the tenant, or list domains to admit only users whose user principal name (UPN) is in them. showntell reads the UPN (`preferred_username`), never Entra's `email` claim, which users and admins can edit.
+Settings: `SHOWNTELL_OIDC=entra`, the client ID and secret, `SHOWNTELL_ENTRA_TENANT` set to the tenant ID (not a domain). Leave `SHOWNTELL_ALLOWED_DOMAINS` empty to admit anyone in the tenant, or list domains to admit only users whose user principal name (UPN) is in them. showntell reads the UPN (`preferred_username`), never Entra's `email` claim, which users and admins can edit. B2B guests are in the tenant too but are refused unless `SHOWNTELL_ENTRA_GUESTS=1`. Shares match the UPN, which in some tenants differs from the mail address (`jdoe@` for `john.doe@`), so share with the address people sign in with.
 
 ### Another OIDC provider
 

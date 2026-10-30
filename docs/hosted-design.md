@@ -57,7 +57,7 @@ The user's key is `(issuer, sub)`. Email is for display and for matching shares,
 | Check | Google | Entra | Generic OIDC |
 |---|---|---|---|
 | **Signature, issuer, audience, nonce, expiry** | Yes | Yes, issuer for the one tenant | Yes |
-| **Who may sign in** | `hd` claim in `ALLOWED_DOMAINS` (an `@gmail.com` account has none) | `tid` equals `ENTRA_TENANT`; then, if domains are set, the domain of `preferred_username` (the UPN) is in the list | `email_verified` is true and the email's domain is in the list |
+| **Who may sign in** | `hd` claim in `ALLOWED_DOMAINS` (an `@gmail.com` account has none) | `tid` equals `ENTRA_TENANT`; not a B2B guest (`idp` other than the issuer, or `#EXT#` in the UPN) unless `ENTRA_GUESTS=1`; then, if domains are set, the domain of `preferred_username` (the UPN) is in the list | `email_verified` is true and the email's domain is in the list |
 | **Never trust** | The email suffix without `hd` | The `email` claim: it is editable and unverified ("nOAuth") | — |
 | **App registration** | Internal OAuth client in the company's Google Cloud project | Single-tenant app registration | Per the provider |
 

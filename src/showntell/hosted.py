@@ -203,6 +203,7 @@ def build(cfg: Config) -> Hosted:
             cfg.base_url + "/oidc/callback",
             domains(cfg),
             cfg.entra_tenant,
+            guests=cfg.entra_guests,
         )
         identity = Identity(
             OIDCLogin(provider, db, cfg.base_url, signin_max_s=cfg.signin_days * 86400), sessions=DBSessions(db), secure_cookie=secure

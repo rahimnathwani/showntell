@@ -55,7 +55,9 @@ class Config:
     oidc_client_id: str = field(default_factory=lambda: _env("OIDC_CLIENT_ID", ""))
     oidc_client_secret: str = field(default_factory=lambda: _env("OIDC_CLIENT_SECRET", ""))
     oidc_issuer: str = field(default_factory=lambda: _env("OIDC_ISSUER", ""))  # generic only
-    entra_tenant: str = field(default_factory=lambda: _env("ENTRA_TENANT", ""))  # entra only: the tenant ID
+    # entra only: the tenant ID, lower case as Entra writes it in its issuer
+    entra_tenant: str = field(default_factory=lambda: _env("ENTRA_TENANT", "").strip().lower())
+    entra_guests: bool = field(default_factory=lambda: _env("ENTRA_GUESTS") == "1")  # admit B2B guests in the tenant
     # MCP refreshes stop this long after the user last signed in at the provider, so someone the
     # provider no longer lets in loses access without anyone changing showntell's settings.
     signin_days: float = field(default_factory=lambda: _num("SIGNIN_DAYS", 7))

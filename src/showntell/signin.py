@@ -79,7 +79,7 @@ class OIDCLogin:
         if claims is None or last is None or (self.signin_max_s > 0 and time.time() - last[0] > self.signin_max_s):
             return False
         try:
-            check_claims(self.provider.preset, claims, self.provider.domains, self.provider.tenant)
+            check_claims(self.provider.preset, claims, self.provider.domains, self.provider.tenant, self.provider.guests)
         except SignInRefused:
             return False
         return True

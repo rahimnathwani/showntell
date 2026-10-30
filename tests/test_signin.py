@@ -38,6 +38,7 @@ from showntell.store import Store
 
 TENANT = "8f2f3c1e-2b0a-4c43-9d55-1a2b3c4d5e6f"
 GOOGLE = {"sub": "g-1", "email": "ann@example.com", "email_verified": True, "hd": "example.com"}
+ISS = f"https://login.microsoftonline.com/{TENANT}/v2.0"
 ENTRA = {"sub": "e-1", "tid": TENANT, "preferred_username": "ann@example.com", "email": "ann@example.com"}
 GENERIC = {"sub": "o-1", "email": "ann@example.com", "email_verified": True}
 REDIRECT = "http://localhost:53682/callback"
@@ -180,6 +181,10 @@ def test_good_settings_start(tmp_path):
         ("entra", {**ENTRA, "preferred_username": "ann@contractor.net"}, ["example.com"], "contractor.net cannot use"),
         # The editable `email` claim never gets someone in.
         ("entra", {**ENTRA, "preferred_username": "mallory@contractor.net", "email": "ceo@example.com"}, ["example.com"], "cannot use"),
+        # A B2B guest is in the tenant too; Entra names their home directory in `idp`.
+        ("entra", {**ENTRA, "iss": ISS, "idp": "https://sts.windows.net/9188040d-6c67-4c5b-b112-36a304b66dad/"}, [], "Guest accounts"),
+        ("entra", {**ENTRA, "idp": "live.com", "iss": ISS, "preferred_username": "ann@example.com"}, ["example.com"], "Guest accounts"),
+        ("entra", {**ENTRA, "preferred_username": "ann_gmail.com#ext#@corp.onmicrosoft.com"}, [], "Guest accounts"),
         ("generic", {**GENERIC, "email_verified": False}, ["example.com"], "not verified"),
         ("generic", {**GENERIC, "email_verified": "true"}, ["example.com"], "not verified"),
         ("generic", {**GENERIC, "email": "ann@other.org"}, ["example.com"], "other.org cannot use"),
@@ -194,6 +199,18 @@ def test_the_preset_rules_accept_and_name_the_user():
     assert check_claims("google", GOOGLE, ["example.com"]) == "ann@example.com"
     assert check_claims("entra", {**ENTRA, "email": "someone-else@example.com"}, [], TENANT) == "ann@example.com"
     assert check_claims("entra", ENTRA, ["Example.com"], TENANT.upper()) == "ann@example.com"
+    assert check_claims("entra", {**ENTRA, "iss": ISS, "idp": ISS}, [], TENANT) == "ann@example.com"  # idp is the tenant itself
+    guest = {**ENTRA, "iss": ISS, "idp": "live.com"}
+    assert check_claims("entra", guest, [], TENANT, guests=True) == "ann@example.com"  # SHOWNTELL_ENTRA_GUESTS=1
+
+
+def test_an_upper_case_entra_tenant_names_entras_issuer(monkeypatch):
+    """Entra's discovery document writes the tenant GUID in lower case; an issuer built from an
+    upper-case setting never matched it, so every sign-in failed."""
+    from showntell.oidc import issuer_for
+
+    monkeypatch.setenv("SHOWNTELL_ENTRA_TENANT", TENANT.upper())
+    assert issuer_for("entra", Config().entra_tenant) == ISS
     assert check_claims("generic", {**GENERIC, "email": "Ann@Example.com"}, ["example.com"]) == "ann@example.com"
 
 
