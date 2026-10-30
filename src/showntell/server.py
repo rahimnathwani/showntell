@@ -702,9 +702,9 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
         wid, user = s.w.id, user_of(request)
 
         def allowed() -> bool:
-            # Hosted: access is checked again on every event, so a removed share or a deleted
-            # walkthrough ends the stream.
-            return not hosted or store.viewable(wid, user) is s
+            # Access is checked again on every event, so a deleted walkthrough or (hosted) a
+            # removed share ends the stream.
+            return not s.deleted and (not hosted or store.viewable(wid, user) is s)
 
         async def stream():
             q = s.subscribe()

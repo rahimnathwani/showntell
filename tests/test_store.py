@@ -575,6 +575,45 @@ async def test_delete_removes_walkthrough(store):
     assert store.delete(s.w.id) is False
 
 
+async def test_a_pending_save_does_not_bring_a_deleted_walkthrough_back(tmp_path, idle_narrator):
+    store = Store(tmp_path / "data", "http://localhost:4799", idle_narrator)
+    store.loop = asyncio.get_running_loop()
+    s = store.create("T")
+    s.add(OPENING)  # schedules a save
+    assert s._save_handle is not None
+    store.delete(s.w.id)
+    s._changed(set(), meta=True)  # an open stream or tool call still holding the session
+    await asyncio.sleep(0.5)
+    assert not store.walk_dir(s.w.id).exists() and store.get(s.w.id) is None
+
+
+async def test_late_audio_does_not_bring_a_deleted_walkthrough_back(service, store, wait_until):
+    store.narrator.backend.delay = 0.2
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    s = store.by_handle(r["handle"])
+    jobs = store.narrator.stats["jobs"]
+    store.delete(s.w.id)
+    await wait_until(lambda: store.narrator.stats["jobs"] > jobs)  # the audio arrives after the delete
+    await asyncio.sleep(0.5)
+    assert not store.walk_dir(s.w.id).exists() and store.list() == []
+    store.narrator.backend.delay = 0
+
+
+async def test_an_export_waiting_for_the_voice_stops_when_its_walkthrough_is_deleted(service, store, tmp_path):
+    store.narrator.backend.delay = 0.3
+    r = await started(service, project_dir=str(tmp_path))
+    await service.add(r["handle"], OPENING)
+    s = store.by_handle(r["handle"])
+    job = asyncio.create_task(service.export(r["handle"], format="html", path=str(tmp_path / "x.html")))
+    await asyncio.sleep(0.05)
+    store.delete(s.w.id)
+    with pytest.raises(ValueError, match="unknown handle"):
+        await job
+    store.narrator.backend.delay = 0
+    assert not store.walk_dir(s.w.id).exists() and not (tmp_path / "x.html").exists()
+
+
 # -- live updates --------------------------------------------------------------------------------------
 
 

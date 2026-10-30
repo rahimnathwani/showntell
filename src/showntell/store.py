@@ -35,6 +35,7 @@ STILL_S = 20.0  # longest stretch of narration with nothing changing on screen
 MAX_DESCRIPTION = 200  # characters
 TARGET_S = 240.0  # the guide aims for 2 to 4 minutes of narration
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+UNKNOWN_HANDLE = "unknown handle; use the handle returned by start_walkthrough"
 
 
 class Session:
@@ -55,6 +56,9 @@ class Session:
         self.staged: dict[str, Slide] = {}
         self._playable: asyncio.Event = asyncio.Event()
         self._save_handle: asyncio.TimerHandle | None = None
+        # Set once deleted: speech callbacks, event streams and tool calls may still hold this
+        # session, and none of them may write its folder back.
+        self.deleted = False
 
     # -- writing ------------------------------------------------------------------------
 
@@ -311,6 +315,8 @@ class Session:
         return 0 if hit else 1
 
     def _audio(self, slide_id: str, say_id: str, result: dict) -> None:
+        if self.deleted:
+            return
         staged = self.staged.get(slide_id)
         slide = (
             staged if staged and any(x.id == say_id for x in staged.says) else next((s for s in self.w.slides if s.id == slide_id), None)
@@ -396,6 +402,8 @@ class Session:
         self.subscribers.discard(q)
 
     def _changed(self, slide_ids: set[str], meta: bool = False) -> None:
+        if self.deleted:
+            return
         self.w.updated = time.time()
         for q in self.subscribers:
             q.put_nowait({"slides": set(slide_ids), "meta": meta})
@@ -424,6 +432,8 @@ class Session:
         return out
 
     def _schedule_save(self) -> None:
+        if self.deleted:
+            return
         loop = self.store.loop
         if loop is None:
             self.save_now()
@@ -433,12 +443,23 @@ class Session:
 
     def save_now(self) -> None:
         self._save_handle = None
+        if self.deleted:
+            return
         d = self.store.walk_dir(self.w.id)
         d.mkdir(parents=True, exist_ok=True)
         tmp = d / "state.json.part"
         tmp.write_text(json.dumps(self.w.to_state()))
         tmp.rename(d / "state.json")
         (d / "source.md").write_text(self.source)
+
+    def close(self) -> None:
+        """Deleted: cancel a pending save, write nothing more, and wake open event streams so they end."""
+        self.deleted = True
+        if self._save_handle is not None:
+            self._save_handle.cancel()
+            self._save_handle = None
+        for q in self.subscribers:
+            q.put_nowait({"slides": set(), "meta": True})
 
     @property
     def url(self) -> str:
@@ -568,7 +589,7 @@ class Store:
         wid, _, key = (handle or "").strip().partition(".")
         s = self.get(wid)
         if s is None or not secrets.compare_digest(s.w.key, key) or (self.hosted and not access.owns(s.w, user)):
-            raise ValueError("unknown handle; use the handle returned by start_walkthrough")
+            raise ValueError(UNKNOWN_HANDLE)
         return s
 
     def viewable(self, wid: str, user=None) -> Session | None:
@@ -639,10 +660,16 @@ class Store:
             total += f.stat().st_size if f.is_file() else 0
         return total
 
+    def forget(self, wid: str) -> None:
+        """Drop a deleted walkthrough's session for good, wherever it is still held."""
+        s = self.sessions.pop(wid, None)
+        if s is not None:
+            s.close()
+
     def delete(self, wid: str) -> bool:
         if not ID_RE.match(wid or ""):
             return False
-        self.sessions.pop(wid, None)
+        self.forget(wid)
         d = self.walk_dir(wid)
         if d.is_dir():
             shutil.rmtree(d)

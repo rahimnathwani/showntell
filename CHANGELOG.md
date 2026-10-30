@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.2 (unreleased)
+
+- **Deleted walkthroughs stay deleted:** speech callbacks, open event streams and tool calls still held a deleted walkthrough, and the next audio, save, finish or export wrote its folder back, owner, company switch and shares included, so viewers got it back. A deleted session (by the owner or by retention) now writes nothing, its pending save is cancelled, open event streams end, and a finish or export in flight replies "unknown handle" and leaves no export behind.
 ## 0.2.1 (2026-10-29)
 
 - **Claude Code can sign in to a hosted server:** Claude Code catches the sign-in on a localhost port it picks each time, and the authorization server compared redirect URIs exactly, so a second sign-in was refused ("Redirect URI ... not registered for client"). Loopback HTTP redirect URIs now match on any port, as RFC 8252 requires; scheme, host, path and query must still match.

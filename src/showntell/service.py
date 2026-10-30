@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 
 from .issues import as_dict
-from .store import Store, narration_seconds
+from .store import UNKNOWN_HANDLE, Store, narration_seconds
 
 log = logging.getLogger("showntell")
 _browser_warned = False
@@ -143,6 +144,8 @@ class LocalService:
         shots: dict[str, bytes] = {}
         want = [sid for run in runs for sid in run][:ALIKE_SHOTS_MAX]
         unchecked = await self._check_layout(s, want, shots) if layout else None
+        if s.deleted:  # while the slides were drawn
+            raise ValueError(UNKNOWN_HANDLE)
         issues = s.finish(questions, unchecked=unchecked) + s.take_late_issues()
         says = [x for sl in s.w.slides for x in sl.says if x.text]
         starts = slide_starts(s.w)
@@ -333,8 +336,10 @@ class LocalService:
         if not says:
             raise ValueError("nothing to export yet: the walkthrough has no narration")
         t0 = time.monotonic()
-        while any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
+        while not s.deleted and any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
             await asyncio.sleep(0.5)
+        if s.deleted:  # while waiting for the voice
+            raise ValueError(UNKNOWN_HANDLE)
         pending = sum(1 for x in says if x.status == "pending")
         if pending:
             raise ValueError(f"{pending} paragraph(s) are still being voiced after {wait_s:.0f} s; try again shortly")
@@ -360,6 +365,11 @@ class LocalService:
             raise ValueError(str(e)) from None
         except TimeoutError:
             raise ValueError(f"the export took over {h.limits.export_min:g} minutes") from None
+        finally:
+            if s.deleted and h:  # deleted while rendering: leave nothing of it behind
+                shutil.rmtree(self.store.walk_dir(s.w.id), ignore_errors=True)
+        if s.deleted:
+            raise ValueError(UNKNOWN_HANDLE)
         extra = {"download": f"{s.store.base_url}/w/{s.w.id}/exports/{out.name}"} if h else {}
         return {
             **extra,

@@ -214,7 +214,7 @@ def serve(cfg: Config) -> None:
                     if cfg.limits.retention_days > 0:
                         gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
                         for row in gone["walkthroughs"]:
-                            store.sessions.pop(row["id"], None)
+                            store.forget(row["id"])
                         if gone["walkthroughs"]:
                             n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
                             log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
