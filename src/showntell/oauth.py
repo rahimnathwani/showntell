@@ -59,6 +59,10 @@ CONSENT_S = 600
 REFRESH_GRACE_S = 60  # a rotated refresh token still works this long: two refreshes racing, not a replay
 LIVE, ROTATED, REVOKED = 0, 1, 2  # tokens.spent
 METADATA_MAX_BYTES = 16_384
+METADATA_DEADLINE_S = 10  # a whole fetch, however slowly the host drips it
+METADATA_KEPT = 500  # documents (and failures) remembered at once
+METADATA_RETRY_S = 60  # a document that failed is not fetched again for this long
+METADATA_FETCHES = 4  # at once, server-wide
 METADATA_CACHE_S = (60, 300, 86400)  # least, default, most seconds a client metadata document is kept
 
 
@@ -121,36 +125,61 @@ def is_metadata_url(client_id: str) -> bool:
     return u.scheme == "https" and bool(u.hostname) and u.path not in ("", "/") and not u.fragment and not u.username and not u.password
 
 
-async def _public_host(host: str) -> None:
-    """Refuse to fetch from this machine or a private network (SSRF)."""
+NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
+
+
+def public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """A global address, and so is any IPv4 address carried inside an IPv6 one (mapped,
+    IPv4-compatible, NAT64, 6to4, Teredo): `is_global` alone passes `::127.0.0.1` and
+    `64:ff9b::a9fe:a9fe`, which reach this machine or the cloud metadata service."""
+    if not ip.is_global:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address):
+        inner = [ip.ipv4_mapped, ip.sixtofour, ip.teredo[1] if ip.teredo else None]
+        if int(ip) >> 32 == 0 or any(ip in n for n in NAT64):
+            inner.append(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
+        return all(public_ip(v4) for v4 in inner if v4 is not None)
+    return True
+
+
+async def _public_address(host: str) -> str:
+    """The address to fetch from, refusing this machine and private networks (SSRF). The fetch then
+    connects to this address, so a second DNS answer can't point it somewhere private."""
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
     except OSError:
         raise ValueError(f"{host} does not resolve") from None
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
-        if not ip.is_global:
-            raise ValueError(f"{host} is not a public address")
+    ips = [ipaddress.ip_address(info[4][0].split("%")[0]) for info in infos]
+    if not ips or not all(public_ip(ip) for ip in ips):
+        raise ValueError(f"{host} is not a public address")
+    return str(ips[0])
 
 
 async def fetch_client_metadata(url: str) -> tuple[dict, float]:
     """A client ID metadata document and how long to keep it: from a public host, no redirects,
-    at most 16 KB of JSON."""
-    await _public_host(urlparse(url).hostname or "")
-    async with httpx.AsyncClient(timeout=5, follow_redirects=False) as c, c.stream("GET", url, headers={"Accept": "application/json"}) as r:
-        if r.status_code != 200:
-            raise ValueError(f"the document answered {r.status_code}")
-        body = b""
-        async for chunk in r.aiter_bytes():
-            body += chunk
-            if len(body) > METADATA_MAX_BYTES:
-                raise ValueError("the document is over 16 KB")
-        m = re.search(r"max-age=(\d+)", r.headers.get("cache-control", ""))
-        least, default, most = METADATA_CACHE_S
-        keep = min(most, max(least, int(m.group(1)))) if m else default
-        if "no-store" in r.headers.get("cache-control", ""):
-            keep = least
-        return json.loads(body), keep
+    at most 16 KB of JSON, within 10 s all told."""
+    u = urlparse(url)
+    async with asyncio.timeout(METADATA_DEADLINE_S):
+        ip = await _public_address(u.hostname or "")
+        pinned = u._replace(netloc=(f"[{ip}]" if ":" in ip else ip) + (f":{u.port}" if u.port else "")).geturl()
+        headers = {"Accept": "application/json", "Host": u.netloc.rsplit("@", 1)[-1]}
+        async with (
+            httpx.AsyncClient(timeout=5, follow_redirects=False) as c,
+            c.stream("GET", pinned, headers=headers, extensions={"sni_hostname": u.hostname}) as r,
+        ):
+            if r.status_code != 200:
+                raise ValueError(f"the document answered {r.status_code}")
+            body = b""
+            async for chunk in r.aiter_bytes():
+                body += chunk
+                if len(body) > METADATA_MAX_BYTES:
+                    raise ValueError("the document is over 16 KB")
+            m = re.search(r"max-age=(\d+)", r.headers.get("cache-control", ""))
+            least, default, most = METADATA_CACHE_S
+            keep = min(most, max(least, int(m.group(1)))) if m else default
+            if "no-store" in r.headers.get("cache-control", ""):
+                keep = least
+            return json.loads(body), keep
 
 
 def client_from_metadata(url: str, doc: dict) -> Client:
@@ -194,7 +223,8 @@ class AuthServer:
         self.resource = self.issuer + "/mcp"
         self.allowed = allowed
         self.fetch = fetch or fetch_client_metadata
-        self._documents: dict[str, tuple[OAuthClientInformationFull, float]] = {}
+        self._documents: dict[str, tuple[OAuthClientInformationFull | None, float]] = {}  # None: it failed
+        self._fetching = asyncio.Semaphore(METADATA_FETCHES)
 
     # -- clients -------------------------------------------------------------------------------
 
@@ -203,16 +233,29 @@ class AuthServer:
             hit = self._documents.get(client_id)
             if hit and hit[1] > time.time():
                 return hit[0]
-            try:
-                doc, keep = await self.fetch(client_id)
-                client = client_from_metadata(client_id, doc)
-            except Exception as e:  # noqa: BLE001 - any failure means an unknown client
-                log.warning("client metadata document %s refused: %s", client_id[:200], e)
-                return None
-            self._documents[client_id] = (client, time.time() + keep)
+            # Anyone can make /authorize fetch a URL, so failures are remembered too, fetches are
+            # few at once, and the memory of both is bounded.
+            client, keep = None, METADATA_RETRY_S
+            async with self._fetching:
+                try:
+                    doc, keep = await self.fetch(client_id)
+                    client = client_from_metadata(client_id, doc)
+                except Exception as e:  # noqa: BLE001 - any failure means an unknown client
+                    log.warning("client metadata document %s refused: %s", client_id[:200], e)
+                    keep = METADATA_RETRY_S
+            self._remember(client_id, client, keep)
             return client
         rows = self.db.run("select info from clients where client_id = ?", (client_id,))
         return Client.model_validate_json(rows[0][0]) if rows else None
+
+    def _remember(self, client_id: str, client: OAuthClientInformationFull | None, keep: float) -> None:
+        now = time.time()
+        if len(self._documents) >= METADATA_KEPT:
+            for k in [k for k, (_, until) in self._documents.items() if until <= now]:
+                del self._documents[k]
+            while len(self._documents) >= METADATA_KEPT:
+                del self._documents[next(iter(self._documents))]  # the oldest
+        self._documents[client_id] = (client, now + keep)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         bad = [str(u) for u in client_info.redirect_uris or [] if not redirect_ok(str(u))]

@@ -694,6 +694,70 @@ async def test_client_metadata_is_never_fetched_from_private_addresses():
     assert not oauth.is_metadata_url("https://client.example/") and not oauth.is_metadata_url("http://client.example/c.json")
 
 
+@pytest.mark.parametrize(
+    "addr, ok",
+    [
+        ("8.8.8.8", True),
+        ("2606:4700:4700::1111", True),
+        ("::ffff:127.0.0.1", False),
+        ("::127.0.0.1", False),  # IPv4-compatible: is_global alone passes it
+        ("64:ff9b::a9fe:a9fe", False),  # NAT64 to the cloud metadata service: is_global passes it too
+        ("64:ff9b::808:808", True),
+        ("2002:7f00:1::1", False),  # 6to4 around 127.0.0.1
+        ("fd00::1", False),
+    ],
+)
+def test_addresses_inside_addresses_are_checked(addr, ok):
+    import ipaddress
+
+    assert oauth.public_ip(ipaddress.ip_address(addr)) is ok
+
+
+async def test_a_slow_metadata_host_is_cut_off(monkeypatch):
+    """A host that drips its answer a byte at a time stays under every per-read timeout; the whole
+    fetch has a deadline."""
+
+    async def drip(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n")
+        with contextlib.suppress(ConnectionError):
+            while True:
+                writer.write(b" ")
+                await writer.drain()
+                await asyncio.sleep(0.2)
+
+    server = await asyncio.start_server(drip, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+
+    async def loopback(host):
+        return "127.0.0.1"
+
+    monkeypatch.setattr(oauth, "_public_address", loopback)
+    monkeypatch.setattr(oauth, "METADATA_DEADLINE_S", 1)
+    t0 = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await oauth.fetch_client_metadata(f"http://client.example:{port}/c.json")
+    assert time.monotonic() - t0 < 3
+    server.close()
+
+
+async def test_failed_metadata_documents_are_remembered_and_the_cache_is_bounded(tmp_path, monkeypatch):
+    calls = []
+
+    async def fetch(url):
+        calls.append(url)
+        raise ValueError("no such document")
+
+    monkeypatch.setattr(oauth, "METADATA_KEPT", 3)
+    server = oauth.AuthServer(AuthDB(tmp_path / "a.db"), "http://localhost:1", lambda u: True, fetch=fetch)
+    assert await server.get_client(CIMD_URL) is None
+    assert await server.get_client(CIMD_URL) is None
+    assert calls == [CIMD_URL]  # the failure is kept, so /authorize can't make it fetch again and again
+    for i in range(10):
+        await server.get_client(f"https://client{i}.example/c.json")
+    assert len(server._documents) <= 3
+
+
 async def test_client_metadata_documents_are_cached(tmp_path):
     calls = []
 
