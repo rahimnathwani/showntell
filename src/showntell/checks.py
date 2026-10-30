@@ -507,9 +507,8 @@ class Checks:
     def _check_build_order(self, s: Slide) -> None:
         if "build" not in s.classes or not s.visual:
             return
-        paras = [[c for c in x.cues if not c.get("inferred")] for x in s.says if x.text]
-        cues = [c for p in paras for c in p]
-        if len(paras) >= 2 and len(cues) >= 3 and all(not p for p in paras[1:]):
+        cues = [c for x in s.says if x.text for c in x.cues if not c.get("inferred")]
+        if cues_bunched(s):
             self._issue(
                 "build_cues_bunched",
                 f"Slide `{s.id}` reveals in steps, but every cue is in its first paragraph, "
@@ -625,6 +624,14 @@ class Checks:
 def generated(name: str) -> bool:
     """Whether a path is a lockfile or generated file, rarely the point of a diff."""
     return bool(GENERATED.search(name))
+
+
+def cues_bunched(s: Slide) -> bool:
+    """A step-reveal slide with every cue in its first paragraph (`build_cues_bunched`)."""
+    if "build" not in s.classes or not s.visual:
+        return False
+    paras = [[c for c in x.cues if not c.get("inferred")] for x in s.says if x.text]
+    return len(paras) >= 2 and sum(map(len, paras)) >= 3 and all(not p for p in paras[1:])
 
 
 def _source_rank(s: Slide):

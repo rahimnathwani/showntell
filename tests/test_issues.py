@@ -373,3 +373,38 @@ async def test_finish_says_what_was_not_checked(service, store):
     f = await service.finish(r["handle"], None)
     s.unsubscribe(q)
     assert not any("No player" in i["message"] for i in f["issues"])
+
+
+CODE2 = "\n```python\nx = 1\ny = 2\nz = 3\n```\n\n"
+
+
+async def test_cues_too_close_across_paragraphs_are_reported_at_finish(service, store, voiced):
+    # The cue that ends one paragraph and the one that opens the next fire under a second apart.
+    r = await started(service)
+    md = "The loader starts here and reads the [config](#L1).\n\n[Then](#L2) it parses each line in turn and keeps going.\n"
+    await service.add(r["handle"], OPENING + "\n## Close {#close}\n" + CODE2 + md)
+    await voiced(store.by_handle(r["handle"]))
+    f = await service.finish(r["handle"], None, check=False)
+    found = [i for i in f["issues"] if i["code"] == "cues_too_close"]
+    assert len(found) == 1 and found[0]["slide"] == "close" and "[config](#L1) and [Then](#L2)" in found[0]["message"]
+    f = await service.finish(r["handle"], None, check=False)
+    assert "cues_too_close" not in codes(f["issues"])  # once a slide
+
+
+async def test_cues_with_room_between_them_are_not_reported(service, store, voiced):
+    r = await started(service)
+    md = "The loader starts by reading the [config](#L1) from disk.\n\nOnce that is done, it moves on and [parses](#L2) each line.\n"
+    await service.add(r["handle"], OPENING + "\n## Spaced {#spaced}\n" + CODE2 + md)
+    await voiced(store.by_handle(r["handle"]))
+    f = await service.finish(r["handle"], None, check=False)
+    assert "cues_too_close" not in codes(f["issues"])
+
+
+async def test_bunched_build_cues_are_not_reported_twice(service, store, voiced):
+    r = await started(service)
+    md = "[One](#L1) [two](#L2) [three](#L3) appear.\n\nThen we talk for a while about all of them together.\n"
+    a = await service.add(r["handle"], OPENING + "\n## Bunch {#bunch .build}\n" + CODE2 + md)
+    assert "build_cues_bunched" in codes(a["issues"])
+    await voiced(store.by_handle(r["handle"]))
+    f = await service.finish(r["handle"], None, check=False)
+    assert "cues_too_close" not in codes(f["issues"])

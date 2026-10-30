@@ -110,7 +110,7 @@ No hype or filler; replace lines like these with the fact they delay:
 Every slide with a visual needs at least one cue (`no_cues`). Use only targets its visual has (`cue_wrong_kind`, `cue_no_target`).
 
 - **Name the thing.** Link just the words that name the target: `[the retry limit](#L48 "max_tries")`, not `[here](#L48)`. The player fires cues a moment early, so the pointer lands as they are heard.
-- **Density.** One to three cues per paragraph; more makes the pointer jitter.
+- **Density.** One to three cues per paragraph, about 1.5 s apart, across paragraphs too (`cues_too_close`); closer, the first is gone before it is read.
 - **Prefer `file=`.** Code from disk is never retyped and keeps the editor's numbers; take line numbers from the file, not memory.
 - **Quote when you count.** Quoted text must match exactly, spaces included, and corrects a miscounted line (`cue_moved`); quote every line cue on inline code or a terminal.
 - **Pointer styles.** After a cue, `{.circle}`, `{.underline}`, `{.arrow}` or `{.highlight}` replaces the box; `{.highlight}` sweeps a marker across a label and the last one fades a second later, which suits diagram nodes and list items. `{.zoom}` moves the camera onto the target until the next cue (`{.zoom .circle}` combines). One or two a slide.

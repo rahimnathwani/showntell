@@ -144,6 +144,7 @@ Findings from the server, found while parsing, building and voicing:
 | `decode_unused` | info | a slide builds in order to a last part that could stay hidden until named |
 | `build_cues_bunched` | info | a step-reveal slide fires all its cues in the first paragraph |
 | `build_cue_order` | info | a step-reveal slide cues its parts out of source order |
+| `cues_too_close` | info | two cues on a slide fire too close together for the first to be read |
 | `no_narration` | warning | a slide has nothing to say |
 | `thin_narration` | warning | a slide shows more than its narration gives time to read |
 | `reads_screen` | warning | narration repeats on-screen text word for word |
@@ -167,6 +168,8 @@ Findings from the server, found while parsing, building and voicing:
 | `quiz_reveal` | warning | a quiz's answer is never pointed at, or is pointed at while the question is asked |
 
 `still_slide` needs audio, so it arrives with the first call after the slide is voiced. It fires when the screen holds still (no slide change, cue or reveal) for more than 20 s of narration.
+
+`cues_too_close` is checked at finish, on slides already voiced: cue times come from the voice's word timings and are compared across the slide's paragraphs, so a cue ending one paragraph and one opening the next count too. Two cues at different targets under 1.5 s apart are reported, once per slide, naming the closest pair. A step-reveal slide with every cue in its first paragraph is left to `build_cues_bunched`.
 
 `long_sentences` and `dense_numbers` measure each paragraph as heard: sentences in spoken words (an identifier in backticks counts as its parts, a number as one word) and numbers per 100 words (digits, or number words such as "ten point two", each run counting once). A slide gets one finding, for the first paragraph past a limit: a sentence over 28 words, sentences averaging over 22.5 words across two or more, or four or more numbers at over 22 per 100 words. Each limit is the higher of the upper Tukey fence (third quartile plus 1.5 times the interquartile range) over the 156 narrated paragraphs in `gallery/` and the gallery's own maximum, so none of them is flagged. The fix steers the slides still to come rather than sending the agent back.
 

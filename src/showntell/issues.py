@@ -51,6 +51,7 @@ CODES: dict[str, tuple[str, str]] = {
     "decode_unused": ("info", "a slide builds in order to a last part that could stay hidden until named"),
     "build_cues_bunched": ("info", "a step-reveal slide fires all its cues in the first paragraph"),
     "build_cue_order": ("info", "a step-reveal slide cues its parts out of source order"),
+    "cues_too_close": ("info", "two cues on a slide fire too close together for the first to be read"),
     # narration
     "no_narration": ("warning", "a slide has nothing to say"),
     "thin_narration": ("warning", "a slide shows more than its narration gives time to read"),

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import access, themes
 from .build import SPEED_RANGE, Builder
+from .checks import cues_bunched
 from .format import Parser
 from .issues import Issue, player_issue
 from .model import FRAMES, STATE_VERSION, Say, Slide, Walkthrough, public_slide, slide_from_state
@@ -33,6 +34,7 @@ MAX_SOURCE_BYTES = 1_000_000
 MAX_SLIDES = 80
 PARAGRAPH_GAP = 0.3  # matches the player's timeline
 STILL_S = 20.0  # longest stretch of narration with nothing changing on screen
+CUE_GAP_S = 1.5  # two cues closer than this: the first is gone before it can be read
 MAX_DESCRIPTION = 200  # characters
 MAX_QUESTIONS, MAX_QUESTION = 4, 300  # end questions kept, characters each
 TARGET_S = 240.0  # the guide aims for 2 to 4 minutes of narration
@@ -252,6 +254,7 @@ class Session:
         b = self.builder
         b.issues = []
         b.check_all()
+        self._check_cue_spacing()
         if b.parser.pending.strip():
             b._issue("block_dropped", "A code block was never closed; it was dropped.", "Close it and send the slide with revise_slide.")
             b.parser.pending = ""
@@ -369,6 +372,41 @@ class Session:
                     slide=slide.id,
                     line=slide.line,
                 )
+            )
+
+    def _check_cue_spacing(self) -> None:
+        """At finish, on voiced slides: cues that fire too close together for the first to be read,
+        timed by the voice's words and compared across the slide's paragraphs. A step-reveal slide
+        with every cue in its first paragraph already has `build_cues_bunched`."""
+        for slide in self.w.slides:
+            key = f"close:{slide.id}:{slide.rev}"
+            if key in self.reported or cues_bunched(slide) or any(x.text and x.status != "ready" for x in slide.says):
+                continue
+            t, marks = 0.0, []
+            for x in slide.says:
+                if x.pause:
+                    t += x.pause
+                elif x.text:
+                    marks += [(t + c["t"], c) for c in x.cues if c.get("t") is not None and not c.get("inferred")]
+                    t += x.duration + PARAGRAPH_GAP
+            marks.sort(key=lambda m: m[0])
+            close = [
+                (b - a, x, y)
+                for (a, x), (b, y) in zip(marks, marks[1:], strict=False)
+                if b - a < CUE_GAP_S and x.get("target") != y.get("target")
+            ]
+            if not close:
+                continue
+            self.reported.add(key)
+            gap, x, y = min(close, key=lambda m: m[0])
+            more = f" ({len(close)} such pairs on the slide)" if len(close) > 1 else ""
+            self.builder._issue(
+                "cues_too_close",
+                f"Slide `{slide.id}`: [{x.get('label')}](#{x.get('target')}) and [{y.get('label')}](#{y.get('target')}) "
+                f"fire {gap:.1f} s apart{more}, so the first is gone before it can be read.",
+                f"Leave about {CUE_GAP_S:g} s of narration between cues: give each its own clause, or drop one. Apply it with revise_slide.",
+                slide=slide.id,
+                line=slide.line,
             )
 
     def take_late_issues(self) -> list[Issue]:
