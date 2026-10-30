@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.2 (unreleased)
+## 0.2.2 (2026-10-29)
 
 - **Offboarding reaches Claude:** an MCP refresh chain renewed itself every hour without ever asking the provider again, so someone disabled at Google or Entra kept access for as long as their Claude stayed connected. Refreshing now needs a provider sign-in within `SHOWNTELL_SIGNIN_DAYS` (7), and takes the address from the latest sign-in instead of the first.
 - **Entra guests:** with no domain list, B2B guests passed the tenant check and could open everything shared company-wide. They are refused now (Entra marks them with an `idp` other than the issuer) unless `SHOWNTELL_ENTRA_GUESTS=1`. An upper-case `SHOWNTELL_ENTRA_TENANT` no longer breaks sign-in on an issuer mismatch.

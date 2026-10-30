@@ -12,10 +12,10 @@ from . import __version__, daemon
 from .config import Config
 
 # Until showntell is on PyPI, where this becomes `uvx showntell mcp`.
-INSTALL = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.1 showntell mcp"
+INSTALL = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.2 showntell mcp"
 # The same install with the browser that draws slides: the `video` extra adds Playwright, and
 # `playwright install chromium` fetches its Chromium, about 100 MB, once.
-VIDEO_FROM = "'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.1'"
+VIDEO_FROM = "'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.2'"
 INSTALL_VIDEO = f"uvx --from {VIDEO_FROM} showntell mcp"
 INSTALL_BROWSER = f"uvx --from {VIDEO_FROM} playwright install chromium"
 INSTALL_EXPORT = f"uvx --from {VIDEO_FROM} showntell export <id> talk.mp4"
