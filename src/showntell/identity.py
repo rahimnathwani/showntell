@@ -197,3 +197,15 @@ class StubLogin:
             return r
 
         return [Route("/dev/login", login, methods=["GET"])]
+
+
+def signs_in_as(identity: Identity, email: str) -> bool | None:
+    """Whether anyone can sign in to this server as `email` (lower case): the stand-in login's
+    list, or anyone who has signed in through the provider (the `users` table in auth.db).
+    None when this server cannot tell."""
+    if isinstance(identity.login, StubLogin):
+        return email in identity.login.tokens()
+    db = getattr(identity.sessions, "db", None)
+    if db is None:
+        return None
+    return bool(db.run("select 1 from users where lower(email) = ? limit 1", (email,)))

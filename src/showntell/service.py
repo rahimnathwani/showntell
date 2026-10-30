@@ -181,9 +181,11 @@ class LocalService:
         """The checks and the change behind both `share_walkthrough` and the page's Share control;
         the caller has already made sure the user owns `s`. All or nothing."""
         from .hosted import say
+        from .identity import signs_in_as
 
         allowed = self.store.hosted.allowed_domains
         shares = list(s.w.shares)
+        before = set(shares)
         for raw in add or []:
             email = (raw or "").strip().lower()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
@@ -198,7 +200,10 @@ class LocalService:
             s.w.company = bool(company)
         s._changed(set(), meta=True)  # wakes open event streams, which check access again
         s.save_now()
-        return {"url": s.url, "shares": list(s.w.shares), "company": s.w.company}
+        # Added all the same, since people may sign in later; but a share matches the address
+        # someone signs in with, which for Entra is the UPN and can differ from their mail.
+        unknown = [x for x in s.w.shares if x not in before and signs_in_as(self.store.hosted.identity, x) is False]
+        return {"url": s.url, "shares": list(s.w.shares), "company": s.w.company, "unknown": unknown}
 
     async def _check_layout(self, s, shoot: list[str] = (), shots: dict | None = None) -> tuple[str, str]:
         """Draw every slide fully revealed in headless Chromium, so the player's render and layout

@@ -63,8 +63,12 @@ async function call(body) {
 async function change(body) {
   status.textContent = "Saving…";
   try {
-    draw(await call(body));
-    status.textContent = "Saved.";
+    const state = await call(body);
+    draw(state);
+    // Shares match the address people sign in with, which may not be the one the owner knows.
+    status.textContent = state.unknown?.length
+      ? `Saved. Nobody has signed in here as ${state.unknown.join(", ")} yet. Shares match the address people sign in with; if they still can't open it after signing in, add that address instead.`
+      : "Saved.";
     return true;
   } catch (e) {
     status.textContent = e.message;

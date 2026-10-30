@@ -576,6 +576,12 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
                 company="yes" if r["company"] else "no",
                 url=r["url"],
             )
+            if r.get("unknown"):
+                text += "\n" + reply(
+                    "share_unknown",
+                    "Nobody has signed in here as {emails} yet: added anyway.",
+                    emails=", ".join(r["unknown"]),
+                )
             return _result(text, {"status": "shared", **r})
 
     for name, p in texts(deliver, hosted)["prompts"].items():
@@ -811,13 +817,17 @@ def add_routes(mcp: MCPServer, service: LocalService, rpc_token: str, started: f
                     add, remove, company = body.get("add") or [], body.get("remove") or [], body.get("company")
                     if not all(isinstance(x, str) for x in [*add, *remove]) or company not in (None, True, False):
                         raise ValueError("bad request")
-                    service.share_session(s, add, remove, company)
+                    unknown = service.share_session(s, add, remove, company)["unknown"]
                 except ValueError as e:
                     return JSONResponse({"error": str(e)}, status_code=400)
                 except Exception:
                     return JSONResponse({"error": "bad request"}, status_code=400)
+            else:
+                unknown = []
             domains = store.hosted.allowed_domains
-            return JSONResponse({"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains})
+            return JSONResponse(
+                {"shares": s.w.shares, "company": s.w.company, "owner": s.w.owner.get("email", ""), "domains": domains, "unknown": unknown}
+            )
 
         @mcp.custom_route("/w/{wid}/exports/{name}", methods=["GET"])
         async def exported(request: Request) -> Response:
