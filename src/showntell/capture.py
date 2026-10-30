@@ -189,6 +189,12 @@ class Capturer:
         `measure` also waits for the player's layout checks on the slide at t."""
         return await self.page.evaluate("([t, m]) => window.__showntell.seek(t, { measure: m })", [t, measure])
 
+    async def seek_slide(self, slide_id: str, measure: bool = False) -> tuple[str, float] | None:
+        """Bring the player to the moment a slide shows alone with everything revealed, worked out
+        on the page's own timeline; (key, time), or None for a slide it does not have."""
+        r = await self.page.evaluate("([id, m]) => window.__showntell.seekSlide(id, { measure: m })", [slide_id, measure])
+        return (r[0], float(r[1])) if r else None
+
     async def shot(self) -> bytes:
         if self.image == "jpeg":
             return await self.page.screenshot(type="jpeg", quality=92)
@@ -266,6 +272,27 @@ async def capture_frames_async(
                 if key != last_key:
                     last_key, last_png = key, await c.shot()
                 out.append(last_png)
+            return out
+
+
+async def capture_slides_async(
+    source: str | Path,
+    slide_ids: Sequence[str],
+    *,
+    short: int = 1080,
+    measure: bool = False,
+    cookie: tuple[str, str] | None = None,
+    only_origin: bool = False,
+    sandbox: bool = False,
+) -> list[tuple[float, bytes] | None]:
+    """(time, PNG bytes) of each slide alone with everything revealed, None for a slide the
+    player does not have. `measure` as for `capture_frames_async`."""
+    with player_url(source) as url:
+        async with Capturer(url, short=short, cookie=cookie, only_origin=only_origin, sandbox=sandbox) as c:
+            out: list[tuple[float, bytes] | None] = []
+            for sid in slide_ids:
+                r = await c.seek_slide(sid, measure)
+                out.append((r[1], await c.shot()) if r else None)
             return out
 
 

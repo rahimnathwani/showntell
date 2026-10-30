@@ -123,6 +123,7 @@ async def test_start_with_opening_returns_the_playable_link(mcp):
         data, t = r.structured_content, text(r)
         assert data["status"] == "playable" and data["handle"] in t and data["url"] in t
         assert "{{" not in t and len(t) > 1000  # the guide came with it
+        assert "1/1 paragraphs voiced" in t  # counted after waiting for the opening, not before
         r2 = await client.call_tool("add_slides", {"handle": data["handle"], "markdown": "## Next\n\nMore words here.\n"})
         assert r2.structured_content["status"] == "added"
 

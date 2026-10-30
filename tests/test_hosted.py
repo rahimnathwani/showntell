@@ -239,7 +239,7 @@ async def b_is_locked_out(srv, handle: str, bob: Client) -> None:
         assert r.is_error and "unknown handle" in text(r), (tool, text(r))
     listed = await bob.call_tool("list_walkthroughs", {})
     assert wid not in json.dumps(listed.structured_content)
-    with pytest.raises(Exception, match="Error creating resource"):
+    with pytest.raises(Exception, match=f"No walkthrough {wid}. list_walkthroughs lists yours"):
         await bob.read_resource(f"showntell://walkthroughs/{wid}")
     async with browser_as(srv, "bob@example.com") as (c, csrf):
         s = srv.store.get(wid)
@@ -284,6 +284,7 @@ async def test_two_users_share_and_unshare(srv, voiced):
             assert (await c.post(f"/w/{wid}/delete", json={}, headers=post)).status_code == 404
             gallery = (await c.get("/")).text
             assert wid in gallery and "shared by alice@example.com" in gallery and 'class="del"' not in gallery
+            assert "voiced on this server" in gallery and "showntell play" not in gallery
 
             # Bob's live player is cut off as soon as Alice removes the share.
             async with c.stream("GET", f"/w/{wid}/events") as stream:
@@ -740,7 +741,13 @@ async def test_the_share_control_is_for_the_owner_only(srv):
         page = (await c.get(f"/w/{wid}/")).text
         assert "share.js" in page and "share.css" in page
         r = await c.get(f"/w/{wid}/shares")
-        assert r.json() == {"shares": ["bob@example.com"], "company": False, "owner": "alice@example.com", "domains": ["example.com"]}
+        assert r.json() == {
+            "shares": ["bob@example.com"],
+            "company": False,
+            "owner": "alice@example.com",
+            "domains": ["example.com"],
+            "unknown": [],
+        }
     async with browser_as(srv, "bob@example.com") as (c, csrf):
         assert "share.js" not in (await c.get(f"/w/{wid}/")).text  # shared with, but not the owner
         assert (await c.get(f"/w/{wid}/shares")).status_code == 404
@@ -765,6 +772,38 @@ async def test_the_share_control_changes_shares_through_the_same_checks(srv):
         assert r.json()["shares"] == [] and r.json()["company"] is False
         assert (await c.post(f"/w/{wid}/shares", json={"company": True})).status_code == 403  # no CSRF token
     assert srv.store.get(wid).w.company is False
+
+
+async def test_a_share_nobody_signs_in_as_is_added_with_a_warning(srv):
+    # With Entra a share matches the sign-in name, which can differ from the mail address.
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["bob@example.com", "B.Jones@example.com"]})
+        assert not r.is_error and r.structured_content["shares"] == ["bob@example.com", "b.jones@example.com"]
+        assert r.structured_content["unknown"] == ["b.jones@example.com"]
+        assert "Nobody has signed in to this server as b.jones@example.com yet" in text(r) and "bob@example.com yet" not in text(r)
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["b.jones@example.com"], "company": True})
+        assert r.structured_content["unknown"] == [] and "Nobody has signed in" not in text(r)  # said once, when added
+    async with browser_as(srv, "alice@example.com") as (c, csrf):
+        r = await c.post(
+            f"/w/{wid_of(handle)}/shares", json={"add": ["d.smith@example.com", "carol@example.com"]}, headers={"X-CSRF-Token": csrf}
+        )
+        assert r.status_code == 200 and r.json()["unknown"] == ["d.smith@example.com"]
+        assert (await c.get(f"/w/{wid_of(handle)}/shares")).json()["unknown"] == []
+
+
+def test_who_signs_in_comes_from_the_users_table(tmp_path):
+    from showntell.authdb import AuthDB, DBSessions
+    from showntell.identity import signs_in_as
+
+    db = AuthDB(tmp_path / "auth.db")
+    db.remember(User("https://login.example", "s1", "jdoe@corp.com"), {})
+    ident = Identity(StubLogin({}), sessions=DBSessions(db))
+    ident.login = object()  # a provider sign-in, not the stand-in list
+    assert signs_in_as(ident, "jdoe@corp.com") is True and signs_in_as(ident, "john.doe@corp.com") is False
+    assert signs_in_as(Identity(StubLogin(TOKENS)), "carol@example.com") is True
+    assert signs_in_as(Identity(StubLogin(TOKENS)), "dave@example.com") is False
+    assert signs_in_as(Identity(object()), "dave@example.com") is None  # no list and no table: no warning
 
 
 async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):

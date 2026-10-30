@@ -384,6 +384,24 @@ async def test_line_numbers_continue_after_a_reload(service, store, tmp_path):
     assert silent["line"] == s.source.count("\n") + 1
 
 
+async def test_findings_already_given_are_not_repeated_after_a_reload(service, store, tmp_path):
+    drawing = (
+        '## Parts {#parts}\n\n```svg\n<svg viewBox="0 0 1150 560">\n'
+        + "".join(f'<g id="p{i}"><rect x="{i * 200}" y="100" width="150" height="150"/></g>\n' for i in range(4))
+        + "</svg>\n```\n\n"
+        + " ".join(f"Then comes [part {i}](#p{i}), which does one more small thing in the picture." for i in range(4))
+        + "\n"
+    )
+    r = await started(service)
+    first = await service.add(r["handle"], OPENING + "\n" + drawing)
+    assert "zoom_unused" in [i["code"] for i in first["issues"]]
+    store.by_handle(r["handle"]).save_now()
+    fresh = Store(tmp_path / "data", "http://localhost:4799", store.narrator)
+    fresh.loop = asyncio.get_running_loop()
+    a = await LocalService(fresh).add(r["handle"], "## Next\n\nOne more slide.\n")
+    assert [i for i in a["issues"] if i["slide"] == "parts"] == []
+
+
 async def test_finish_reports_and_drops_an_unclosed_fence(service, store):
     r = await started(service)
     await service.add(r["handle"], OPENING + "\n## C\n\n```python\nx = 1\n")
@@ -436,9 +454,9 @@ async def test_finish_layout_check_passes_player_findings_on(store, monkeypatch)
         async def __aexit__(self, *exc):
             return False
 
-        async def seek(self, t, measure=False):
-            seen.append((t, measure))
-            return ""
+        async def seek_slide(self, sid, measure=False):
+            seen.append((sid, measure))
+            return "", 1.0
 
         async def shot(self):
             return b"\x89PNG poster"

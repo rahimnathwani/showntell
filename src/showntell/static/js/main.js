@@ -10,7 +10,7 @@
 //   present.js   presenter and audience windows, commands from an embedding page
 //   render.js    drawing a slide, through the slide kinds in kinds/
 
-import { build, mmss, rangeEnd, slideStart } from "./timeline.js";
+import { build, mmss, rangeEnd, revealedAt, slideStart } from "./timeline.js";
 import { $, AUDIENCE, audio, body, currentSeg, emit, LIVE, now, params, PRESENT, report, S, sayOf, store } from "./state.js";
 import { play, seek, seekSlide, setRange, toggle } from "./playback.js";
 import { layoutStage, render } from "./view.js";
@@ -192,6 +192,14 @@ if (params.get("capture") === "1") {
       await painted();
       for (let i = 0; measure && i < 60 && !S.view?.measured; i++) await painted();
       return (paintedKey = stateKey());
+    },
+    // A slide alone and fully revealed, timed on this page's own timeline: audio voiced since
+    // the caller looked moves slides, so a time worked out there can land in a crossfade.
+    // [key, t], or null for an unknown slide.
+    async seekSlide(id, opts = {}) {
+      const si = S.W ? S.W.slides.findIndex((s) => s.id === id) : -1;
+      const t = si < 0 ? null : revealedAt(S.TL, si);
+      return t === null ? null : [await this.seek(t, opts), t];
     },
   });
 }

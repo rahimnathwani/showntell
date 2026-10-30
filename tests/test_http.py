@@ -259,6 +259,7 @@ async def test_index_lists_walkthroughs(http, walk):
         r = await c.get("/")
     assert r.status_code == 200 and f"/w/{walk.w.id}/" in r.text and "{{" not in r.text
     assert '<span class="desc">' not in r.text
+    assert "voiced on this machine" in r.text and "showntell play file.md" in r.text
     walk.w.description = "A read-through <cache>"
     walk.save_now()
     async with http() as c:

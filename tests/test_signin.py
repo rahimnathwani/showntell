@@ -318,6 +318,29 @@ async def test_sessions_survive_a_restart_and_sign_out_ends_them(srv):
         assert (await c.get("/", follow_redirects=False)).status_code == 303
 
 
+async def test_sign_out_in_the_gallery_stays_signed_out(srv):
+    # The provider still has its own session, so going on to /login would sign straight back in.
+    pw = pytest.importorskip("playwright.async_api")
+    srv.fake.claims = GENERIC
+    async with pw.async_playwright() as p:
+        try:
+            b = await p.chromium.launch()
+        except Exception as e:  # browsers not installed
+            pytest.skip(f"Chromium unavailable: {e}")
+        try:
+            page = await b.new_page()
+            await page.goto(f"{srv.url}/login?next=/")
+            await page.click(".signout")
+            await page.wait_for_selector("text=Signed out of showntell")
+            await page.wait_for_timeout(500)
+            assert page.url.rstrip("/") == srv.url
+            assert srv.db.run("select count(*) from sessions")[0][0] == 0
+            await page.click("text=Sign in again")
+            await page.wait_for_selector(".signout")  # and back in on purpose
+        finally:
+            await b.close()
+
+
 async def test_session_cookie_flags_and_csrf(tmp_path, narrator):
     async with signin_server(tmp_path, narrator) as s:
         s.hosted.identity.secure_cookie = True
