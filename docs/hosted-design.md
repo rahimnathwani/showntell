@@ -165,7 +165,7 @@ What phase 1 decided where the design was open, and where it changed the design.
 
 - **Builder:** in hosted mode `file=`, `rev=`, `svg file=`, `drawio file=` and every image (path or URL) become a `source_error` or `image_error` finding with a fix that says to paste the content into the Markdown; nothing is read or fetched. `project_dir` and an export `path` are refused outright. MCP roots are ignored, since they name folders on the client's machine.
 - **The server's Chromium:** the finish check and preview open `http://<bind address>:<port>/w/{id}/` with a short browser session for the owner, through the guard; MP4 export opens its own loopback copy as before. All three route every request through a handler that aborts any other origin and logs it. A test points a slide's image at another local server and checks it gets no request.
-- **Chromium limits:** an asyncio semaphore of `BROWSERS` held for each whole job; MP4 export uses one browser in hosted mode instead of up to four. Check and preview time out at `CHECK_S`, export at `EXPORT_MIN` (the reply returns; the render thread finishes in the background).
+- **Chromium limits:** `BROWSERS` slots (`hosted.Chromium`), one held for each whole job; MP4 export uses one browser in hosted mode instead of up to four. Finish checks and previews are served before waiting exports, and with two slots or more one is theirs alone. Exports run one per user and per walkthrough at a time; a second is refused at once. Check and preview time out at `CHECK_S`, the slot wait included; export at `EXPORT_MIN`, after which the reply returns and the render thread finishes in the background, keeping its slot until it ends.
 
 ### Headers and CSRF
 
@@ -186,7 +186,7 @@ What phase 1 decided where the design was open, and where it changed the design.
 
 ### Left for later
 
-- **An owner index:** listings and limit checks read every `state.json`. Fine for hundreds of walkthroughs; an in-memory index by owner is the fix when it is not.
+- **An owner index:** listings and limit checks keep what they need of each `state.json` in memory and read a file again only when its mtime moves, but still list the folder and stat each file. Fine for thousands of walkthroughs; an index by owner is the fix when it is not.
 - **Admins, uploads, retention per company:** as under **Open questions**.
 
 ## Phase 2 as built

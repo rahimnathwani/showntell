@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 
 from .issues import as_dict
-from .store import Store, narration_seconds
+from .store import UNKNOWN_HANDLE, Store, check_questions, narration_seconds
 
 log = logging.getLogger("showntell")
 _browser_warned = False
@@ -138,11 +139,14 @@ class LocalService:
         from .export import slide_starts, timeline_total
 
         s = self.store.by_handle(handle, user)
+        check_questions(questions or [])  # before drawing, so a refusal is quick
         layout = self.layout_check and check
         runs = [[x.id for x in run] for run in alike_runs(s.w.slides)]
         shots: dict[str, bytes] = {}
         want = [sid for run in runs for sid in run][:ALIKE_SHOTS_MAX]
         unchecked = await self._check_layout(s, want, shots) if layout else None
+        if s.deleted:  # while the slides were drawn
+            raise ValueError(UNKNOWN_HANDLE)
         issues = s.finish(questions, unchecked=unchecked) + s.take_late_issues()
         says = [x for sl in s.w.slides for x in sl.says if x.text]
         starts = slide_starts(s.w)
@@ -182,17 +186,24 @@ class LocalService:
         from .hosted import say
 
         allowed = self.store.hosted.allowed_domains
-        shares = list(s.w.shares)
+        shares, seen = list(s.w.shares), set(s.w.shares)
         for raw in add or []:
             email = (raw or "").strip().lower()
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=raw))
+            shown = raw if len(raw or "") <= 80 else raw[:77] + "..."
+            if len(email) > MAX_EMAIL or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=shown))
             if allowed and email.rsplit("@", 1)[1] not in allowed:
-                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=raw, domains=", ".join(allowed)))
-            if email not in shares and email != (s.w.owner.get("email") or "").lower():
+                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=shown, domains=", ".join(allowed)))
+            if email not in seen and email != (s.w.owner.get("email") or "").lower():
                 shares.append(email)
+                seen.add(email)
         gone = {(x or "").strip().lower() for x in remove or []}
-        s.w.shares = [x for x in shares if x not in gone]
+        shares = [x for x in shares if x not in gone]
+        if len(shares) > MAX_SHARES and len(shares) > len(s.w.shares):
+            raise ValueError(
+                say("share_too_many", "That would share it with {n} people; the limit is {limit}.", n=len(shares), limit=MAX_SHARES)
+            )
+        s.w.shares = shares
         if company is not None:
             s.w.company = bool(company)
         s._changed(set(), meta=True)  # wakes open event streams, which check access again
@@ -238,11 +249,11 @@ class LocalService:
             return "not_checked", f"the headless player failed: {str(e).splitlines()[0][:200]}"
         return "", ""
 
-    def _browser(self):
-        """Hosted: one of the server's few Chromium slots, held for the whole job."""
+    def _browser(self, timeout: float | None = None):
+        """Hosted: one of the server's few Chromium slots, held for the whole job; waits at most `timeout` s for it."""
         import contextlib
 
-        return self.store.hosted.browsers if self.store.hosted else contextlib.nullcontext()
+        return self.store.hosted.chromium.short(timeout) if self.store.hosted else contextlib.nullcontext()
 
     def _capture_target(self, s, ttl: float) -> dict:
         """Where headless Chromium opens a walkthrough. Hosted: this process's own address with a
@@ -280,7 +291,7 @@ class LocalService:
             if not times:
                 pngs = []
             else:
-                async with self._browser():
+                async with self._browser(limit):
                     t = self._capture_target(s, limit or 0)
                     shoot = capture_frames_async(t.pop("url"), times, short=short, measure=True, **t)
                     pngs = await (asyncio.wait_for(shoot, limit) if limit else shoot)
@@ -308,9 +319,18 @@ class LocalService:
     ) -> dict:
         """Write the walkthrough to a file the agent can attach: an MP4, or one HTML page that plays
         offline. A relative or empty `path` is in the project folder. Waits for the narration first.
-        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download."""
+        Hosted: the file stays on the server, in the walkthrough's folder, for its owner to download,
+        and each user and walkthrough has one export under way at a time."""
+        h = self.store.hosted
+        if not h:
+            return await self._export(handle, path, format, max_mb, wait_s, user)
+        s = self.store.by_handle(handle, user)
+        async with h.chromium.exporting(((s.w.owner.get("iss"), s.w.owner.get("sub")), s.w.id)) as job:
+            return await self._export(handle, path, format, max_mb, wait_s, user, job=job)
+
+    async def _export(self, handle: str, path: str, format: str, max_mb: float, wait_s: float | None, user, job=None) -> dict:
         import asyncio
-        import contextlib
+        import functools
 
         from .export import export_html, timeline_total
         from .video import render_mp4
@@ -333,8 +353,10 @@ class LocalService:
         if not says:
             raise ValueError("nothing to export yet: the walkthrough has no narration")
         t0 = time.monotonic()
-        while any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
+        while not s.deleted and any(x.status == "pending" for x in says) and time.monotonic() - t0 < wait_s:
             await asyncio.sleep(0.5)
+        if s.deleted:  # while waiting for the voice
+            raise ValueError(UNKNOWN_HANDLE)
         pending = sum(1 for x in says if x.status == "pending")
         if pending:
             raise ValueError(f"{pending} paragraph(s) are still being voiced after {wait_s:.0f} s; try again shortly")
@@ -345,9 +367,8 @@ class LocalService:
         hosted_kw = {"workers": 1, "only_origin": True, "sandbox": h.chromium_sandbox} if h else {}
         try:
             if format == "mp4":
-                async with self._browser() if h else contextlib.nullcontext():
-                    job = asyncio.to_thread(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
-                    r = await (asyncio.wait_for(job, h.limits.export_min * 60) if h else job)
+                render = functools.partial(render_mp4, data_dir, s.w.id, out, quiet=True, max_bytes=int(max_mb * 1e6), **hosted_kw)
+                r = await (job.run(render, h.limits.export_min * 60) if h else asyncio.to_thread(render))
                 shrunk, errors = r["shrunk"], r["errors"]
             else:
                 await asyncio.to_thread(export_html, data_dir, s.w.id, out)
@@ -360,6 +381,11 @@ class LocalService:
             raise ValueError(str(e)) from None
         except TimeoutError:
             raise ValueError(f"the export took over {h.limits.export_min:g} minutes") from None
+        finally:
+            if s.deleted and h:  # deleted while rendering: leave nothing of it behind
+                shutil.rmtree(self.store.walk_dir(s.w.id), ignore_errors=True)
+        if s.deleted:
+            raise ValueError(UNKNOWN_HANDLE)
         extra = {"download": f"{s.store.base_url}/w/{s.w.id}/exports/{out.name}"} if h else {}
         return {
             **extra,
@@ -435,6 +461,8 @@ class RemoteService:
 
 RPC_METHODS = {"start", "add", "playable", "revise", "finish", "list", "source", "preview", "export"}
 EXPORT_WAIT_S = 300.0  # for the narration to finish voicing before an export
+MAX_SHARES = 100  # people one walkthrough is shared with, by address; beyond that, the whole company
+MAX_EMAIL = 254  # characters in an address (RFC 5321)
 PREVIEW_MAX = 12
 LAYOUT_CHECK_MAX = 60  # slides drawn by the finish-time layout check
 LAYOUT_CHECK_S = 25.0

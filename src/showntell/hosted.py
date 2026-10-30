@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import functools
 import ipaddress
 import json
@@ -172,6 +173,107 @@ class RateLimiter:
         return True
 
 
+class Chromium:
+    """The server's headless Chromium pages, `slots` at once. Finish checks and previews are served
+    before waiting exports, and with two slots or more one is theirs alone, so exports can't starve
+    them. Exports run one at a time per user and per walkthrough, and a render that outlives its
+    time limit keeps its slot until its thread ends."""
+
+    def __init__(self, slots: int) -> None:
+        self.slots = max(1, slots)
+        self.export_slots = max(1, self.slots - 1)
+        self.busy = 0  # slots held
+        self.exports = 0  # of them, by exports
+        self.running: set = set()  # user keys and walkthrough ids with an export under way
+        self._waiting: list[tuple[bool, asyncio.Future]] = []  # (is an export, granted), oldest first
+
+    def _grant(self) -> None:
+        while self.busy < self.slots:
+            pick = next((w for w in self._waiting if not w[0]), None)
+            if pick is None and self.exports < self.export_slots:
+                pick = next(iter(self._waiting), None)
+            if pick is None:
+                return
+            self._waiting.remove(pick)
+            self.busy += 1
+            self.exports += pick[0]
+            pick[1].set_result(None)
+
+    def _release(self, export: bool) -> None:
+        self.busy -= 1
+        self.exports -= export
+        self._grant()
+
+    async def _acquire(self, export: bool) -> None:
+        w = (export, asyncio.get_running_loop().create_future())
+        self._waiting.append(w)
+        self._grant()
+        try:
+            await w[1]
+        except BaseException:
+            if w[1].done() and not w[1].cancelled():
+                self._release(export)  # granted just as the wait was given up
+            elif w in self._waiting:
+                self._waiting.remove(w)
+            raise
+
+    @contextlib.asynccontextmanager
+    async def short(self, timeout: float | None = None):
+        """A slot for a finish check or a preview, waiting at most `timeout` seconds for it."""
+        try:
+            await asyncio.wait_for(self._acquire(False), timeout)
+        except TimeoutError:
+            raise ValueError(say("chromium_busy", "The server's browsers stayed busy for {s:g} s; try again shortly.", s=timeout)) from None
+        try:
+            yield
+        finally:
+            self._release(False)
+
+    @contextlib.asynccontextmanager
+    async def exporting(self, keys: tuple):
+        """One export at a time for each of `keys` (the user, the walkthrough), refused at once
+        while one is under way. Yields an `Export` that renders in a slot."""
+        if any(k in self.running for k in keys):
+            raise ValueError(
+                say(
+                    "export_busy",
+                    "Not exported: another export of yours is still running. Wait for it, then call export_walkthrough again.",
+                )
+            )
+        self.running.update(keys)
+        job = Export(self)
+        try:
+            yield job
+        finally:
+            job.then(lambda: self.running.difference_update(keys))
+
+
+class Export:
+    """One export's render: a thread in an export slot. The slot, and the export's keys, stay held
+    until the thread ends, even when the call gave up on it."""
+
+    def __init__(self, chromium: Chromium) -> None:
+        self.chromium = chromium
+        self.thread: asyncio.Future | None = None
+
+    async def run(self, render, timeout: float):
+        """`render()` in a thread, within `timeout` seconds including the wait for a slot."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        await asyncio.wait_for(self.chromium._acquire(True), timeout)
+        self.thread = asyncio.ensure_future(asyncio.to_thread(render))
+        # Past a time limit the render runs on, Chromium and ffmpeg with it: the slot is free only when it ends.
+        self.thread.add_done_callback(lambda t: (t.cancelled() or t.exception(), self.chromium._release(True)))
+        return await asyncio.wait_for(asyncio.shield(self.thread), max(0.0, deadline - loop.time()))
+
+    def then(self, after) -> None:
+        """Call `after` once the render has ended, now if it has or never started."""
+        if self.thread is None or self.thread.done():
+            after()
+        else:
+            self.thread.add_done_callback(lambda _: after())
+
+
 @dataclass
 class Hosted:
     """What hosted mode adds to the store: limits, who is calling, and how headless Chromium reaches the pages."""
@@ -183,17 +285,17 @@ class Hosted:
     allowed_domains: list[str] = field(default_factory=list)
     rate: RateLimiter | None = None
     chromium_sandbox: bool = True  # Chromium's own sandbox for the checks and exports; off only in tests
-    _browsers: asyncio.Semaphore | None = None
+    _chromium: Chromium | None = None
 
     def __post_init__(self) -> None:
         self.rate = self.rate or RateLimiter(self.limits.calls_per_min)
 
     @property
-    def browsers(self) -> asyncio.Semaphore:
-        """Chromium pages open at once, server-wide (created on the running loop)."""
-        if self._browsers is None:
-            self._browsers = asyncio.Semaphore(max(1, self.limits.browsers))
-        return self._browsers
+    def chromium(self) -> Chromium:
+        """Chromium pages open at once, server-wide."""
+        if self._chromium is None:
+            self._chromium = Chromium(self.limits.browsers)
+        return self._chromium
 
     def capture_session(self, owner: User, ttl: float) -> BrowserSession:
         """A short browser session for the owner, so headless Chromium can open their page."""

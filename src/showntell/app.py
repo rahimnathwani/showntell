@@ -210,25 +210,7 @@ def serve(cfg: Config) -> None:
 
         holder["log"] = asyncio.create_task(keep_log_small())
         if h:
-
-            async def expire() -> None:
-                """Daily: drop spent sign-in records, and walkthroughs unseen past the retention."""
-                from .prune import prune
-
-                while True:
-                    db = getattr(h.identity.login, "db", None)
-                    if db is not None:
-                        db.sweep()
-                    if cfg.limits.retention_days > 0:
-                        gone = await asyncio.to_thread(prune, cfg.data_dir, cfg.limits.retention_days * 86400)
-                        for row in gone["walkthroughs"]:
-                            store.sessions.pop(row["id"], None)
-                        if gone["walkthroughs"]:
-                            n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
-                            log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
-                    await asyncio.sleep(86400)
-
-            holder["expire"] = asyncio.create_task(expire())
+            holder["expire"] = asyncio.create_task(expire(store, h, cfg))
         log.info(
             "showntell %s at %s (MCP: http://localhost:%d/mcp, speech: %s)",
             _version(),
@@ -254,6 +236,28 @@ class _Server(uvicorn.Server):
     def handle_exit(self, sig, frame) -> None:
         self.on_exit()
         super().handle_exit(sig, frame)
+
+
+async def expire(store: Store, h, cfg: Config, every: float = 86400) -> None:
+    """Hosted, daily: drop spent sign-in records, and walkthroughs unseen past the retention. A
+    round that fails is logged, and the next one runs as planned."""
+    from . import prune
+
+    while True:
+        try:
+            db = getattr(h.identity.login, "db", None)
+            if db is not None:
+                db.sweep()
+            if cfg.limits.retention_days > 0:
+                gone = await asyncio.to_thread(prune.prune, cfg.data_dir, cfg.limits.retention_days * 86400)
+                for row in gone["walkthroughs"]:
+                    store.forget(row["id"])
+                if gone["walkthroughs"]:
+                    n, days = len(gone["walkthroughs"]), cfg.limits.retention_days
+                    log.info("retention: deleted %d walkthrough(s) unseen for %g days", n, days)
+        except Exception:
+            log.exception("expiring sign-ins and old walkthroughs failed; trying again in %g h", every / 3600)
+        await asyncio.sleep(every)
 
 
 def load_lexicon(cfg: Config) -> dict[str, str]:

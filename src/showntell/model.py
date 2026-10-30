@@ -82,10 +82,7 @@ class Walkthrough:
     def from_state(cls, d: dict) -> Walkthrough:
         known = {f.name for f in fields(cls)}
         w = cls(**{k: v for k, v in d.items() if k in known and k != "slides"})
-        for s in d.get("slides", []):
-            says = [Say(**{k: v for k, v in x.items() if k in {f.name for f in fields(Say)}}) for x in s.get("says", [])]
-            sd = {k: v for k, v in s.items() if k in {f.name for f in fields(Slide)} and k != "says"}
-            w.slides.append(Slide(**sd, says=says))
+        w.slides = [slide_from_state(s) for s in d.get("slides", [])]
         return w
 
     # -- what the player sees ---------------------------------------------------------
@@ -104,6 +101,12 @@ class Walkthrough:
             "notes": self.notes,
             "slides": [public_slide(s) for s in self.slides],
         }
+
+
+def slide_from_state(s: dict) -> Slide:
+    says = [Say(**{k: v for k, v in x.items() if k in {f.name for f in fields(Say)}}) for x in s.get("says", [])]
+    sd = {k: v for k, v in s.items() if k in {f.name for f in fields(Slide)} and k != "says"}
+    return Slide(**sd, says=says)
 
 
 def public_slide(s: Slide) -> dict:
