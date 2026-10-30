@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from . import kinds
+from .listening import heard
 from .model import Slide
 
 WORDS_PER_SECOND = 2.7
@@ -29,6 +30,13 @@ NOUNS = {
     "image": "an image",
 }
 LAYOUTS = ("side", "pair", "full")
+# Narration is heard once, at speaking speed. Limits from the gallery's 156 paragraphs, each the
+# higher of the upper Tukey fence (third quartile + 1.5 x the interquartile range) and the gallery's
+# own maximum, so no paragraph there is flagged (docs/spec.md).
+LONGEST_SENTENCE = 28  # spoken words in a paragraph's longest sentence: median 15, quartiles 11 and 18, max 27
+MEAN_SENTENCE = 22.5  # spoken words a sentence, over two or more: median 11, quartiles 9.5 and 13.3, max 22.5
+NUMBERS_PER_100 = 22.0  # paragraphs with a number: median 4.8 per 100 words, quartiles 3.4 and 9.2, max 21.7
+NUMBERS_MIN = 4  # and at least this many; 95% of the gallery's paragraphs say two or fewer, the most is five
 
 
 def _layout(s: Slide) -> str:
@@ -211,6 +219,7 @@ class Checks:
                     line=s.line,
                 )
         self._check_spoken(s)
+        self._check_listening(s)
         self._check_build_order(s)
         self._check_fit(s)
         self._check_layout(s)
@@ -343,6 +352,37 @@ class Checks:
                     "spoken_handle",
                     f'Slide `{s.id}`: the narration reads {what} aloud ("{m.group(0)[:40]}").',
                     "Say the person's name or what the link is, and show the raw text on screen if it matters.",
+                    slide=s.id,
+                    line=s.line,
+                )
+                return
+
+    def _check_listening(self, s: Slide) -> None:
+        """Narration that is hard to follow by ear: a very long sentence, long sentences throughout,
+        or many numbers close together. One finding a slide, for the first paragraph past a limit;
+        the fix steers the slides still to come, since this one may already be playing."""
+        for k, x in enumerate((x for x in s.says if x.text), 1):
+            h = heard(x.text, x.code)
+            where = f'Slide `{s.id}`, paragraph {k} ("{" ".join(x.text.split()[:5])}...")'
+            if h.longest > LONGEST_SENTENCE or (h.sentences >= 2 and h.mean > MEAN_SENTENCE):
+                what = (
+                    f"has a sentence of {h.longest} spoken words"
+                    if h.longest > LONGEST_SENTENCE
+                    else f"averages {h.mean:.0f} words a sentence"
+                )
+                self._issue(
+                    "long_sentences",
+                    f"{where} {what}; heard once, its start is gone before its end arrives.",
+                    "In the slides you write next, keep sentences under about 20 words, one idea each.",
+                    slide=s.id,
+                    line=s.line,
+                )
+                return
+            if h.numbers >= NUMBERS_MIN and h.per_100 > NUMBERS_PER_100:
+                self._issue(
+                    "dense_numbers",
+                    f"{where} says {h.numbers} numbers in {h.words} words, more than a listener can hold.",
+                    "In the slides you write next, say the one or two numbers that matter and show the rest: a stat, a chart or a table.",
                     slide=s.id,
                     line=s.line,
                 )

@@ -56,6 +56,8 @@ CODES: dict[str, tuple[str, str]] = {
     "thin_narration": ("warning", "a slide shows more than its narration gives time to read"),
     "reads_screen": ("warning", "narration repeats on-screen text word for word"),
     "same_openings": ("info", "several slides open with the same words"),
+    "long_sentences": ("info", "narration has sentences too long to follow by ear"),
+    "dense_numbers": ("info", "narration says more numbers close together than a listener can hold"),
     "opening_code_names": ("info", "the opening names code before saying what it is for"),
     "spoken_handle": ("warning", "narration contains a handle, commit hash or URL the voice would read out"),
     "still_slide": ("warning", "the screen does not change for a long stretch of narration"),

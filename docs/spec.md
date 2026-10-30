@@ -148,6 +148,8 @@ Findings from the server, found while parsing, building and voicing:
 | `thin_narration` | warning | a slide shows more than its narration gives time to read |
 | `reads_screen` | warning | narration repeats on-screen text word for word |
 | `same_openings` | info | several slides open with the same words |
+| `long_sentences` | info | narration has sentences too long to follow by ear |
+| `dense_numbers` | info | narration says more numbers close together than a listener can hold |
 | `opening_code_names` | info | the opening names code before saying what it is for |
 | `spoken_handle` | warning | narration contains a handle, commit hash or URL the voice would read out |
 | `still_slide` | warning | the screen does not change for a long stretch of narration |
@@ -165,6 +167,8 @@ Findings from the server, found while parsing, building and voicing:
 | `quiz_reveal` | warning | a quiz's answer is never pointed at, or is pointed at while the question is asked |
 
 `still_slide` needs audio, so it arrives with the first call after the slide is voiced. It fires when the screen holds still (no slide change, cue or reveal) for more than 20 s of narration.
+
+`long_sentences` and `dense_numbers` measure each paragraph as heard: sentences in spoken words (an identifier in backticks counts as its parts, a number as one word) and numbers per 100 words (digits, or number words such as "ten point two", each run counting once). A slide gets one finding, for the first paragraph past a limit: a sentence over 28 words, sentences averaging over 22.5 words across two or more, or four or more numbers at over 22 per 100 words. Each limit is the higher of the upper Tukey fence (third quartile plus 1.5 times the interquartile range) over the 156 narrated paragraphs in `gallery/` and the gallery's own maximum, so none of them is flagged. The fix steers the slides still to come rather than sending the agent back.
 
 `code_run` (four code or diff slides in a row) and `plain_run` (three list, table or text slides in a row) are checked as slides arrive, so the agent hears about a run while it can still break it; each run is reported once. `change_as_code`, `same_look` (the first two alike slides in a row) and `no_takeaway` (from the second dense slide without a `>` line) are reported once per walkthrough.
 

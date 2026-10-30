@@ -87,9 +87,9 @@ Every slide but the title and brief transitions gets the visual that carries its
 
 ## Write for the ear
 
-- **Spoken style.** Short sentences, subject and verb early. Talk as at a whiteboard: "you", "we", contractions.
+- **Spoken style.** Short sentences, under about 20 words (`long_sentences`), subject and verb early. Talk as at a whiteboard: "you", "we", contractions.
 - **Don't read the screen.** Say what it means, why it is there and what to notice.
-- **Numbers.** Spell them out where digits could mislead: "two to the sixteenth", "about forty milliseconds".
+- **Numbers.** One or two a sentence; show the rest (`dense_numbers`). Spell them out where digits could mislead: "two to the sixteenth", "about forty milliseconds".
 - **Code names in backticks.** `retry_after` is split into words, its symbols spoken. Keep spans short: a whole expression read aloud is noise.
 - **No handles, hashes or URLs** (`spoken_handle`). Say the name or what the link is; show the raw text if it matters.
 - **Odd terms:** `[nginx]{say="engine x"}`, `[k8s]{say="kubernetes"}`, `[τ]{say="tau"}`.
