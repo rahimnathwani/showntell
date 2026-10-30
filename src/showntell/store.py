@@ -33,6 +33,7 @@ MAX_SLIDES = 80
 PARAGRAPH_GAP = 0.3  # matches the player's timeline
 STILL_S = 20.0  # longest stretch of narration with nothing changing on screen
 MAX_DESCRIPTION = 200  # characters
+MAX_QUESTIONS, MAX_QUESTION = 4, 300  # end questions kept, characters each
 TARGET_S = 240.0  # the guide aims for 2 to 4 minutes of narration
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 UNKNOWN_HANDLE = "unknown handle; use the handle returned by start_walkthrough"
@@ -280,7 +281,7 @@ class Session:
         if waiting:
             b._issue("not_checked", f"{waiting} paragraph(s) are still being voiced, so timing checks have not run on them.", slide="")
         if questions:
-            self.w.questions = [q.strip() for q in questions if q and q.strip()][:4]
+            self.w.questions = check_questions(questions)
         self.w.status = "finished"
         self._changed(set(), meta=True)
         self.save_now()
@@ -451,9 +452,11 @@ class Session:
         d = self.store.walk_dir(self.w.id)
         d.mkdir(parents=True, exist_ok=True)
         tmp = d / "state.json.part"
-        tmp.write_text(json.dumps(self.w.to_state()))
+        state = self.w.to_state()
+        tmp.write_text(json.dumps(state))
         tmp.rename(d / "state.json")
         (d / "source.md").write_text(self.source)
+        self.store._remember(self.w.id, state, (d / "state.json").stat().st_mtime_ns)
 
     def close(self) -> None:
         """Deleted: cancel a pending save, write nothing more, and wake open event streams so they end."""
@@ -471,6 +474,17 @@ class Session:
     @property
     def handle(self) -> str:
         return f"{self.w.id}.{self.w.key}"
+
+
+def check_questions(questions: list[str]) -> list[str]:
+    """The end questions to keep: the first four that are not blank, each refused when too long."""
+    kept = [q.strip() for q in questions if q and q.strip()][:MAX_QUESTIONS]
+    for i, q in enumerate(kept, 1):
+        if len(q) > MAX_QUESTION:
+            raise ValueError(
+                f"question {i} is {len(q)} characters; keep each under {MAX_QUESTION}. Nothing was finished; send them shorter."
+            )
+    return kept
 
 
 def narration_seconds(w: Walkthrough) -> float:
@@ -506,6 +520,10 @@ class Store:
         self.hosted = hosted  # hosted.Hosted in hosted mode: owners, shares and limits apply
         self.loop: asyncio.AbstractEventLoop | None = None
         self.sessions: dict[str, Session] = {}
+        # What listings and limit checks need of each saved walkthrough, so they don't parse every
+        # state.json each time: id -> (its mtime when read, summary). Saves here update it; a file
+        # changed from outside (prune, another process) is read again when its mtime moves.
+        self._index: dict[str, tuple[int, dict]] = {}
         (data_dir / "walkthroughs").mkdir(parents=True, exist_ok=True)
 
     def walk_dir(self, wid: str) -> Path:
@@ -609,19 +627,51 @@ class Store:
             return None
         return s
 
+    def _remember(self, wid: str, data: dict, mtime: int) -> dict:
+        from .export import timeline_total
+
+        row = {
+            "id": data["id"],
+            "key": data.get("key", ""),
+            "title": data.get("title", ""),
+            "description": data.get("description", ""),
+            "created": data.get("created", 0),
+            "updated": data.get("updated", 0),
+            "status": data.get("status", ""),
+            "frame": data.get("frame", "landscape"),
+            "slides": len(data.get("slides", [])),
+            "duration": timeline_total(Walkthrough.from_state(data)),
+            "owner": data.get("owner") or {},
+            "shares": frozenset(data.get("shares") or ()),
+            "company": bool(data.get("company")),
+            "audio": frozenset(x["key"] for sl in data.get("slides", []) for x in sl.get("says", []) if x.get("key")),
+        }
+        self._index[wid] = (mtime, row)
+        return row
+
+    def summary(self, wid: str) -> dict | None:
+        """A saved walkthrough's listing fields, owner, shares and audio keys, or None."""
+        st = self.walk_dir(wid) / "state.json"
+        try:
+            mtime = st.stat().st_mtime_ns
+        except OSError:
+            self._index.pop(wid, None)
+            return None
+        hit = self._index.get(wid)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        try:
+            return self._remember(wid, json.loads(st.read_text()), mtime)
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     def list(self, limit: int = 50, user=None) -> list[dict]:
         """Recent walkthroughs, newest change first. In hosted mode only those `user` may see,
         each with its `role` ("yours" or "shared"); shared ones carry no handle."""
-        from .export import timeline_total
-
         out = []
         for d in self.walk_dir("x").parent.iterdir():
-            st = d / "state.json"
-            if not st.is_file():
-                continue
-            try:
-                data = json.loads(st.read_text())
-            except json.JSONDecodeError:
+            data = self.summary(d.name)
+            if data is None:
                 continue
             role = access.role(data, user) if self.hosted else ""
             if self.hosted and not role:
@@ -629,22 +679,22 @@ class Store:
             out.append(
                 {
                     "id": data["id"],
-                    "title": data.get("title", ""),
-                    "description": data.get("description", ""),
+                    "title": data["title"],
+                    "description": data["description"],
                     "poster": (d / "poster.png").is_file(),
-                    "handle": f"{data['id']}.{data.get('key', '')}",
-                    "created": data.get("created", 0),
-                    "updated": data.get("updated", 0),
-                    "status": data.get("status", ""),
-                    "frame": data.get("frame", "landscape"),
-                    "slides": len(data.get("slides", [])),
-                    "duration": timeline_total(Walkthrough.from_state(data)),
+                    "handle": f"{data['id']}.{data['key']}",
+                    "created": data["created"],
+                    "updated": data["updated"],
+                    "status": data["status"],
+                    "frame": data["frame"],
+                    "slides": data["slides"],
+                    "duration": data["duration"],
                     "url": f"{self.base_url}/w/{data['id']}{self.link_suffix}",
                 }
             )
             if self.hosted:
                 out[-1]["role"] = role
-                out[-1]["owner"] = (data.get("owner") or {}).get("email", "")
+                out[-1]["owner"] = data["owner"].get("email", "")
                 if role != "yours":
                     del out[-1]["handle"]
         out.sort(key=lambda r: r["updated"], reverse=True)
@@ -654,11 +704,8 @@ class Store:
         """Bytes a walkthrough keeps: its folder (state, exports) and the audio it plays."""
         d = self.walk_dir(wid)
         total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) if d.is_dir() else 0
-        try:
-            data = json.loads((d / "state.json").read_text())
-        except (OSError, ValueError):
-            return total
-        for key in {x.get("key") for sl in data.get("slides", []) for x in sl.get("says", []) if x.get("key")}:
+        data = self.summary(wid)
+        for key in data["audio"] if data else ():
             f = self.narrator.audio_path(key)
             total += f.stat().st_size if f.is_file() else 0
         return total
@@ -666,6 +713,7 @@ class Store:
     def forget(self, wid: str) -> None:
         """Drop a deleted walkthrough's session for good, wherever it is still held."""
         s = self.sessions.pop(wid, None)
+        self._index.pop(wid, None)
         if s is not None:
             s.close()
 

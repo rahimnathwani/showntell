@@ -321,6 +321,21 @@ async def test_shares_are_checked_for_shape_and_domain(srv):
         assert srv.store.get(wid_of(handle)).w.shares == []
 
 
+async def test_shares_are_limited_in_count_and_address_length(srv):
+    from showntell.service import MAX_SHARES
+
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": ["a" * 300 + "@example.com"]})
+        assert r.is_error and "is not an email address" in text(r) and len(text(r)) < 400
+        many = [f"p{i}@example.com" for i in range(MAX_SHARES + 1)]
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": many})
+        assert r.is_error and f"limit of {MAX_SHARES}" in text(r)
+        assert srv.store.get(wid_of(handle)).w.shares == []  # all or nothing
+        r = await alice.call_tool("share_walkthrough", {"handle": handle, "add": many[:MAX_SHARES]})
+        assert not r.is_error and len(r.structured_content["shares"]) == MAX_SHARES
+
+
 async def test_owner_sees_their_own_with_handles_and_can_delete(srv):
     async with mcp_as(srv, "alice@example.com") as alice:
         handle = (await start(alice))["handle"]

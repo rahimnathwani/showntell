@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 
 import pytest
@@ -284,6 +285,34 @@ async def test_finish_caps_questions_at_four(service):
     r = await started(service)
     await service.add(r["handle"], OPENING)
     assert len((await service.finish(r["handle"], [f"Q{i}?" for i in range(6)]))["questions"]) == 4
+
+
+async def test_finish_refuses_a_question_that_is_too_long(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    with pytest.raises(ValueError, match="question 2 is 301 characters"):
+        await service.finish(r["handle"], ["Why?", "x" * 301])
+    assert store.by_handle(r["handle"]).w.status == "writing"
+
+
+async def test_listings_read_each_state_file_once_until_it_changes(service, store, monkeypatch):
+    for title in ("A", "B", "C"):
+        await started(service, title=title)
+    assert sorted(x["title"] for x in store.list()) == ["A", "B", "C"]
+    reads = []
+    original = Store._remember
+    monkeypatch.setattr(Store, "_remember", lambda self, wid, data, mtime: reads.append(wid) or original(self, wid, data, mtime))
+    store.list()
+    assert reads == []  # nothing parsed again
+    a = next(x for x in store.list() if x["title"] == "A")
+    st = store.walk_dir(a["id"]) / "state.json"
+    data = json.loads(st.read_text())
+    st.write_text(json.dumps({**data, "title": "Changed outside"}))  # e.g. another process
+    later = st.stat().st_mtime_ns + 1_000_000
+    os.utime(st, ns=(later, later))
+    assert "Changed outside" in [x["title"] for x in store.list()] and reads == [a["id"]]
+    store.delete(a["id"])
+    assert sorted(x["title"] for x in store.list()) == ["B", "C"]
 
 
 async def test_the_last_slides_problems_arrive_with_its_call_and_only_once(service):

@@ -19,6 +19,7 @@
   "rate_limit": "Too many calls: this server allows {n} tool calls a minute per user. Wait a minute, then send more slides per call.",
   "share_bad_email": "{email} is not an email address; nothing was changed.",
   "share_domain": "{email} is outside this company's domains ({domains}); nothing was changed.",
+  "share_too_many": "Not shared: that would make {n} people, over this server's limit of {limit} per walkthrough; nothing was changed. Share it with the whole company instead (company=true).",
   "share_local": "Sharing is for hosted servers; this one runs on the user's machine.",
   "shared": "Shared with: {people}. Whole company: {company}. Link: {url}\nTell the user who can open it now.",
   "shared_nobody": "only the owner"

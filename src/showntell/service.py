@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .issues import as_dict
-from .store import UNKNOWN_HANDLE, Store, narration_seconds
+from .store import UNKNOWN_HANDLE, Store, check_questions, narration_seconds
 
 log = logging.getLogger("showntell")
 _browser_warned = False
@@ -139,6 +139,7 @@ class LocalService:
         from .export import slide_starts, timeline_total
 
         s = self.store.by_handle(handle, user)
+        check_questions(questions or [])  # before drawing, so a refusal is quick
         layout = self.layout_check and check
         runs = [[x.id for x in run] for run in alike_runs(s.w.slides)]
         shots: dict[str, bytes] = {}
@@ -185,17 +186,24 @@ class LocalService:
         from .hosted import say
 
         allowed = self.store.hosted.allowed_domains
-        shares = list(s.w.shares)
+        shares, seen = list(s.w.shares), set(s.w.shares)
         for raw in add or []:
             email = (raw or "").strip().lower()
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=raw))
+            shown = raw if len(raw or "") <= 80 else raw[:77] + "..."
+            if len(email) > MAX_EMAIL or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                raise ValueError(say("share_bad_email", "{email} is not an email address.", email=shown))
             if allowed and email.rsplit("@", 1)[1] not in allowed:
-                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=raw, domains=", ".join(allowed)))
-            if email not in shares and email != (s.w.owner.get("email") or "").lower():
+                raise ValueError(say("share_domain", "{email} is outside {domains}.", email=shown, domains=", ".join(allowed)))
+            if email not in seen and email != (s.w.owner.get("email") or "").lower():
                 shares.append(email)
+                seen.add(email)
         gone = {(x or "").strip().lower() for x in remove or []}
-        s.w.shares = [x for x in shares if x not in gone]
+        shares = [x for x in shares if x not in gone]
+        if len(shares) > MAX_SHARES and len(shares) > len(s.w.shares):
+            raise ValueError(
+                say("share_too_many", "That would share it with {n} people; the limit is {limit}.", n=len(shares), limit=MAX_SHARES)
+            )
+        s.w.shares = shares
         if company is not None:
             s.w.company = bool(company)
         s._changed(set(), meta=True)  # wakes open event streams, which check access again
@@ -453,6 +461,8 @@ class RemoteService:
 
 RPC_METHODS = {"start", "add", "playable", "revise", "finish", "list", "source", "preview", "export"}
 EXPORT_WAIT_S = 300.0  # for the narration to finish voicing before an export
+MAX_SHARES = 100  # people one walkthrough is shared with, by address; beyond that, the whole company
+MAX_EMAIL = 254  # characters in an address (RFC 5321)
 PREVIEW_MAX = 12
 LAYOUT_CHECK_MAX = 60  # slides drawn by the finish-time layout check
 LAYOUT_CHECK_S = 25.0

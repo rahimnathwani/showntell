@@ -185,7 +185,7 @@ What phase 1 decided where the design was open, and where it changed the design.
 
 ### Left for later
 
-- **An owner index:** listings and limit checks read every `state.json`. Fine for hundreds of walkthroughs; an in-memory index by owner is the fix when it is not.
+- **An owner index:** listings and limit checks keep what they need of each `state.json` in memory and read a file again only when its mtime moves, but still list the folder and stat each file. Fine for thousands of walkthroughs; an index by owner is the fix when it is not.
 - **Admins, uploads, retention per company:** as under **Open questions**.
 
 ## Phase 2 as built
