@@ -173,6 +173,30 @@ async def test_revise_while_watched_keeps_the_old_slide_until_voiced(service, st
     s.unsubscribe(q)
 
 
+async def test_revising_a_watched_slide_twice_keeps_each_revisions_audio_apart(service, store, voiced, wait_until):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + BODY)
+    s = store.by_handle(r["handle"])
+    await voiced(s)
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.3
+    first = BODY.replace("It never touches the database.", "It reads memory.")
+    second = BODY.replace("It never touches the database.", "It reads from memory and never waits on the disk at all.")
+    a = await service.revise(r["handle"], "lookup", first)
+    b = await service.revise(r["handle"], "lookup", second)
+    assert (a["rev"], b["rev"]) == (2, 3) and s.staged["lookup"].says[1].id == "lookup.2.3"
+    jobs = store.narrator.stats["jobs"]
+    await wait_until(lambda: store.narrator.stats["jobs"] > jobs)  # the first revision's audio
+    await asyncio.sleep(0.05)
+    assert s.w.slides[1].rev == 1 and s.staged["lookup"].says[1].status == "pending"
+    await wait_until(lambda: s.w.slides[1].rev == 3)
+    store.narrator.backend.delay = 0
+    say = s.w.slides[1].says[1]
+    assert say.text.startswith("It reads from memory and never") and len(say.words) == len(say.text.split())
+    assert store.narrator.audio_path(say.key).is_file()
+    s.unsubscribe(q)
+
+
 async def test_revise_without_heading_keeps_the_title(service, store):
     r = await started(service)
     await service.add(r["handle"], OPENING + "\n" + BODY)
@@ -610,6 +634,7 @@ async def test_an_export_waiting_for_the_voice_stops_when_its_walkthrough_is_del
     store.delete(s.w.id)
     with pytest.raises(ValueError, match="unknown handle"):
         await job
+    await asyncio.sleep(0.4)  # the speech job ends before the loop does
     store.narrator.backend.delay = 0
     assert not store.walk_dir(s.w.id).exists() and not (tmp_path / "x.html").exists()
 

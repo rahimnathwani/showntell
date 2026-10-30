@@ -171,7 +171,10 @@ class Session:
             )
             text = "\n".join(text.split("\n")[: max(1, scratch.slides[1].line) - 1]).rstrip()
         new = scratch.slides[0]
-        new.id, new.rev, new.line = old.id, old.rev + 1, old.line
+        # Past any revision still staged too, so two revisions never share say ids and one's
+        # audio can't fill in the other's.
+        waiting = self.staged.get(old.id)
+        new.id, new.rev, new.line = old.id, max(old.rev, waiting.rev if waiting else 0) + 1, old.line
         if new.kind == "title" and idx > 0:
             new.kind = "text"
         for i, say in enumerate(new.says):
@@ -306,15 +309,15 @@ class Session:
 
         def done(result: dict) -> None:
             if loop is None or (loop.is_running() and _on_loop(loop)):
-                self._audio(slide.id, sid, result)
+                self._audio(slide.id, sid, result, key)
             else:
-                loop.call_soon_threadsafe(self._audio, slide.id, sid, result)
+                loop.call_soon_threadsafe(self._audio, slide.id, sid, result, key)
 
         user = f"{self.w.owner.get('iss', '')} {self.w.owner.get('sub', '')}" if self.w.owner else ""
         narrator.request(key, spoken, self.w.voice, self.w.speed, order, done, user=user)
         return 0 if hit else 1
 
-    def _audio(self, slide_id: str, say_id: str, result: dict) -> None:
+    def _audio(self, slide_id: str, say_id: str, result: dict, key: str = "") -> None:
         if self.deleted:
             return
         staged = self.staged.get(slide_id)
@@ -322,7 +325,7 @@ class Session:
             staged if staged and any(x.id == say_id for x in staged.says) else next((s for s in self.w.slides if s.id == slide_id), None)
         )
         say = next((x for x in slide.says if x.id == say_id), None) if slide else None
-        if say is None:
+        if say is None or (key and say.key != key):
             return  # revised away meanwhile
         if result.get("status") == "ready":
             say.status, say.duration, say.words, say.error = "ready", result["duration"], result["words"], ""
