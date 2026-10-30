@@ -467,12 +467,20 @@ async def logged_call(app, scope, receive, send, user: User) -> None:
         replayed = True
         return {"type": "http.request", "body": body, "more_body": False}
 
+    status = 0
+
+    async def send_noting_status(msg):
+        nonlocal status
+        if msg["type"] == "http.response.start":
+            status = msg["status"]
+        await send(msg)
+
     t0 = time.monotonic()
     try:
-        await app(scope, replay, send)
+        await app(scope, replay, send_noting_status)
     finally:
         for tool, wid in calls:
-            log.info("tool %s by %s (%s) on %s: %.2f s", tool, user.email, user.sub, wid or "-", time.monotonic() - t0)
+            log.info("tool %s by %s (%s) on %s: %d in %.2f s", tool, user.email, user.sub, wid or "-", status, time.monotonic() - t0)
 
 
 def _with_headers(send):

@@ -197,8 +197,9 @@ def serve(cfg: Config) -> None:
 
     async def main() -> None:
         store.loop = asyncio.get_running_loop()
-        # A stream that still holds on is cut after this long, so a stop always reaches cleanup.
-        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on", timeout_graceful_shutdown=5)
+        # A request still in flight (an MCP client's long poll, say) is cut after this long, so a
+        # stop always reaches cleanup, and within the 5 s `showntell stop` waits for it.
+        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="warning", lifespan="on", timeout_graceful_shutdown=2)
         server = _Server(config, on_exit=close_streams)
         holder["server"] = server
         daemon.write_lock(cfg, rpc_token)

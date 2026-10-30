@@ -814,7 +814,7 @@ async def test_tool_calls_are_logged_without_their_arguments(srv, caplog):
             await alice.call_tool("add_slides", {"handle": handle, "markdown": f"## S\n\n{secret}.\n"})
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("tool ")]
     assert any(m.startswith("tool start_walkthrough by alice@example.com") for m in lines)
-    assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: ") for m in lines)
+    assert any(m.startswith(f"tool add_slides by alice@example.com (alice@example.com) on {wid_of(handle)}: 200 in ") for m in lines)
     assert not any(secret in r.getMessage() or "tok-alice" in r.getMessage() for r in caplog.records)
 
 
