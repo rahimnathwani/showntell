@@ -442,18 +442,26 @@ ALIKE_SHOTS_MAX = 6  # pictures of alike slides in the finish reply
 
 
 def _end_times(w) -> dict[str, float]:
-    """Slide id -> a moment just before the slide ends, when everything on it is revealed."""
-    from .export import timeline, timeline_total
+    """Slide id -> a moment when the slide shows alone with everything on it revealed: after its
+    last paragraph (the player reveals all once the narration is over) and before the next slide
+    starts coming in, SCENE_LEAD before its first word."""
+    from .export import EMPTY, SCENE_LEAD, _estimate, slide_starts, timeline, timeline_total
 
-    starts: dict[str, float] = {}
-    for t, slide, _ in timeline(w):
-        starts.setdefault(slide.id, t)
-    order = [sl.id for sl in w.slides if sl.id in starts]
+    starts = slide_starts(w)
+    spoken: dict[str, float] = {}  # slide id -> when its last paragraph ends
+    for t, slide, say in timeline(w):
+        spoken[slide.id] = t + _estimate(say)
+    order = [sl.id for sl in w.slides]
     total = timeline_total(w)
     out = {}
     for i, sid in enumerate(order):
+        start = starts[sid]
         end = starts[order[i + 1]] if i + 1 < len(order) else total
-        out[sid] = max(starts[sid], end - 0.35)
+        lo = spoken.get(sid, start + EMPTY)
+        hi = end - SCENE_LEAD if i + 1 < len(order) else end
+        # A slide ending on a pause has no silence after it; just before the next one comes in,
+        # every cue has fired.
+        out[sid] = lo + min(0.1, (hi - lo) / 2) if hi > lo else max(start, end - 0.05)
     return out
 
 

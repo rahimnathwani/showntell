@@ -25,6 +25,7 @@ from .config import Config
 from .model import Walkthrough
 
 GAP, SLIDE_GAP, EMPTY = 0.3, 0.6, 2.5  # keep in step with static/js/timeline.js
+SCENE_LEAD = 0.45  # the next slide starts coming in this long before its first word (timeline.js)
 STATIC = Path(__file__).parent / "static"
 
 

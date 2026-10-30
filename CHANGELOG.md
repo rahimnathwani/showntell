@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (unreleased)
+
+- **Previews show one slide:** `preview_slides`, the pictures in `finish_walkthrough`'s reply (alike slides), its layout checks and the gallery poster drew each slide 0.35 s before the next one started, but since 0.1.9 the next slide comes in 0.45 s early, so every picture caught the crossfade, two slides over each other. They now draw the moment after the slide's narration ends, everything revealed, before the next slide comes in.
+
 ## 0.2.1 (2026-10-29)
 
 - **Claude Code can sign in to a hosted server:** Claude Code catches the sign-in on a localhost port it picks each time, and the authorization server compared redirect URIs exactly, so a second sign-in was refused ("Redirect URI ... not registered for client"). Loopback HTTP redirect URIs now match on any port, as RFC 8252 requires; scheme, host, path and query must still match.

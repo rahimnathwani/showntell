@@ -566,6 +566,23 @@ def test_preview_returns_pictures_of_slides(daemon, browser):
     assert p["slides"][0]["png"] != p["slides"][1]["png"]
 
 
+def test_preview_times_show_each_slide_alone(daemon, browser):
+    # The next slide starts coming in 0.45 s before its first word; a picture taken then shows two.
+    call = _rpc(daemon)
+    r = call("start", title="Alone", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    call("add", handle=r["handle"], markdown=DOC)
+    call("playable", handle=r["handle"], timeout=10)
+    p = call("preview", handle=r["handle"], short=360)
+    page = browser.new_page()
+    page.goto(r["url"].replace("localhost", "127.0.0.1") + "/?capture=1")
+    page.wait_for_function("window.__showntell?.duration?.() > 0")
+    for s in p["slides"]:
+        key = page.evaluate("(t) => window.__showntell.seek(t)", s["at_s"])
+        shown = page.evaluate("[...document.querySelectorAll('#stage .slide')].map((e) => e.className)")
+        assert key.split("|")[0] == s["id"] and len(shown) == 1 and "leaving" not in shown[0], (s["id"], s["at_s"], shown)
+    page.close()
+
+
 # -- code that evolves, scrolling code, packets, numbers, regions and zoom, checklists ---------------
 
 MORE = """# More kinds
