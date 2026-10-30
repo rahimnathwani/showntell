@@ -2,7 +2,7 @@
 
 One showntell server for everyone at a company: people add it to Claude by URL, sign in with the company's Google or Microsoft Entra account, and each sees their own walkthroughs and those shared with them. The design, and why it works this way, is in [hosted-design.md](hosted-design.md).
 
-> **Not yet tried against real Google or Entra.** Sign-in and MCP authorization pass their tests against a fake OIDC provider that runs inside the test suite, including a full MCP client flow, but nobody has yet signed in through Google or Entra or added the server to claude.ai. Do one trial run per provider before people rely on it, and report what breaks.
+> **Tried with Entra and Claude Code only.** On 2026-10-29 a server on localhost signed in through a real Entra tenant, in the browser and from Claude Code's MCP sign-in, and made walkthroughs over `/mcp`; that trial found a bug fixed in 0.2.1 (Claude Code's sign-in port changes per attempt). Google sign-in and claude.ai connectors (which need a public HTTPS name) have passed only the tests against a fake OIDC provider. Do a trial run before people rely on those, and report what breaks.
 
 ## What you need
 

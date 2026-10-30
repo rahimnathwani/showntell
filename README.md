@@ -378,7 +378,7 @@ uv run pytest -m "not slow and not browser and not mlx and not onnx"   # fast te
 uv run showntell serve --speech fake                                   # run without a voice model
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](docs/self-hosting.md). Sign-in has passed its tests against a fake provider but not yet been tried against real Google or Entra.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](docs/self-hosting.md). Sign-in has been tried with Entra from Claude Code; Google and claude.ai connectors have passed only tests against a fake provider.
 
 ## Who uses it
 

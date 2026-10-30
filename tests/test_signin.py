@@ -546,6 +546,37 @@ async def test_registration_and_redirect_uris_are_checked(srv):
         assert r.status_code == 400  # shown, never redirected to
 
 
+@pytest.mark.parametrize(
+    "given, ok",
+    [
+        ("http://localhost:53682/callback", True),
+        ("http://localhost:61000/callback", True),  # a native client's port changes per sign-in
+        ("http://localhost/callback", True),
+        ("http://127.0.0.1:61000/callback", False),  # another host, even another loopback name
+        ("http://localhost:61000/other", False),
+        ("http://localhost:61000/callback?x=1", False),
+        ("https://localhost:61000/callback", False),
+        ("http://user@localhost:61000/callback", False),
+        ("http://localhost.evil.example:61000/callback", False),
+    ],
+)
+def test_loopback_redirects_match_on_any_port(given, ok):
+    assert oauth.same_redirect(REDIRECT, given) is ok
+    assert oauth.same_redirect("https://app.example/cb", "https://app.example:8443/cb") is False  # only loopback
+
+
+async def test_a_registered_loopback_client_signs_in_on_a_new_port(srv):
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        cid = await register(c)
+        _, challenge = pkce()
+        q = {"response_type": "code", "client_id": cid, "redirect_uri": "http://localhost:61000/callback", "code_challenge": challenge}
+        q |= {"code_challenge_method": "S256", "state": "s", "resource": srv.url.rstrip("/") + "/mcp"}
+        r = await c.get("/authorize?" + urlencode(q))
+        assert r.status_code == 302 and "localhost:61000" not in r.headers["location"]  # past the check, on to sign-in
+        q["redirect_uri"] = "http://localhost:61000/other"
+        assert (await c.get("/authorize?" + urlencode(q))).status_code == 400
+
+
 # -- client ID metadata documents ---------------------------------------------------------------------
 
 CIMD_URL = "https://client.example/oauth/metadata.json"
