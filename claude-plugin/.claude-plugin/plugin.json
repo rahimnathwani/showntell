@@ -1,6 +1,6 @@
 {
   "name": "showntell",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Narrated slide walkthroughs of code, diffs and concepts, voiced on your machine. The link plays within seconds while the rest is written.",
   "author": { "name": "Rahim Nathwani", "url": "https://github.com/rahimnathwani" },
   "homepage": "https://github.com/rahimnathwani/showntell",

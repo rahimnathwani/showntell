@@ -1,6 +1,6 @@
 {
   "name": "showntell",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Narrated slide walkthroughs of code, diffs and concepts, voiced on your machine. The link plays within seconds while the rest is written.",
   "contextFileName": "GEMINI.md",
   "mcpServers": {
@@ -8,7 +8,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/rahimnathwani/showntell@v0.2.0",
+        "git+https://github.com/rahimnathwani/showntell@v0.2.1",
         "showntell",
         "mcp"
       ]
