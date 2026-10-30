@@ -198,6 +198,27 @@ async def test_revising_a_watched_slide_twice_keeps_each_revisions_audio_apart(s
     s.unsubscribe(q)
 
 
+async def test_a_staged_revision_survives_a_restart(service, store, wait_until):
+    """source.md has the revision as soon as it is staged, so the slide it names must come back too."""
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + BODY)
+    s = store.by_handle(r["handle"])
+    await wait_until(lambda: all(x.status == "ready" for sl in s.w.slides for x in sl.says if x.text))
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.3
+    v = await service.revise(r["handle"], "lookup", BODY.replace("It never touches the database.", "It reads memory only."))
+    assert v["staged"]
+    s.save_now()
+    fresh = Store(store.data_dir, "http://localhost:4799", store.narrator)
+    fresh.loop = asyncio.get_running_loop()
+    t = fresh.get(s.w.id)
+    assert "It reads memory only." in t.source and "lookup" in t.staged
+    await wait_until(lambda: t.w.slides[1].rev == 2)
+    store.narrator.backend.delay = 0
+    assert t.w.slides[1].says[1].text == "It reads memory only." and t.w.slides[1].says[1].status == "ready" and not t.staged
+    s.unsubscribe(q)
+
+
 async def test_revise_without_heading_keeps_the_title(service, store):
     r = await started(service)
     await service.add(r["handle"], OPENING + "\n" + BODY)

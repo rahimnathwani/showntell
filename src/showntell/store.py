@@ -15,13 +15,14 @@ import secrets
 import shutil
 import time
 import webbrowser
+from dataclasses import asdict
 from pathlib import Path
 
 from . import access, themes
 from .build import SPEED_RANGE, Builder
 from .format import Parser
 from .issues import Issue, player_issue
-from .model import FRAMES, STATE_VERSION, Say, Slide, Walkthrough, public_slide
+from .model import FRAMES, STATE_VERSION, Say, Slide, Walkthrough, public_slide, slide_from_state
 from .speech.base import VOICES
 from .speech.narrator import Narrator, cue_time
 from .themes import THEMES
@@ -453,6 +454,8 @@ class Session:
         d.mkdir(parents=True, exist_ok=True)
         tmp = d / "state.json.part"
         state = self.w.to_state()
+        if self.staged:  # source.md already has them: a restart voices them and swaps them in
+            state["staged"] = [asdict(x) for x in self.staged.values()]
         tmp.write_text(json.dumps(state))
         tmp.rename(d / "state.json")
         (d / "source.md").write_text(self.source)
@@ -594,7 +597,8 @@ class Store:
         s.builder.parser.started = True
         s.builder.parser.lines_seen = s.source.count("\n")
         self.sessions[wid] = s
-        for slide in w.slides:
+        s.staged = {sl.id: sl for sl in map(slide_from_state, d.get("staged") or [])}  # revisions waiting for audio
+        for slide in [*w.slides, *s.staged.values()]:
             for say in slide.says:
                 if say.text and say.status != "ready":
                     s._voice(slide, say)
