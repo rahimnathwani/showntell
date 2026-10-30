@@ -261,7 +261,7 @@ class AuthServer:
         bad = [str(u) for u in client_info.redirect_uris or [] if not redirect_ok(str(u))]
         if bad or not client_info.redirect_uris:
             raise RegistrationError("invalid_redirect_uri", "redirect URIs must be HTTPS or loopback HTTP")
-        self.db.run("insert into clients values (?, ?, ?)", (client_info.client_id, client_info.model_dump_json(), time.time()))
+        self.db.run("insert into clients values (?, ?, ?, 0)", (client_info.client_id, client_info.model_dump_json(), time.time()))
 
     # -- authorization and consent ---------------------------------------------------------------
 
@@ -335,6 +335,7 @@ class AuthServer:
         user = User(d["iss"], d["sub"], d["email"])
         if not self.allowed(user):
             raise TokenError("invalid_grant", "this account may no longer use this server")
+        self.db.run("update clients set used = 1 where client_id = ?", (client.client_id,))  # kept by the daily sweep
         return self._issue(chain, client.client_id, user, d["resource"], d["scopes"])
 
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:

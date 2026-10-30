@@ -28,7 +28,7 @@ from .identity import BrowserSession, BrowserSessions, User
 
 SCHEMA = """
 create table if not exists users (iss text, sub text, email text, claims text, seen real, primary key (iss, sub));
-create table if not exists clients (client_id text primary key, info text, created real);
+create table if not exists clients (client_id text primary key, info text, created real, used integer default 0);
 create table if not exists pending (id text primary key, kind text, data text, expires real);
 create table if not exists codes (hash text primary key, data text, expires real, used integer default 0, chain text);
 create table if not exists tokens (
@@ -55,6 +55,8 @@ class AuthDB:
             self._db.executescript(SCHEMA)
             if "spent_at" not in [r[1] for r in self._db.execute("pragma table_info(tokens)")]:  # made by 0.2.0 or 0.2.1
                 self._db.execute("alter table tokens add column spent_at real")
+            if "used" not in [r[1] for r in self._db.execute("pragma table_info(clients)")]:
+                self._db.execute("alter table clients add column used integer default 0")
         if new:
             os.chmod(path, 0o600)
 
@@ -71,6 +73,7 @@ class AuthDB:
         now = time.time()
         for table in ("pending", "codes", "tokens", "sessions"):
             self.run(f"delete from {table} where expires < ?", (now - 86400,))  # a day's grace keeps reuse detectable
+        self.run("delete from clients where used = 0 and created < ?", (now - 86400,))  # registered, never signed in with
 
     # -- users ---------------------------------------------------------------------------------
 

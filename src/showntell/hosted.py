@@ -44,7 +44,9 @@ OPEN_PATHS = ("/static/", "/health", "/dev/login", "/login", "/oidc/", "/oauth/c
 OAUTH_PATHS = ("/authorize", "/token", "/register", "/revoke")
 PAGE_RE = re.compile(r"^/(w/[A-Za-z0-9_-]{16,64}/?)?$")  # the gallery and the player: worth a sign-in redirect
 WRITING_STALE_S = 3600.0
-REGISTRATIONS_PER_MIN = 30
+REGISTRATIONS_PER_MIN = 10  # per client address
+REGISTRATIONS_PER_MIN_ALL = 120  # server-wide
+MCP_BODY_MAX = 4 * 1024 * 1024  # the SDK's own cap, applied before the body is read into memory
 PROXY_HEADERS = (
     "x-forwarded-for",
     "forwarded",
@@ -65,6 +67,20 @@ def say(name: str, default: str, **kw) -> str:
         return template.format(**kw)
     except (KeyError, IndexError):
         return default.format(**kw)
+
+
+def client_address(scope: dict, headers: dict) -> str:
+    """Who is calling: the peer, or, behind a proxy on this machine or a private network (Caddy in
+    the compose file, the only way in), the address that proxy appended last to X-Forwarded-For."""
+    peer = (scope.get("client") or ("", 0))[0]
+    forwarded = headers.get("x-forwarded-for", "")
+    try:
+        local = not ipaddress.ip_address(peer.strip("[]")).is_global
+    except ValueError:
+        local = False
+    if forwarded and local:
+        return forwarded.rsplit(",", 1)[-1].strip() or peer
+    return peer
 
 
 def _is_loopback(host: str) -> bool:
@@ -247,7 +263,9 @@ class HostedGuard:
         pub = urlparse(cfg.public_url)
         self.public_host = (pub.hostname or "").lower()
         self.origins = {f"{pub.scheme}://{pub.netloc}".lower(), hosted.internal_url.lower()}
-        self.registrations = RateLimiter(REGISTRATIONS_PER_MIN)  # unauthenticated, so capped server-wide
+        # Registration is unauthenticated: capped per caller, so one can't use up everyone's, and server-wide.
+        self.registrations = RateLimiter(REGISTRATIONS_PER_MIN)
+        self.registrations_all = RateLimiter(REGISTRATIONS_PER_MIN_ALL)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan" and self.on_shutdown:
@@ -289,7 +307,9 @@ class HostedGuard:
                 return await self.app(scope, receive, send)
             return await logged_call(self.app, scope, receive, send, user)
         if path in OAUTH_PATHS:
-            if path == "/register" and not self.registrations.allow(("register",)):
+            if path == "/register" and not (
+                self.registrations.allow(("register", client_address(scope, headers))) and self.registrations_all.allow(("register",))
+            ):
                 return await deny(send, 429, "too many client registrations; try again in a minute")
             return await self.app(scope, receive, send)
         session = self.identity.from_cookie(headers)
@@ -317,11 +337,15 @@ class HostedGuard:
 async def logged_call(app, scope, receive, send, user: User) -> None:
     """Run one POST to /mcp and log who called which tool on which walkthrough, and how long it
     took. Never the arguments themselves: no narration, code or tokens reach the log."""
-    body, more = b"", True
+    chunks, size, more = [], 0, True
     while more:
         msg = await receive()
-        body += msg.get("body", b"")
+        chunks.append(msg.get("body", b""))
+        size += len(chunks[-1])
+        if size > MCP_BODY_MAX:
+            return await deny(send, 413, "request too large")
         more = msg.get("more_body", False)
+    body = b"".join(chunks)
     calls = []
     try:
         data = json.loads(body)

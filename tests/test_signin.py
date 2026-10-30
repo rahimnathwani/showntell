@@ -883,8 +883,44 @@ def test_users_key_is_issuer_and_subject():
     assert u.key == ("https://accounts.google.com", "123")
 
 
-async def test_client_registrations_are_capped(srv):
+async def test_client_registrations_are_capped_per_caller(srv):
+    """Behind the proxy (here, loopback), each caller has its own allowance: one using up its own
+    doesn't lock out the next person's Claude."""
     async with httpx.AsyncClient(base_url=srv.url) as c:
         body = {"client_name": "x", "redirect_uris": [REDIRECT], "token_endpoint_auth_method": "none"}
-        codes = [(await c.post("/register", json=body)).status_code for _ in range(hosted.REGISTRATIONS_PER_MIN + 1)]
-    assert codes[:-1] == [201] * hosted.REGISTRATIONS_PER_MIN and codes[-1] == 429
+        mallory = {"X-Forwarded-For": "203.0.113.9"}
+        codes = [(await c.post("/register", json=body, headers=mallory)).status_code for _ in range(hosted.REGISTRATIONS_PER_MIN + 1)]
+        assert codes[:-1] == [201] * hosted.REGISTRATIONS_PER_MIN and codes[-1] == 429
+        r = await c.post("/register", json=body, headers={"X-Forwarded-For": "spoofed, 198.51.100.4"})
+        assert r.status_code == 201  # the address the proxy appended last is the caller
+
+
+def test_the_caller_is_the_peer_unless_a_local_proxy_names_one():
+    xff = {"x-forwarded-for": "1.2.3.4, 5.6.7.8"}
+    assert hosted.client_address({"client": ("172.18.0.3", 1)}, xff) == "5.6.7.8"  # Caddy on the compose network
+    assert hosted.client_address({"client": ("127.0.0.1", 1)}, xff) == "5.6.7.8"
+    assert hosted.client_address({"client": ("8.8.4.4", 1)}, xff) == "8.8.4.4"  # a public peer can't name someone else
+    assert hosted.client_address({"client": ("172.18.0.3", 1)}, {}) == "172.18.0.3"
+
+
+async def test_registrations_never_used_are_swept(srv):
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        idle = await register(c)
+    async with browser(srv, GENERIC) as c:
+        used, _ = await signed_in_tokens(srv, c)
+    srv.db.run("update clients set created = ?", (time.time() - 2 * 86400,))
+    srv.db.sweep()
+    left = {r[0] for r in srv.db.run("select client_id from clients")}
+    assert used in left and idle not in left
+
+
+async def test_an_oversized_mcp_request_is_refused_before_it_is_read(srv):
+    async with browser(srv, GENERIC) as c:
+        _, t = await signed_in_tokens(srv, c)
+    async with httpx.AsyncClient(base_url=srv.url) as c:
+        r = await c.post(
+            "/mcp",
+            content=b" " * (hosted.MCP_BODY_MAX + 1),
+            headers={"Authorization": f"Bearer {t['access_token']}", "Content-Type": "application/json"},
+        )
+    assert r.status_code == 413
