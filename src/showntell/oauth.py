@@ -42,7 +42,7 @@ from mcp.server.auth.provider import (
     TokenError,
     construct_redirect_uri,
 )
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull, OAuthToken
 
 from .authdb import AuthDB, digest
 from .identity import User
@@ -71,6 +71,39 @@ def redirect_ok(uri: str) -> bool:
     if u.fragment or not u.hostname:
         return False
     return u.scheme == "https" or (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1"))
+
+
+LOOPBACK = ("localhost", "127.0.0.1", "::1")
+
+
+def same_redirect(registered: str, given: str) -> bool:
+    """The redirect URI a client sends matches one it registered: exactly, or for loopback HTTP
+    with any port (RFC 8252 7.3), since native clients such as Claude Code listen on a port picked
+    at sign-in time. Scheme, host, path and query must still match."""
+    if registered == given:
+        return True
+    a, b = urlparse(registered), urlparse(given)
+    return (
+        a.scheme == b.scheme == "http"
+        and a.hostname in LOOPBACK
+        and a.hostname == b.hostname
+        and (a.path or "/") == (b.path or "/")
+        and a.query == b.query
+        and not b.fragment
+        and not b.username
+        and not b.password
+    )
+
+
+class Client(OAuthClientInformationFull):
+    """The SDK's client record, with loopback redirect URIs matched on any port."""
+
+    def validate_redirect_uri(self, redirect_uri):
+        if redirect_uri is None or not self.redirect_uris:
+            return super().validate_redirect_uri(redirect_uri)
+        if any(same_redirect(str(u), str(redirect_uri)) for u in self.redirect_uris):
+            return redirect_uri
+        raise InvalidRedirectUriError(f"Redirect URI '{redirect_uri}' not registered for client")
 
 
 def is_metadata_url(client_id: str) -> bool:
@@ -110,7 +143,7 @@ async def fetch_client_metadata(url: str) -> tuple[dict, float]:
         return json.loads(body), keep
 
 
-def client_from_metadata(url: str, doc: dict) -> OAuthClientInformationFull:
+def client_from_metadata(url: str, doc: dict) -> Client:
     """Check a client ID metadata document and turn it into the SDK's client record."""
     if not isinstance(doc, dict) or doc.get("client_id") != url:
         raise ValueError("its client_id is not the URL it was fetched from")
@@ -121,7 +154,7 @@ def client_from_metadata(url: str, doc: dict) -> OAuthClientInformationFull:
         raise ValueError("it has no client_name")
     if doc.get("token_endpoint_auth_method", "none") != "none":
         raise ValueError("only public clients (token_endpoint_auth_method none) are supported")
-    return OAuthClientInformationFull(
+    return Client(
         client_id=url,
         client_name=doc["client_name"][:100],
         client_uri=doc.get("client_uri") if isinstance(doc.get("client_uri"), str) and doc["client_uri"].startswith("https://") else None,
@@ -169,7 +202,7 @@ class AuthServer:
             self._documents[client_id] = (client, time.time() + keep)
             return client
         rows = self.db.run("select info from clients where client_id = ?", (client_id,))
-        return OAuthClientInformationFull.model_validate_json(rows[0][0]) if rows else None
+        return Client.model_validate_json(rows[0][0]) if rows else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         bad = [str(u) for u in client_info.redirect_uris or [] if not redirect_ok(str(u))]
