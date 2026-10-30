@@ -364,6 +364,17 @@ class Session:
         out, self.late_issues = self.late_issues, []
         return out
 
+    def recall_findings(self) -> None:
+        """After loading from disk: what was reported lives only in memory, so check the slides
+        already there again, quietly, and the next call reports only what is new."""
+        b = self.builder
+        for sl in self.w.slides:
+            b._check_finished_slide(sl)
+        b.check_runs()
+        b.issues = []
+        if narration_seconds(self.w) > TARGET_S:
+            self.reported.add("too_long")
+
     def first_say(self) -> Say | None:
         for s in self.w.slides:
             for x in s.says:
@@ -551,6 +562,7 @@ class Store:
         s.builder.parser = Parser()
         s.builder.parser.started = True
         s.builder.parser.lines_seen = s.source.count("\n")
+        s.recall_findings()
         self.sessions[wid] = s
         for slide in w.slides:
             for say in slide.says:
