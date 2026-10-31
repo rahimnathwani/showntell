@@ -2,7 +2,7 @@
   "mcpServers": {
     "showntell": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/rahimnathwani/showntell@v0.2.2", "showntell", "mcp"]
+      "args": ["--from", "git+https://github.com/rahimnathwani/showntell@v0.2.3", "showntell", "mcp"]
     }
   }
 }

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.3 (unreleased)
+## 0.2.3 (2026-10-30)
 
 - **Eval measures watching speed:** `scripts/eval.py` records first sound (seconds from the run's start until narration audio plays in the live player) and the longest single wait, next to the stall count and total, in the table and the results JSON. The player keeps `longestStall` in `window.__showntell`.
 - **Narration written for listening:** `add_slides` replies flag a paragraph that is hard to follow by ear, heard once at speaking speed: a sentence over 28 spoken words or sentences averaging over 22.5 (`long_sentences`), or four or more numbers at over 22 per 100 words (`dense_numbers`). The limits come from the gallery's own narration, and none of its paragraphs is flagged; docs/spec.md says how. One finding a slide, steering the slides still to come. It is text arithmetic: about 20 µs a paragraph.
