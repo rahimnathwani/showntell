@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4 (unreleased)
+
+- **Eval times the start:** `scripts/eval.py` records the time to the `start_walkthrough` call, the tools called before it (ToolSearch aside), the opening's length and the gap from the link becoming playable to the first slide after the opening. It asks Claude Code for token-level events, so that gap splits into waiting for the first token (reading the context, the guide included), writing, and tool calls; the results JSON also has the tokens the start reply added.
+
 ## 0.2.3 (2026-10-30)
 
 - **Eval measures watching speed:** `scripts/eval.py` records first sound (seconds from the run's start until narration audio plays in the live player) and the longest single wait, next to the stall count and total, in the table and the results JSON. The player keeps `longestStall` in `window.__showntell`.
