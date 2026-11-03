@@ -22,7 +22,7 @@ For a broad request, cover what the user asked about and offer the rest as end q
 
 ## Start first
 
-Call `start_walkthrough` before opening a file or running `git`: the opening plays while you read. Write it to hold whatever you find: the question, the goal or why it matters; names, numbers and findings go in later slides. Once the link is shared, read what the first content slide needs, in one turn of parallel calls, and send it; read for the rest between calls, a little at a time, since a long read stalls playback.
+Call `start_walkthrough` before opening a file or running `git`: the opening plays while you read. Write it to hold whatever you find: the question, the goal or why it matters; names, numbers and findings go in later slides. Once the link is shared, read what the first content slide needs and send it; read for the rest between calls, a little at a time, since a long read stalls playback.
 
 ## Order of calls
 
