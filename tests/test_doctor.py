@@ -9,7 +9,7 @@ def test_slide_checks_row_names_what_is_off_and_how_to_add_the_browser(monkeypat
     assert (status, name) == (doctor.WARN, "slide checks")
     for part in ("not draw the slides", "layout findings", "pictures of alike slides", "poster", "MP4"):
         assert part in detail
-    assert doctor.INSTALL_VIDEO in detail and doctor.INSTALL_BROWSER in detail
+    assert doctor.INSTALL_BROWSER in detail
     # the install commands are pinned to this release, like the plain one
     assert f"@v{__version__}" in doctor.INSTALL_BROWSER and f"@v{__version__}" in doctor.INSTALL
 

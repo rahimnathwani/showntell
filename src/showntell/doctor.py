@@ -13,17 +13,11 @@ from .config import Config
 
 # Until showntell is on PyPI, where this becomes `uvx showntell mcp`.
 INSTALL = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 showntell mcp"
-# The same install with the browser that draws slides: the `video` extra adds Playwright, and
-# `playwright install chromium` fetches its Chromium, about 100 MB, once.
-VIDEO_FROM = "'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3'"
-INSTALL_VIDEO = f"uvx --from {VIDEO_FROM} showntell mcp"
-INSTALL_BROWSER = f"uvx --from {VIDEO_FROM} playwright install chromium"
-INSTALL_EXPORT = f"uvx --from {VIDEO_FROM} showntell export <id> talk.mp4"
+# The browser that draws slides, fetched now rather than by the daemon in the background:
+# Playwright's Chromium headless shell, about 100 MB, once.
+INSTALL_BROWSER = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 playwright install --only-shell chromium"
 # Shown by finish (where the daemon runs `mcp`) and by MP4 export from the command line alike.
-BROWSER_HINT = (
-    "run showntell with the video extra and fetch the browser once:\n"
-    f"    {INSTALL_VIDEO}   (or, to export: {INSTALL_EXPORT})\n    {INSTALL_BROWSER}"
-)
+BROWSER_HINT = f"the daemon fetches it in the background once the voice model is ready; to fetch it now, run\n    {INSTALL_BROWSER}"
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 
@@ -220,6 +214,6 @@ def doctor(cfg: Config, args) -> None:
     print("Connect an MCP client:")
     print(f"  Claude Code   claude mcp add --scope user showntell -- {INSTALL}")
     print(f"  any client    command: {INSTALL}   (stdio)")
-    print(f"  with browser  {INSTALL_VIDEO}   then once: {INSTALL_BROWSER}")
+    print(f"  browser now   {INSTALL_BROWSER}   (else the daemon fetches it in the background)")
     print(f"  over HTTP     {cfg.base_url}/mcp   (after `showntell serve`)")
     sys.exit(1 if problems else 0)

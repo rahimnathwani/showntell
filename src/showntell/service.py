@@ -218,7 +218,8 @@ class LocalService:
         """Draw every slide fully revealed in headless Chromium, so the player's render and layout
         checks report before the agent stops; pictures of the slides in `shoot` go into `shots`.
         Returns ('', '') when it ran, or the finding to raise and why: ('no_browser', reason) when
-        Playwright or its Chromium is missing, ('not_checked', reason) when drawing failed."""
+        the browser is not ready (still downloading, off or missing), ('not_checked', reason) when
+        drawing failed."""
         import asyncio
 
         from .capture import Capturer, CaptureUnavailable

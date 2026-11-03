@@ -366,8 +366,8 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
 
 
 def write_poster(folder: Path) -> bool:
-    """poster.png: the title slide's settled frame. False, silently, without Playwright or its
-    browser; a warning for any other failure."""
+    """poster.png: the title slide's settled frame. False, silently, without a browser ready to
+    draw it; a warning for any other failure."""
     from .capture import CaptureUnavailable, capture_frames
 
     try:
