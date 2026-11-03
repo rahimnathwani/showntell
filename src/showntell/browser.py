@@ -155,6 +155,7 @@ def install(state: Browser = STATE, echo=None, low: bool = True) -> None:
     installed, it returns in about a second without downloading. `echo` gets every output line.
     Raises RuntimeError with the installer's last lines when it fails."""
     cmd, kw = _low_priority(INSTALL) if low else (INSTALL, {})
+    state.set("downloading")  # at once: at background priority the first progress line can take a while
     p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", **kw)
     tail: collections.deque[str] = collections.deque(maxlen=6)
     for raw in p.stdout:
@@ -175,7 +176,8 @@ def install(state: Browser = STATE, echo=None, low: bool = True) -> None:
 
 
 def deps_hint() -> str:
-    return f"sudo {sys.executable} -m playwright install-deps chromium"
+    """Playwright's own fix; it asks for sudo itself to run the package manager."""
+    return f"{sys.executable} -m playwright install-deps chromium"
 
 
 def explain_launch_error(e: BaseException) -> str:

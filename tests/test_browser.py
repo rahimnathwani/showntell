@@ -132,6 +132,20 @@ def test_install_reports_progress_from_playwrights_output(monkeypatch):
     assert len(seen) == 2
 
 
+def test_install_says_downloading_before_any_output(monkeypatch):
+    """At background priority Playwright's first line can take a while; it is not "waiting" meanwhile."""
+    monkeypatch.setattr(browser, "INSTALL", [sys.executable, "-c", "import time; time.sleep(1.5)"])
+    state = browser.Browser()
+    state.set("waiting")
+    t = threading.Thread(target=browser.install, args=(state,))
+    t.start()
+    end = time.monotonic() + 1.2
+    while state.state != "downloading" and time.monotonic() < end:
+        time.sleep(0.02)
+    assert state.state == "downloading" and state.describe() == "downloading"
+    t.join(5)
+
+
 def test_install_failure_carries_the_installers_last_lines(monkeypatch):
     monkeypatch.setattr(browser, "INSTALL", [sys.executable, "-c", "print('Error: ENOSPC: no space left'); raise SystemExit(1)"])
     with pytest.raises(RuntimeError, match="ENOSPC"):
