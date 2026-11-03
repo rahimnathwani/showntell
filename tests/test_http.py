@@ -285,6 +285,16 @@ async def test_health(http, walk):
     assert h["walkthroughs_open"] == 1 and h["busy"] is True
 
 
+async def test_health_reports_the_browser(http, walk, monkeypatch):
+    from showntell import browser
+
+    monkeypatch.setattr(browser, "STATE", browser.Browser())
+    browser.STATE.set("downloading", "99 MiB", 0.25)
+    async with http() as c:
+        b = (await c.get("/health")).json()["browser"]
+    assert b == {"state": "downloading", "detail": "downloading (25% of 99 MiB)", "fraction": 0.25}
+
+
 # -- RPC ------------------------------------------------------------------------------------------------
 
 
