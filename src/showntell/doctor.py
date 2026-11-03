@@ -8,7 +8,7 @@ import socket
 import sys
 import time
 
-from . import __version__, daemon
+from . import __version__, browser, daemon
 from .config import Config
 
 # Until showntell is on PyPI, where this becomes `uvx showntell mcp`.
@@ -27,33 +27,33 @@ def _row(status: str, name: str, detail: str) -> None:
     print(f"  {mark} {name:<16} {detail}")
 
 
-def _chromium() -> str:
-    """Path of Playwright's Chromium, or '' when Playwright or its browser is missing."""
-    try:
-        from playwright.sync_api import sync_playwright
-
-        with sync_playwright() as pw:
-            path = pw.chromium.executable_path
-    except Exception:
-        return ""
-    from pathlib import Path
-
-    return path if Path(path).is_file() else ""
+# What is off until the browser is ready; the rest works, so its rows are warnings.
+WITHOUT_BROWSER = (
+    "finish_walkthrough does not draw the slides, so the agent gets no layout findings, no pictures of alike slides "
+    "and no poster, and MP4 export is off"
+)
 
 
-def _browser_check() -> tuple[str, str, str]:
-    """finish_walkthrough draws every slide in Playwright's Chromium. Without it the layout check,
-    the pictures of alike slides, the poster and MP4 export are off; the rest works, so a warning."""
-    if _chromium():
-        return OK, "slide checks", "Playwright Chromium found: finish_walkthrough draws every slide; MP4 export can render"
-    return (
-        WARN,
-        "slide checks",
-        (
-            "Playwright Chromium not found: finish_walkthrough does not draw the slides, so the agent gets no layout "
-            "findings, no pictures of alike slides and no poster, and MP4 export is off. To add it, " + BROWSER_HINT
-        ),
-    )
+def _browser_check(lock: dict | None = None) -> tuple[str, str, str]:
+    """The browser that draws slides: ready (it starts), on its way (the running daemon's state),
+    not fetched yet, turned off, or unable to start. `lock` is the running daemon's, if any."""
+    if browser.mode() == "off":
+        return WARN, "browser", f"turned off with SHOWNTELL_BROWSER=off: {WITHOUT_BROWSER}"
+    if browser.installed():
+        why = browser.verify()
+        if why:
+            return WARN, "browser", f"{why}. Until then {WITHOUT_BROWSER}"
+        return OK, "browser", "Chromium headless shell starts: finish_walkthrough draws every slide; MP4 export can render"
+    theirs = ((lock or {}).get("health") or {}).get("browser") or {}
+    if theirs.get("state") in browser.PENDING or theirs.get("state") == "error":
+        return WARN, "browser", f"the daemon reports: {theirs.get('detail')}. Until it is ready, {WITHOUT_BROWSER}"
+    if browser.skip_download():
+        return (
+            WARN,
+            "browser",
+            f"not installed, and PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD is set: {WITHOUT_BROWSER}. To add it, run {INSTALL_BROWSER}",
+        )
+    return WARN, "browser", f"not downloaded yet (about 100 MB, once); until it is, {WITHOUT_BROWSER}; " + BROWSER_HINT
 
 
 def _ffmpeg_check() -> tuple[str, str, str]:
@@ -96,8 +96,8 @@ def _hosted_checks(cfg: Config) -> list[tuple[str, str, str]]:
 
 def _sandbox_check() -> tuple[str, str, str]:
     """Hosted mode keeps Chromium's own sandbox on; it needs unprivileged user namespaces."""
-    if not _chromium():
-        return WARN, "chromium sandbox", "Playwright Chromium not found, so nothing to check"
+    if not browser.installed():
+        return WARN, "chromium sandbox", "Playwright's Chromium headless shell not found, so nothing to check"
     try:
         from playwright.sync_api import sync_playwright
 
@@ -129,7 +129,7 @@ def doctor(cfg: Config, args) -> None:
         _row(OK if shutil.which("git") else WARN, "git", shutil.which("git") or "not found: diffs from git revisions will not work")
 
     # the finish-time layout check, and MP4 export
-    _row(*_browser_check())
+    _row(*_browser_check(daemon.running(cfg)))
     _row(*_ffmpeg_check())
 
     if cfg.hosted:
