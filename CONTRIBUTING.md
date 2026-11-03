@@ -7,7 +7,7 @@ Thanks for helping. showntell is small on purpose: one Python package, one playe
 ```zsh
 uv sync
 uv run pytest -m "not slow and not browser and not mlx and not onnx"   # fast tests; no models or browser
-uv run pytest -m "browser or slow"     # Playwright's Chromium and ffmpeg; `uv run playwright install chromium` once
+uv run pytest -m "browser or slow"     # Playwright's Chromium and ffmpeg; `uv run playwright install --only-shell chromium` once
 uv run pytest -m "mlx or onnx"         # need the cached voice models
 uv run ruff check src tests scripts && uv run ruff format --check src tests scripts
 node --test tests/js/*.test.js         # player logic

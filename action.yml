@@ -56,7 +56,7 @@ runs:
         uv pip install -q --python "$venv/bin/python" --no-deps "$SRC"
         echo "$venv/bin" >> "$GITHUB_PATH"
         if [[ "$FORMAT" != html ]]; then
-          "$venv/bin/playwright" install --with-deps chromium
+          "$venv/bin/playwright" install --with-deps --only-shell chromium
           command -v ffmpeg >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q ffmpeg; }
         fi
 
@@ -71,6 +71,8 @@ runs:
         out="$RUNNER_TEMP/showntell-out"
         rm -rf "$out" && mkdir -p "$out"
         export SHOWNTELL_DATA="$RUNNER_TEMP/showntell-data"
+        # A page needs no browser: keep the daemon from fetching one in the background.
+        [[ "$FORMAT" == html ]] && export SHOWNTELL_BROWSER=off
         # The folder export voices the Markdown and keeps data.json, which the summary reads;
         # the page and the video are then made from the same walkthrough, without voicing it again.
         showntell export "$MD" "$out/site"
