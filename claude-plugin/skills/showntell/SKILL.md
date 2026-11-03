@@ -20,9 +20,9 @@ One question per walkthrough, 6 to 12 slides, two to four minutes: purpose, then
 
 For a broad request, cover what the user asked about and offer the rest as end questions.
 
-## Read first
+## Start first
 
-Open the files, run `git diff` or `git log`, and pick line ranges before `start_walkthrough`. Once the link is out the user is watching; research between calls stalls playback.
+Call `start_walkthrough` before opening a file or running `git`: the opening plays while you read. Write it to hold whatever you find: the question, the goal or why it matters; names, numbers and findings go in later slides. Once the link is shared, read what the first content slide needs and send it; read for the rest between calls, a little at a time, since a long read stalls playback.
 
 ## Order of calls
 

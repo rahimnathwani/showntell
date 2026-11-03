@@ -2,6 +2,7 @@
 
 ## 0.2.4 (unreleased)
 
+- **Start first, research while it plays:** agents read code before `start_walkthrough`, up to 33 s and eight tool calls before anything could play. The server instructions, the `start_walkthrough` description and the plugin skill now say to call it first, with an opening that holds without research (the question, the goal or why it matters), then read what each next slide needs between calls. Delivery by file keeps its no-rush flow.
 - **Eval times the start:** `scripts/eval.py` records the time to the `start_walkthrough` call, the tools called before it (ToolSearch aside), the opening's length and the gap from the link becoming playable to the first slide after the opening. It asks Claude Code for token-level events, so that gap splits into waiting for the first token (reading the context, the guide included), writing, and tool calls; the results JSON also has the tokens the start reply added and the size of the slide that ended the gap.
 - **Eval starts warm:** each round's fresh data folder made the first run's daemon download the spaCy model again (3 to 20 s), so its link time measured the network. The eval copies the models the user's showntell already has; `--cold` skips that.
 
