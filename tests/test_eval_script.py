@@ -70,3 +70,13 @@ def test_start_metrics_skip_the_add_slides_that_carried_the_opening():
 
 def test_start_metrics_without_a_start_call():
     assert _eval().start_metrics({"tool_calls": [(1.0, "Read")]}) == {}
+
+
+def test_seed_models_copies_finished_models_only(tmp_path):
+    src, dst = tmp_path / "home" / "models", tmp_path / "eval" / "models"
+    (src / "en_core_web_sm-3.8.0").mkdir(parents=True)
+    (src / "en_core_web_sm-3.8.0" / "config.cfg").write_text("x")
+    (src / "en_core_web_sm-3.8.0.part-abc").mkdir()  # a download still in progress
+    assert _eval().seed_models(src, dst) == ["en_core_web_sm-3.8.0"]
+    assert (dst / "en_core_web_sm-3.8.0" / "config.cfg").read_text() == "x"
+    assert _eval().seed_models(tmp_path / "none", dst) == []

@@ -50,6 +50,22 @@ ALLOWED = [
 ]
 
 
+DEFAULT_DATA = Path.home() / ".local/share/showntell"
+
+
+def seed_models(src: Path, dst: Path) -> list[str]:
+    """Copy the models the user's daemon already downloaded (the spaCy English model) into the
+    eval's fresh data folder. Without them the first run of a round waits for a download that an
+    installed showntell does once, and its link time measures the network, not showntell."""
+    copied = []
+    if src.is_dir():
+        for d in sorted(src.iterdir()):
+            if d.is_dir() and not d.name.startswith(".") and ".part-" not in d.name and not (dst / d.name).exists():
+                shutil.copytree(d, dst / d.name)
+                copied.append(d.name)
+    return copied
+
+
 async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: bool) -> dict:
     cfg = {
         "mcpServers": {
@@ -536,6 +552,7 @@ async def main() -> None:
     ap.add_argument("--no-play", action="store_true")
     ap.add_argument("--no-asr", action="store_true")
     ap.add_argument("--keep", action="store_true", help="keep the data folder")
+    ap.add_argument("--cold", action="store_true", help="don't copy cached models: the daemon downloads them, as on first install")
     ap.add_argument("--rescore", help="recompute the summary and speech checks for this results file (needs --data)")
     ap.add_argument("--data", help="data folder of the run being rescored")
     args = ap.parse_args()
@@ -555,6 +572,8 @@ async def main() -> None:
     all_prompts = json.loads(Path(args.prompts).read_text())
     prompts = all_prompts if args.runs == "all" else [p for p in all_prompts if p["id"] in args.runs.split(",")]
     data_dir = Path(tempfile.mkdtemp(prefix="showntell-eval-"))
+    if not args.cold:
+        seed_models(DEFAULT_DATA / "models", data_dir / "models")
     jobs = [(p, m) for m in args.models.split(",") for p in prompts]
     sem = asyncio.Semaphore(args.parallel)
     # Speech recognition runs one deck at a time: mlx-whisper's numba layer aborts the whole

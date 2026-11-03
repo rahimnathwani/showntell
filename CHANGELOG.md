@@ -3,6 +3,7 @@
 ## 0.2.4 (unreleased)
 
 - **Eval times the start:** `scripts/eval.py` records the time to the `start_walkthrough` call, the tools called before it (ToolSearch aside), the opening's length and the gap from the link becoming playable to the first slide after the opening. It asks Claude Code for token-level events, so that gap splits into waiting for the first token (reading the context, the guide included), writing, and tool calls; the results JSON also has the tokens the start reply added.
+- **Eval starts warm:** each round's fresh data folder made the first run's daemon download the spaCy model again (3 to 20 s), so its link time measured the network. The eval copies the models the user's showntell already has; `--cold` skips that.
 
 ## 0.2.3 (2026-10-30)
 
