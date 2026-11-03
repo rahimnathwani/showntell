@@ -234,3 +234,53 @@ def test_mp4_export_through_the_daemon_fits_a_size_limit(walkthrough, tmp_path):
     r = export("tiny.mp4", 0.001)
     assert r.status_code == 400 and "split the walkthrough" in r.json()["error"]
     assert not (tmp_path / "tiny.mp4").exists()
+
+
+# -- the browser, on first need from the command line --------------------------------------------
+
+
+def _mp4_args():
+    from argparse import Namespace
+
+    return Namespace(mp3=False, fps=4, workers=1, burn_captions=False, motion=False, max_mb=0)
+
+
+@pytest.mark.parametrize(
+    ("env", "fetches"), [({}, True), ({"SHOWNTELL_BROWSER": "off"}, False), ({"PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1"}, False)]
+)
+def test_command_line_mp4_export_fetches_a_missing_browser_first(tmp_path, monkeypatch, env, fetches):
+    from showntell import browser, export, video
+    from showntell.config import Config
+
+    monkeypatch.delenv("SHOWNTELL_BROWSER", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    order = []
+    monkeypatch.setattr(browser, "installed", lambda: False)
+    monkeypatch.setattr(browser, "install", lambda state=None, echo=None, low=True: order.append(("install", low)))
+
+    def render(*a, **kw):
+        order.append("render")
+        raise SystemExit("stop here")
+
+    monkeypatch.setattr(video, "render_mp4", render)
+    with pytest.raises(SystemExit, match="stop here"):
+        export._export_mp4(Config(data_dir=tmp_path), "w1", tmp_path / "x.mp4", _mp4_args())
+    assert order == ([("install", False), "render"] if fetches else ["render"])  # the user waits: full speed
+
+
+def test_command_line_mp4_export_says_when_the_download_fails(tmp_path, monkeypatch):
+    from showntell import browser, export
+    from showntell.config import Config
+
+    monkeypatch.delenv("SHOWNTELL_BROWSER", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", raising=False)
+    monkeypatch.setattr(browser, "installed", lambda: False)
+
+    def offline(**kw):
+        raise RuntimeError("getaddrinfo ENOTFOUND cdn.playwright.dev")
+
+    monkeypatch.setattr(browser, "install", offline)
+    with pytest.raises(SystemExit, match="browser download failed: getaddrinfo"):
+        export._export_mp4(Config(data_dir=tmp_path), "w1", tmp_path / "x.mp4", _mp4_args())
