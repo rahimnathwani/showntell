@@ -9,7 +9,7 @@
       "voice": "English Kokoro voice id. Omit for the default. Voices:",
       "speed": "Speech rate from 0.8 to 1.3; 1.0 is normal.",
       "project_dir": "Absolute path of the project. Code blocks with file= and image paths are read from it and must stay inside it. Defaults to the client's root, then the server's working directory.",
-      "opening": "The opening in Markdown, voiced before this call returns: a `#` title heading, an optional `>` subtitle line, then one or two short spoken sentences as a plain paragraph that hold without research: the question, the goal or why it matters, with names, numbers and findings left for later slides. Nothing more; the body goes in add_slides. Example:\n# How the retry loop works\n> Backoff in the HTTP client\n\nA failed request can be sent up to four times. We'll follow one through the client.",
+      "opening": "The opening in Markdown, voiced before this call returns: a `#` title heading, an optional `>` subtitle line, then one or two short spoken sentences as a plain paragraph that hold without research: the question, the goal or why it matters, and any fact the request gives; what you have yet to read waits for later slides. Nothing more; the body goes in add_slides. Example:\n# How the retry loop works\n> Backoff in the HTTP client\n\nA failed request can be sent up to four times. We'll follow one through the client.",
       "theme": "Colour theme: dark (default), light, paper (warm light), night (indigo and pink), ocean (teal and coral), studio (bright, violet) or contrast (high contrast). Pick one that suits the subject. Omit to use the project's showntell.theme.json or the default. Viewers can switch it."
     }
   },

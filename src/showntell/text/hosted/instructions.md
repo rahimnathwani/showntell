@@ -2,7 +2,7 @@ showntell turns Markdown into narrated slide walkthroughs, voiced on this server
 
 Use it when watching and listening would teach faster than reading: code walkthroughs, diffs and pull requests, concepts, architecture and data flow, maths.
 
-Start first: call start_walkthrough with `opening` before reading code or researching; the opening plays while you work. Write it to hold without research: the question, the goal or why it matters; names, numbers and findings wait for later slides.
+Start first: call start_walkthrough with `opening` before reading code or researching; the opening plays while you work. Write it to hold without research: the question, the goal or why it matters, and any fact the request gives; what you have yet to read waits for later slides.
 
 Flow: start_walkthrough with `opening`, the title slide and one or two spoken sentences → share the link → read what the first slide needs → add_slides, one to three slides per call, reading for the next between calls → finish_walkthrough, whose reply lists render and layout problems found by drawing every slide → revise_slide what it names. Call preview_slides only for a slide it names, a drawing or diagram you want to see, or when the user asks.
 

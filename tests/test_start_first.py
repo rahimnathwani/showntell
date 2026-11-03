@@ -34,3 +34,10 @@ def test_skill_starts_first_and_no_longer_reads_first():
     assert "before `start_walkthrough`" not in skill
     guide = texts()["guide"]
     assert "**Read first:**" not in guide and "**Read in steps:**" in guide
+
+
+def test_the_opening_keeps_the_facts_the_request_gives():
+    # "Names, numbers and findings wait" made an opening drop the numbers the prompt itself supplied.
+    for text in (arg_text("start_walkthrough", "opening"), texts()["instructions"], texts("link", True)["instructions"]):
+        assert "any fact the request gives" in text
+        assert "names, numbers and findings" not in text
