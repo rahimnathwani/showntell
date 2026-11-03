@@ -80,3 +80,25 @@ def test_seed_models_copies_finished_models_only(tmp_path):
     assert _eval().seed_models(src, dst) == ["en_core_web_sm-3.8.0"]
     assert (dst / "en_core_web_sm-3.8.0" / "config.cfg").read_text() == "x"
     assert _eval().seed_models(tmp_path / "none", dst) == []
+
+
+def test_tools_before_start_go_by_order_not_rounded_time():
+    # tool_calls keep times rounded to 0.01 s; the start call's own time is not rounded
+    marks = {"tool_calls": [(3.8, "ToolSearch"), (7.06, "start_walkthrough"), (9.0, "Read")], "start_call": 7.0629}
+    assert _eval().start_metrics(marks)["tools_before_start"] == []
+
+
+def test_gap_reports_the_size_of_the_slide_that_ended_it():
+    marks = {
+        "tool_calls": [(5.0, "start_walkthrough"), (12.0, "add_slides")],
+        "adds": [(12.0, 640, 2)],
+        "start_call": 5.0,
+        "playable_at": 6.0,
+    }
+    m = _eval().start_metrics(marks)
+    assert (m["gap2_chars"], m["gap2_slides"]) == (640, 2)
+
+
+def test_count_slides_skips_headings_in_code():
+    md = "## One\n\n```python\n# a comment\n```\n\nSpoken.\n\n### Two {.side}\n\n#nothash\n"
+    assert _eval().count_slides(md) == 2

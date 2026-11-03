@@ -130,6 +130,9 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
                             marks["tool_calls"].append((round(now, 2), name))
                             if name == "start_walkthrough":
                                 marks.setdefault("start_call", now)
+                            if name == "add_slides":
+                                md = str(block.get("input", {}).get("markdown", ""))
+                                marks.setdefault("adds", []).append((round(now, 2), len(md), count_slides(md)))
                         elif block.get("type") == "text" and URL_RE.search(block.get("text", "")) and "link_shared" not in marks:
                             marks["link_shared"] = now
                 elif ev.get("type") == "user":
@@ -216,6 +219,17 @@ def note_stream(msgs: list[dict], e: dict, now: float, sent_at: float) -> None:
         msgs[-1]["end"] = round(now, 2)
 
 
+def count_slides(md: str) -> int:
+    """Slides in a piece of Markdown: headings outside code fences."""
+    n, fence = 0, False
+    for line in md.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence and re.match(r"#{1,3} ", line):
+            n += 1
+    return n
+
+
 IGNORED_BEFORE_START = ("ToolSearch",)  # Claude Code loading the showntell tools, not research
 
 
@@ -235,7 +249,8 @@ def start_metrics(marks: dict) -> dict:
     if start is None:
         return out
     out["start_s"] = round(start, 1)
-    out["tools_before_start"] = [n for t, n in calls if t < start and n not in IGNORED_BEFORE_START]
+    first = next(i for i, (_, n) in enumerate(calls) if n == "start_walkthrough")
+    out["tools_before_start"] = [n for _, n in calls[:first] if n not in IGNORED_BEFORE_START]
     playable = marks.get("playable_at")
     if playable is None:
         return out
@@ -258,6 +273,9 @@ def start_metrics(marks: dict) -> dict:
         gap2_out_tokens=sum(m["out"] for m in window),
         gap2_tools=[n for t, n in calls if playable < t < nxt],
     )
+    sent = next((a for a in marks.get("adds", []) if a[0] == nxt), None)
+    if sent:
+        out.update(gap2_chars=sent[1], gap2_slides=sent[2])
     before = [m for m in marks.get("messages", []) if m["first"] <= playable]
     if window and before:
         out["start_reply_tokens"] = window[0]["in"] - before[-1]["in"] - before[-1]["out"]
@@ -561,6 +579,7 @@ async def main() -> None:
         expect = {p["id"]: p.get("expect") for p in json.loads(Path(args.prompts).read_text())}
         for r in results:
             w = walkthrough_for(Path(args.data), r.get("url"))
+            r.update(start_metrics(r))
             if w:
                 r["summary"] = summarize(w, expect.get(r["id"]))
                 if not args.no_asr:
