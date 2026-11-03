@@ -366,6 +366,11 @@ class LocalService:
         if pending:
             raise ValueError(f"{pending} paragraph(s) are still being voiced after {wait_s:.0f} s; try again shortly")
         silent = sum(1 for x in says if x.status != "ready")
+        if format == "mp4":  # a browser on its way, within the same wait: the first export can come soon after install
+            from .browser import PENDING, STATE
+
+            while STATE.state in PENDING and time.monotonic() - t0 < wait_s:
+                await asyncio.sleep(0.5)
         s.save_now()  # the exporters read the saved state
         data_dir = self.store.data_dir
         # Hosted: one browser, no requests beyond the export's own server, and a time limit.

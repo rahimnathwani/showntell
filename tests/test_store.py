@@ -746,6 +746,32 @@ async def test_an_export_waiting_for_the_voice_stops_when_its_walkthrough_is_del
     assert not store.walk_dir(s.w.id).exists() and not (tmp_path / "x.html").exists()
 
 
+async def test_an_mp4_export_waits_for_a_browser_on_its_way(service, store, tmp_path, monkeypatch, wait_until):
+    """The user asks for a video right after the first walkthrough: the export waits for the
+    download, within the same wait it gives the narration, instead of failing at once."""
+    from showntell import browser, video
+
+    monkeypatch.setattr(browser, "STATE", browser.Browser())
+    browser.STATE.set("downloading", "99 MiB", 0.9)
+    rendered = []
+
+    def render(data_dir, wid, out, **kw):
+        rendered.append(browser.STATE.state)
+        out.write_bytes(b"mp4")
+        return {"shrunk": "", "errors": []}
+
+    monkeypatch.setattr(video, "render_mp4", render)
+    r = await started(service, project_dir=str(tmp_path))
+    await service.add(r["handle"], OPENING)
+    await wait_until(lambda: all(x.status == "ready" for sl in store.by_handle(r["handle"]).w.slides for x in sl.says if x.text))
+    job = asyncio.create_task(service.export(r["handle"], format="mp4", path=str(tmp_path / "x.mp4"), wait_s=10))
+    await asyncio.sleep(0.6)
+    assert rendered == [] and not job.done()
+    browser.STATE.set("ready")
+    out = await asyncio.wait_for(job, 5)
+    assert rendered == ["ready"] and out["path"].endswith("x.mp4")
+
+
 # -- live updates --------------------------------------------------------------------------------------
 
 
