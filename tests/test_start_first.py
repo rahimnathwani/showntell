@@ -41,3 +41,12 @@ def test_the_opening_keeps_the_facts_the_request_gives():
     for text in (arg_text("start_walkthrough", "opening"), texts()["instructions"], texts("link", True)["instructions"]):
         assert "any fact the request gives" in text
         assert "names, numbers and findings" not in text
+
+
+def test_the_first_slide_comes_from_the_request_when_the_rest_needs_reading():
+    # Reading for slide two kept the viewer on the title slide for 12 to 22 s after the opening.
+    assert "write this one from what the request gives" in texts()["replies"]["playable"]
+    for hosted in (False, True):
+        assert "first one short slide, from what the request gives" in texts("link", hosted)["instructions"]
+    skill = (ROOT / "claude-plugin" / "skills" / "showntell" / "SKILL.md").read_text()
+    assert "build that one from what the request gives" in skill
