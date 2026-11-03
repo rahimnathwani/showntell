@@ -34,3 +34,12 @@ def test_skill_starts_first_and_no_longer_reads_first():
     assert "before `start_walkthrough`" not in skill
     guide = texts()["guide"]
     assert "**Read first:**" not in guide and "**Read in steps:**" in guide
+
+
+def test_reads_after_the_start_go_in_one_turn_of_parallel_calls():
+    # Each read in a turn of its own cost the viewer a model round trip of 3 to 8 s after the opening.
+    assert "in one turn of parallel calls" in texts()["replies"]["playable"]
+    for hosted in (False, True):
+        assert "in one turn of parallel calls" in texts("link", hosted)["instructions"]
+    skill = (ROOT / "claude-plugin" / "skills" / "showntell" / "SKILL.md").read_text()
+    assert "in one turn of parallel calls" in skill

@@ -2,7 +2,7 @@
   "started": "Started {handle} without an opening. Link: {url}\nNext: call add_slides now with only the opening, the title slide and one or two short spoken sentences. Its reply says when the link is playable.",
   "project": "Project folder: {root}. file= paths and rev= read from it; if that is the wrong folder, start again with project_dir set to the right absolute path.",
   "no_project": "No project folder, so file= and rev= cannot read code. Pass project_dir, an absolute path, to start_walkthrough.",
-  "playable": "Playable after {seconds} s: {url}\nSend this link to the user now, in a message, before your next tool call. Then send the first content slide alone and short, so it is ready within seconds; after that, one to three whole slides per add_slides call. The authoring guide follows.",
+  "playable": "Playable after {seconds} s: {url}\nSend this link to the user now, in a message, before your next tool call. Then read what the first content slide needs, in one turn of parallel calls, and send that slide alone and short, so it is ready within seconds; after that, one to three whole slides per add_slides call. The authoring guide follows.",
   "pending": "Slides saved. The opening audio is still being made, but the link already works: {url}\nShare it with the user now; playback starts when the audio is ready. Then keep adding slides.",
   "voice_error": "Slides saved, but voicing failed: {error}\nLink: {url}. Continue with the next add_slides call. If the error repeats, stop and ask the user to run `showntell doctor`.",
   "need_opening": "Nothing to play yet: no narration so far. Send one or two spoken sentences next, as plain paragraphs without a heading; they join the last slide you sent. A > line is shown, not spoken.",

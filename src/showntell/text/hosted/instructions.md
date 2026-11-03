@@ -4,7 +4,7 @@ Use it when watching and listening would teach faster than reading: code walkthr
 
 Start first: call start_walkthrough with `opening` before reading code or researching; the opening plays while you work. Write it to hold without research: the question, the goal or why it matters; names, numbers and findings wait for later slides.
 
-Flow: start_walkthrough with `opening`, the title slide and one or two spoken sentences → share the link → read what the first slide needs → add_slides, one to three slides per call, reading for the next between calls → finish_walkthrough, whose reply lists render and layout problems found by drawing every slide → revise_slide what it names. Call preview_slides only for a slide it names, a drawing or diagram you want to see, or when the user asks.
+Flow: start_walkthrough with `opening`, the title slide and one or two spoken sentences → share the link → read what the first slide needs, all in one turn of parallel calls → add_slides, one to three slides per call, reading for the next between calls → finish_walkthrough, whose reply lists render and layout problems found by drawing every slide → revise_slide what it names. Call preview_slides only for a slide it names, a drawing or diagram you want to see, or when the user asks.
 
 This server is shared by a company and sees nothing on your machine or its own disk. Read the code yourself, then put it in the Markdown: code in fenced blocks with `start=` for the first line number, changes as unified `diff` blocks or `old`/`new` pairs. `project_dir`, `file=`, `rev=` and images are refused. Drawings (```svg), diagrams, charts and tables all work.
 
