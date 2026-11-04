@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
 
-from . import daemon
+from . import browser, daemon
 from .config import Config
 from .server import add_routes, create_mcp
 from .service import LocalService
@@ -164,6 +164,8 @@ def serve(cfg: Config) -> None:
     narrator = Narrator(make_backend(cfg.speech, cfg.data_dir, status), cfg.audio_dir, status)
     narrator.lexicon = load_lexicon(cfg)
     narrator.start()
+    if not cfg.hosted:  # a hosted image ships its browser; the server never downloads one
+        browser.start(narrator)
     suffix = f"?t={cfg.access_token}" if cfg.access_token else ""
     h = None
     if cfg.hosted:

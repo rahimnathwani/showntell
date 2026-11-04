@@ -6,17 +6,17 @@ This action turns a Markdown walkthrough into a narrated page, without sending a
 ## Voice it once {#voice .side}
 > One folder export voices the Markdown; the page and the video reuse it
 
-```yaml file=action.yml lines=74-82
+```yaml file=action.yml lines=76-84
 ```
 
-[The folder export](#L76 "showntell export") voices every paragraph on the runner, with the open voice model cached between runs.
+[The folder export](#L78 "showntell export") voices every paragraph on the runner, with the open voice model cached between runs.
 
-The page and [the video](#L79 "walkthrough.mp4") are drawn from that same walkthrough, so nothing is voiced twice.
+The page and [the video](#L81 "walkthrough.mp4") are drawn from that same walkthrough, so nothing is voiced twice.
 
 ## One comment per pull request {#comment}
 > Each push updates the same comment
 
-```yaml file=action.yml lines=107-118
+```yaml file=action.yml lines=109-120
 ```
 
-The comment starts with [a hidden marker](#L107 "marker="). On the next push, the action [finds that comment](#L113 "existing=") and [edits it](#L115 "PATCH"), so the thread doesn't fill with copies.
+The comment starts with [a hidden marker](#L109 "marker="). On the next push, the action [finds that comment](#L115 "existing=") and [edits it](#L117 "PATCH"), so the thread doesn't fill with copies.

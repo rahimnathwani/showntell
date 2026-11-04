@@ -366,8 +366,8 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
 
 
 def write_poster(folder: Path) -> bool:
-    """poster.png: the title slide's settled frame. False, silently, without Playwright or its
-    browser; a warning for any other failure."""
+    """poster.png: the title slide's settled frame. False, silently, without a browser ready to
+    draw it; a warning for any other failure."""
     from .capture import CaptureUnavailable, capture_frames
 
     try:
@@ -430,6 +430,7 @@ def _export_mp4(cfg: Config, wid: str, dest: Path, args) -> None:
 
     if args.mp3:
         raise SystemExit("--mp3 applies to folder exports; an MP4 always carries AAC audio")
+    fetch_browser()
     max_bytes = int(getattr(args, "max_mb", 0) * 1e6)
     r = render_mp4(
         cfg.data_dir,
@@ -448,6 +449,20 @@ def _export_mp4(cfg: Config, wid: str, dest: Path, args) -> None:
         f"{r['fps']} fps) in {r['seconds']:.1f} s: {r['speed']:.1f} s of video per second"
         + (f"; shrunk to fit with {r['shrunk']}" if r["shrunk"] else "")
     )
+
+
+def fetch_browser() -> None:
+    """On first need from the command line: fetch the browser now, in the foreground, with
+    Playwright's progress on stderr. The daemon would fetch it in the background later."""
+    from . import browser
+
+    if browser.mode() == "off" or browser.skip_download() or browser.installed():
+        return
+    print("Fetching the browser that draws the frames (Chromium headless shell, about 100 MB, once)", file=sys.stderr)
+    try:
+        browser.install(echo=lambda line: print("  " + line, file=sys.stderr), low=False)
+    except RuntimeError as e:
+        raise SystemExit(f"MP4 export: the browser download failed: {e}") from e
 
 
 def _play_and_wait(cfg: Config, path: Path) -> str:

@@ -21,6 +21,9 @@ from showntell.speech.fake import FakeBackend
 from showntell.speech.narrator import Narrator
 from showntell.store import Store
 
+# A daemon a test starts must never download Chromium (CI has none); one already installed is still used.
+os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+
 BASE_URL = "http://localhost:4799"
 
 # Forty numbered lines with a few recognisable ones, used as src/cache.py in the project fixture.

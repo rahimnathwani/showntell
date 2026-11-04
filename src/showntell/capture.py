@@ -2,7 +2,7 @@
 
 The player opens with `?capture=1`, which hides everything but the stage, turns animation off and
 exposes `window.__showntell.seek(t)`; each frame is a screenshot taken after that promise
-resolves. Playwright is an optional dependency (the `video` extra), imported only here.
+resolves. Playwright is imported only here; its browser comes and goes as browser.py says.
 
     frames = capture_frames("out/folder", [0, 12.5])          # PNG bytes per time
     async with Capturer("http://127.0.0.1:4747/w/<id>/") as c: # or step through by hand
@@ -28,14 +28,15 @@ log = logging.getLogger("showntell.capture")
 
 
 def install_hint() -> str:
-    """The two commands that add the browser, pinned to this release by `showntell doctor`."""
+    """How the browser gets here, with the command that fetches it now, pinned to this release."""
     from .doctor import BROWSER_HINT
 
     return BROWSER_HINT
 
 
 class CaptureUnavailable(RuntimeError):
-    """Playwright or its Chromium is not installed. `reason` is the short form, without the hint."""
+    """No browser to draw with: on its way, turned off, not installed or unable to start. `reason`
+    is the short form, without the hint."""
 
     def __init__(self, reason: str, hint: str = ""):
         self.reason = reason
@@ -43,6 +44,11 @@ class CaptureUnavailable(RuntimeError):
 
 
 def require_playwright():
+    from .browser import STATE
+
+    why = STATE.unavailable()
+    if why:
+        raise CaptureUnavailable(why)
     try:
         from playwright.async_api import async_playwright
     except ImportError as e:
@@ -211,11 +217,15 @@ class Capturer:
 async def launch(pw, sandbox: bool = False):
     """Headless Chromium, with a clear message when the browser is not installed. `sandbox` keeps
     Chromium's sandbox on (Playwright passes --no-sandbox otherwise)."""
+    from .browser import explain_launch_error
+
     try:
         return await pw.chromium.launch(chromium_sandbox=sandbox)
     except Exception as e:
         if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
-            raise CaptureUnavailable("Playwright's Chromium is not installed", install_hint()) from e
+            raise CaptureUnavailable("the browser that draws slides is not installed", install_hint()) from e
+        if "missing dependencies" in str(e) or "install-deps" in str(e):
+            raise CaptureUnavailable(explain_launch_error(e)) from e
         raise
 
 

@@ -17,7 +17,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE THIRD_PARTY_NOTICES.md ./
 COPY src ./src
 RUN uv sync --locked --no-dev --extra video --extra hosted \
-    && /app/.venv/bin/playwright install --with-deps chromium \
+    && /app/.venv/bin/playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/* /root/.cache
 
 RUN useradd --uid 10001 --no-create-home --home-dir /data/home --shell /usr/sbin/nologin showntell \

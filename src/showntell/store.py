@@ -249,8 +249,8 @@ class Session:
 
     def finish(self, questions: list[str] | None, unchecked: tuple[str, str] | None = None) -> list[str]:
         """Close the walkthrough. `unchecked` is None when no layout check was attempted at finish,
-        ('', '') when it ran, or (finding, reason) when it could not run: 'no_browser' for a missing
-        Playwright or Chromium, 'not_checked' for a drawing that failed or timed out."""
+        ('', '') when it ran, or (finding, reason) when it could not run: 'no_browser' for a browser
+        not ready, off or missing, 'not_checked' for a drawing that failed or timed out."""
         b = self.builder
         b.issues = []
         b.check_all()
@@ -260,11 +260,17 @@ class Session:
             b.parser.pending = ""
         code, why = unchecked or ("", "")
         if code == "no_browser":
+            from .browser import PENDING, STATE
+
+            meanwhile = "Open the link; what the player finds arrives with your next call to this walkthrough."
             b._issue(
                 "no_browser",
                 f"The slides were not drawn: {why}. This reply has no layout findings, no pictures of alike slides and no poster.",
-                "Tell the user that `showntell doctor` prints the two commands that add the browser. "
-                "Meanwhile, open the link in a browser; what it finds arrives with your next call to this walkthrough.",
+                f"Once it is ready, preview_slides draws any slide. {meanwhile}"
+                if STATE.state in PENDING
+                else meanwhile
+                if STATE.state == "off"
+                else f"Tell the user that `showntell doctor` says why and how to fix it. {meanwhile}",
                 slide="",
             )
         elif code:

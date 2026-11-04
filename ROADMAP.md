@@ -13,7 +13,7 @@ Version 1.0 ships when it meets the launch criteria below. Everything else waits
 | **Slide format** | Markdown-based |
 | **Speech** | Kokoro-82M, English. MLX on Apple silicon; ONNX (the timestamped export, which returns per-token durations) everywhere else |
 | **First link** | returned only once the opening narration is playable |
-| **Privacy** | No hosted service and no telemetry. The first run downloads the voice model from Hugging Face and the language model from GitHub; nothing else leaves the machine. |
+| **Privacy** | No hosted service and no telemetry. The first run downloads the voice model from Hugging Face and the language model from GitHub, then the headless browser from Playwright's CDN; nothing else leaves the machine. |
 
 ## Launch criteria for 1.0
 

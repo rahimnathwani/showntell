@@ -435,6 +435,45 @@ async def test_finish_layout_check_reports_why_it_could_not_run(store, monkeypat
     assert not any(i["code"] == "not_checked" and "No player has opened" in i["message"] for i in f["issues"])
 
 
+@pytest.mark.parametrize(
+    ("state", "message", "fix"),
+    [
+        ("downloading", "downloading (40% of 99 MiB)", "Once it is ready, preview_slides draws any slide"),
+        ("off", "SHOWNTELL_BROWSER=off", "Open the link"),
+    ],
+)
+async def test_finish_without_a_ready_browser_says_so_and_does_not_wait(store, monkeypatch, state, message, fix):
+    """The first finish may come while the browser is still downloading: it finishes at once,
+    without the layout check, and says plainly why and what comes next."""
+    import time
+
+    from showntell import browser
+
+    monkeypatch.setattr(browser, "STATE", browser.Browser())
+    browser.STATE.set(state, "99 MiB", 0.4)
+    service = LocalService(store, layout_check=True)
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    t0 = time.monotonic()
+    f = await service.finish(r["handle"], None)
+    assert time.monotonic() - t0 < 2
+    missing = [i for i in f["issues"] if i["code"] == "no_browser"]
+    assert len(missing) == 1 and message in missing[0]["message"] and fix in missing[0]["fix"]
+    assert "showntell doctor" not in missing[0]["fix"]  # nothing for the user to fix
+    assert store.by_handle(r["handle"]).w.status == "finished"
+
+
+async def test_preview_while_the_browser_downloads_says_so(service, monkeypatch):
+    from showntell import browser
+
+    monkeypatch.setattr(browser, "STATE", browser.Browser())
+    browser.STATE.set("downloading", "99 MiB", 0.4)
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    with pytest.raises(ValueError, match=r"downloading \(40% of 99 MiB\); try again in a minute"):
+        await service.preview(r["handle"])
+
+
 async def test_finish_layout_check_passes_player_findings_on(store, monkeypatch):
     from showntell import capture
 
@@ -705,6 +744,32 @@ async def test_an_export_waiting_for_the_voice_stops_when_its_walkthrough_is_del
     await asyncio.sleep(0.4)  # the speech job ends before the loop does
     store.narrator.backend.delay = 0
     assert not store.walk_dir(s.w.id).exists() and not (tmp_path / "x.html").exists()
+
+
+async def test_an_mp4_export_waits_for_a_browser_on_its_way(service, store, tmp_path, monkeypatch, wait_until):
+    """The user asks for a video right after the first walkthrough: the export waits for the
+    download, within the same wait it gives the narration, instead of failing at once."""
+    from showntell import browser, video
+
+    monkeypatch.setattr(browser, "STATE", browser.Browser())
+    browser.STATE.set("downloading", "99 MiB", 0.9)
+    rendered = []
+
+    def render(data_dir, wid, out, **kw):
+        rendered.append(browser.STATE.state)
+        out.write_bytes(b"mp4")
+        return {"shrunk": "", "errors": []}
+
+    monkeypatch.setattr(video, "render_mp4", render)
+    r = await started(service, project_dir=str(tmp_path))
+    await service.add(r["handle"], OPENING)
+    await wait_until(lambda: all(x.status == "ready" for sl in store.by_handle(r["handle"]).w.slides for x in sl.says if x.text))
+    job = asyncio.create_task(service.export(r["handle"], format="mp4", path=str(tmp_path / "x.mp4"), wait_s=10))
+    await asyncio.sleep(0.6)
+    assert rendered == [] and not job.done()
+    browser.STATE.set("ready")
+    out = await asyncio.wait_for(job, 5)
+    assert rendered == ["ready"] and out["path"].endswith("x.mp4")
 
 
 # -- live updates --------------------------------------------------------------------------------------

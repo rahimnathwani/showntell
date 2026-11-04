@@ -30,14 +30,14 @@ The tag after `@` installs that release; leave it off for the latest commit. Onc
 
 The first run downloads the voice model (about 330 MB on Apple silicon, 92 MB elsewhere) and a 12 MB English language model. The first walkthrough takes a few seconds longer while they load. After that, everything works offline.
 
-The base install leaves out the browser that draws slides. With it, `finish_walkthrough` checks every slide's layout and shows the agent pictures of slides that look alike, each walkthrough gets a poster in the gallery, and MP4 export works. To add it, use the `video` extra in place of the command above and fetch Chromium (about 100 MB) once:
+Once the voice is ready and the first link is out, the daemon fetches the browser that draws slides in the background: Playwright's Chromium headless shell, about 100 MB, once. With it, `finish_walkthrough` checks every slide's layout and shows the agent pictures of slides that look alike, each walkthrough gets a poster in the gallery, and MP4 export works. Until it is ready, finish tells the agent the slides were not drawn and everything else works. `showntell doctor` reports its state.
 
-```zsh
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' showntell mcp
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' playwright install chromium
-```
-
-`showntell doctor` says whether the browser was found. Without it, finish tells the agent the slides were not drawn.
+| Machine | What to do |
+|---|---|
+| **Locked down, no browser wanted** | `SHOWNTELL_BROWSER=off`: never fetched or started; finish skips the layout check, MP4 export is off |
+| **Browsers provisioned some other way** | `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, with `PLAYWRIGHT_BROWSERS_PATH` where they are: used if there, never fetched |
+| **Linux without Chromium's libraries** | doctor says so and prints the fix: `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 playwright install-deps chromium`, which asks for sudo |
+| **Fetch it now** | `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 playwright install --only-shell chromium` |
 
 Or paste this into your agent and let it set itself up:
 
@@ -157,9 +157,9 @@ When the agent runs in a sandbox, or you talk to it through WhatsApp, Telegram o
 ```zsh
 # inside the sandbox image, once (Debian or Ubuntu)
 apt-get install -y ffmpeg
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' playwright install --with-deps chromium
+uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 playwright install --with-deps --only-shell chromium
 # the MCP server the agent runs
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' showntell mcp --deliver file
+uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 showntell mcp --deliver file
 ```
 
 | Part | What happens |
@@ -177,12 +177,12 @@ Install showntell, an MCP server that turns Markdown into narrated slide walkthr
 I can't open links on your machine, so you'll send me walkthroughs as MP4 files.
 
 1. Install what's missing in your environment: uv (curl -LsSf https://astral.sh/uv/install.sh | sh) and ffmpeg with ffprobe (apt-get install -y ffmpeg, your package manager, or a static build on PATH).
-2. Install Chromium for video rendering:
-   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' playwright install --with-deps chromium
+2. Install Chromium for video rendering, so the first video needs no download:
+   uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 playwright install --with-deps --only-shell chromium
    If you can't install system packages, drop --with-deps and tell me if Chromium fails to start.
 3. Add a stdio MCP server named showntell to your own MCP configuration, running inside this environment, not on a host outside it:
-   uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' showntell mcp --deliver file
-4. Run `uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' showntell doctor` and fix anything marked ✗ or about video export. The first run downloads the voice model, about 100 MB.
+   uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 showntell mcp --deliver file
+4. Run `uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 showntell doctor` and fix anything marked ✗, or about the browser or video export. The first run downloads the voice model, about 100 MB.
 5. If this environment is rebuilt between sessions, add steps 1 to 3 to whatever sets it up, so they persist.
 6. Once the tools appear (restart or reload MCP servers if you must), make a three-slide walkthrough on any topic, export it with export_walkthrough, and send me the MP4 as an attachment. If you have no way to attach files, tell me so instead of sending a path.
 ```
@@ -285,9 +285,10 @@ After [the final attempt](#L55) the error goes back to the caller.
 An output path ending in `.mp4` renders a video. Each frame is captured by seeking the player in headless Chromium, so rendering runs faster than real time and never drops a frame: a 4.4-minute walkthrough renders in 16 to 20 s on an M-series Mac.
 
 ```zsh
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' playwright install chromium   # once
-uvx --from 'showntell[video] @ git+https://github.com/rahimnathwani/showntell@v0.2.3' showntell export <id> talk.mp4
+uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.3 showntell export <id> talk.mp4
 ```
+
+The first export fetches the browser, about 100 MB, if the daemon has not already.
 
 | Part | What you get |
 |---|---|
@@ -347,7 +348,8 @@ Environment variables, also listed in [.env.example](.env.example). Command-line
 | **`SHOWNTELL_ONNX_MODEL`** | `model_quantized` | ONNX variant; `model` (fp32) can be faster on CPUs without AVX2 |
 | **`SHOWNTELL_THREADS`** | up to 6 | CPU threads for ONNX speech |
 | **`SHOWNTELL_DELIVER`** | `link` | `file`: the agent sends an exported MP4 instead of the player's link, for agents in a sandbox or behind a chat app |
-| **`SHOWNTELL_FINISH_CHECK`** | 1 | `0` skips drawing every slide headless at `finish_walkthrough` (needs Playwright) |
+| **`SHOWNTELL_FINISH_CHECK`** | 1 | `0` skips drawing every slide headless at `finish_walkthrough` |
+| **`SHOWNTELL_BROWSER`** | `auto` | `off` never fetches or starts the headless browser: no layout check at finish, previews, posters or MP4 export |
 
 Pronunciations: put `word = spoken form` lines in `~/.local/share/showntell/lexicon.txt`. A lowercase word matches any capitalisation, and the spoken form may be misaki phonemes between slashes (`kubectl = /kjˈubkˌʌtəl/`). showntell already knows several hundred technical terms.
 
@@ -356,7 +358,7 @@ Pronunciations: put `word = spoken form` lines in `~/.local/share/showntell/lexi
 - **Network:** showntell listens on localhost only, checks the Host and Origin of every request, and accepts only JSON POSTs.
 - **Links:** walkthrough ids are 128-bit random values; writing needs a separate key, which the agent gets and any MCP client on this machine can list.
 - **Files:** code and images are read only from the project folder. When the MCP client shares its folders, the project folder must be inside one of them, so an agent cannot show files from elsewhere on the machine. Git runs only plumbing commands with repository hooks and diff drivers disabled.
-- **Downloads:** the only network traffic is the first-run model download (and the ONNX model, if MLX ever fails on Apple silicon).
+- **Downloads:** the only network traffic is the first-run model download (and the ONNX model, if MLX ever fails on Apple silicon), then the headless browser from Playwright's CDN, once, unless `SHOWNTELL_BROWSER=off`.
 
 See [SECURITY.md](SECURITY.md) to report a problem.
 
