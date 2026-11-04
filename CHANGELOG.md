@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.4 (unreleased)
+## 0.2.4 (2026-11-04)
 
 - **Every feature in the plain install:** the layout check at `finish_walkthrough`, `preview_slides`, the poster and MP4 export needed the `video` extra and a manual `playwright install chromium`, so most installs had none of them. Playwright is now a base dependency (a 43 MB wheel on macOS, 48 MB on Linux), and the daemon fetches Playwright's Chromium headless shell itself (99 MiB on Apple silicon, 120 MiB on Linux x86_64; not the full Chromium, which `install chromium` adds for another 195 MB): once the voice model is ready and the narrator has gone idle, so it never competes with the voice download or a first link, at background priority (`taskpolicy -b` on macOS, `nice` elsewhere), and once. `showntell[video]` still resolves, as an alias.
 - **Graceful until ready:** while the browser downloads, finish replies at once without the layout check and says so (`no_browser`, "downloading (40% of 99 MiB)", and that `preview_slides` works once it is ready); previews say to try again shortly; `export_walkthrough` as MP4 waits for it within the time it already waits for narration; `showntell export … .mp4` fetches a missing browser in the foreground. A Linux host missing Chromium's libraries is told the `install-deps` command. `/health` reports the browser under `browser`, and `showntell doctor` reports its state: ready, downloading, not fetched yet, off, or unable to start.
