@@ -50,6 +50,22 @@ ALLOWED = [
 ]
 
 
+DEFAULT_DATA = Path.home() / ".local/share/showntell"
+
+
+def seed_models(src: Path, dst: Path) -> list[str]:
+    """Copy the models the user's daemon already downloaded (the spaCy English model) into the
+    eval's fresh data folder. Without them the first run of a round waits for a download that an
+    installed showntell does once, and its link time measures the network, not showntell."""
+    copied = []
+    if src.is_dir():
+        for d in sorted(src.iterdir()):
+            if d.is_dir() and not d.name.startswith(".") and ".part-" not in d.name and not (dst / d.name).exists():
+                shutil.copytree(d, dst / d.name)
+                copied.append(d.name)
+    return copied
+
+
 async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: bool) -> dict:
     cfg = {
         "mcpServers": {
@@ -74,6 +90,9 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
         "--output-format",
         "stream-json",
         "--verbose",
+        # Token-level events: when each request went out, its first token and its output size,
+        # so the wait before the second slide splits into reading and writing.
+        "--include-partial-messages",
         "--allowedTools",
         *ALLOWED,
     ]
@@ -83,7 +102,8 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
     proc = await asyncio.create_subprocess_exec(
         *cmd, cwd=ROOT, stdout=asyncio.subprocess.PIPE, stderr=err_file, stdin=asyncio.subprocess.DEVNULL, limit=1 << 24
     )
-    marks: dict = {"tool_calls": [], "issues": 0, "player_issues": 0, "issue_codes": {}}
+    marks: dict = {"tool_calls": [], "tool_results": [], "messages": [], "issues": 0, "player_issues": 0, "issue_codes": {}}
+    sent_at = 0.0  # when the latest model request went out
     player_task = None
     url = None
     tool_names: dict[str, str] = {}
@@ -97,7 +117,11 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
                     ev = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if ev.get("type") == "assistant":
+                if ev.get("type") == "system" and ev.get("status") == "requesting":
+                    sent_at = now
+                elif ev.get("type") == "stream_event":
+                    note_stream(marks["messages"], ev.get("event") or {}, now, sent_at)
+                elif ev.get("type") == "assistant":
                     for block in ev["message"].get("content", []):
                         if block.get("type") == "tool_use":
                             name = block["name"].split("__")[-1]
@@ -106,6 +130,9 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
                             marks["tool_calls"].append((round(now, 2), name))
                             if name == "start_walkthrough":
                                 marks.setdefault("start_call", now)
+                            if name == "add_slides":
+                                md = str(block.get("input", {}).get("markdown", ""))
+                                marks.setdefault("adds", []).append((round(now, 2), len(md), count_slides(md)))
                         elif block.get("type") == "text" and URL_RE.search(block.get("text", "")) and "link_shared" not in marks:
                             marks["link_shared"] = now
                 elif ev.get("type") == "user":
@@ -113,6 +140,8 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
                         if block.get("type") != "tool_result":
                             continue
                         name = tool_names.get(block.get("tool_use_id"), "")
+                        marks["tool_results"].append((round(now, 2), name))
+                        sent_at = now
                         text = (
                             block["content"]
                             if isinstance(block["content"], str)
@@ -170,7 +199,87 @@ async def run_agent(prompt: dict, model: str, data_dir: Path, port: int, play: b
         marks["player"] = await player_task
     if "start_call" in marks and "playable_at" in marks:
         marks["link_after_start"] = round(marks["playable_at"] - marks["start_call"], 2)
+    marks.update(start_metrics(marks))
     return marks
+
+
+def note_stream(msgs: list[dict], e: dict, now: float, sent_at: float) -> None:
+    """Fold one token-level event into the list of model messages: when its request went out,
+    its first token arrived, its first content token arrived and it ended, and its token counts."""
+    t = e.get("type")
+    if t == "message_start":
+        u = (e.get("message") or {}).get("usage") or {}
+        tokens_in = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        msgs.append({"sent": round(sent_at, 2), "first": round(now, 2), "in": tokens_in, "out": 0})
+    elif msgs and t == "content_block_delta":
+        msgs[-1].setdefault("content", round(now, 2))
+    elif msgs and t == "message_delta":
+        msgs[-1]["out"] = ((e.get("usage") or {}).get("output_tokens")) or msgs[-1]["out"]
+    elif msgs and t == "message_stop":
+        msgs[-1]["end"] = round(now, 2)
+
+
+def count_slides(md: str) -> int:
+    """Slides in a piece of Markdown: headings outside code fences."""
+    n, fence = 0, False
+    for line in md.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence and re.match(r"#{1,3} ", line):
+            n += 1
+    return n
+
+
+IGNORED_BEFORE_START = ("ToolSearch",)  # Claude Code loading the showntell tools, not research
+
+
+def start_metrics(marks: dict) -> dict:
+    """How soon the agent started and how long the opening had to carry the player alone.
+
+    `start_s`: seconds from launch to the start_walkthrough call. `tools_before_start`: the other
+    tools called before it, without ToolSearch. `gap2_s`: from the link becoming playable to the
+    add_slides call carrying the first slide after the opening. That gap splits into `gap2_wait_s`
+    (requests sent but no token back yet: reading the context, the guide included),
+    `gap2_write_s` (tokens streaming: writing the reply, the slide included) and `gap2_other_s`
+    (tool calls run and everything else). `start_reply_tokens` is how many tokens the start reply
+    added to the context, the guide included."""
+    calls = marks.get("tool_calls", [])
+    out: dict = {}
+    start = marks.get("start_call")
+    if start is None:
+        return out
+    out["start_s"] = round(start, 1)
+    first = next(i for i, (_, n) in enumerate(calls) if n == "start_walkthrough")
+    out["tools_before_start"] = [n for _, n in calls[:first] if n not in IGNORED_BEFORE_START]
+    playable = marks.get("playable_at")
+    if playable is None:
+        return out
+    # The opening went in start_walkthrough, or else in the first add_slides call.
+    adds = [t for t, n in calls if n == "add_slides" and t > start]
+    if not marks.get("opening_in_start", True):
+        adds = adds[1:]
+    nxt = next((t for t in adds if t >= playable - 0.01), None)
+    if nxt is None:
+        return out
+    gap = nxt - playable
+    window = [m for m in marks.get("messages", []) if m["first"] > playable and m["first"] <= nxt]
+    wait = sum(m["first"] - max(m["sent"], playable) for m in window)
+    write = sum(min(m.get("end", nxt), nxt) - m["first"] for m in window)
+    out.update(
+        gap2_s=round(gap, 1),
+        gap2_wait_s=round(wait, 1),
+        gap2_write_s=round(write, 1),
+        gap2_other_s=round(gap - wait - write, 1),
+        gap2_out_tokens=sum(m["out"] for m in window),
+        gap2_tools=[n for t, n in calls if playable < t < nxt],
+    )
+    sent = next((a for a in marks.get("adds", []) if a[0] == nxt), None)
+    if sent:
+        out.update(gap2_chars=sent[1], gap2_slides=sent[2])
+    before = [m for m in marks.get("messages", []) if m["first"] <= playable]
+    if window and before:
+        out["start_reply_tokens"] = window[0]["in"] - before[-1]["in"] - before[-1]["out"]
+    return out
 
 
 async def play_live(url: str, run_start: float) -> dict:
@@ -422,6 +531,9 @@ def summarize(w: Walkthrough | None, expect: list[str] | None = None) -> dict:
         "quiz": any(s.visual.get("style") == "quiz" for s in content),
         "features": sorted(used),
         "slides": len(w.slides),
+        # Seconds of speech on the title slide: how long the opening carries the player alone.
+        "opening_s": round(sum(x.duration for x in w.slides[0].says if x.text), 1) if w.slides else None,
+        "opening": " ".join(x.text for x in w.slides[0].says if x.text) if w.slides else "",
         "paragraphs": len(says),
         "duration_s": round(sum(x.duration for x in says), 1),
         "s_per_slide": round(sum(per) / len(per), 1) if per else None,
@@ -458,6 +570,7 @@ async def main() -> None:
     ap.add_argument("--no-play", action="store_true")
     ap.add_argument("--no-asr", action="store_true")
     ap.add_argument("--keep", action="store_true", help="keep the data folder")
+    ap.add_argument("--cold", action="store_true", help="don't copy cached models: the daemon downloads them, as on first install")
     ap.add_argument("--rescore", help="recompute the summary and speech checks for this results file (needs --data)")
     ap.add_argument("--data", help="data folder of the run being rescored")
     args = ap.parse_args()
@@ -466,6 +579,7 @@ async def main() -> None:
         expect = {p["id"]: p.get("expect") for p in json.loads(Path(args.prompts).read_text())}
         for r in results:
             w = walkthrough_for(Path(args.data), r.get("url"))
+            r.update(start_metrics(r))
             if w:
                 r["summary"] = summarize(w, expect.get(r["id"]))
                 if not args.no_asr:
@@ -477,6 +591,8 @@ async def main() -> None:
     all_prompts = json.loads(Path(args.prompts).read_text())
     prompts = all_prompts if args.runs == "all" else [p for p in all_prompts if p["id"] in args.runs.split(",")]
     data_dir = Path(tempfile.mkdtemp(prefix="showntell-eval-"))
+    if not args.cold:
+        seed_models(DEFAULT_DATA / "models", data_dir / "models")
     jobs = [(p, m) for m in args.models.split(",") for p in prompts]
     sem = asyncio.Semaphore(args.parallel)
     # Speech recognition runs one deck at a time: mlx-whisper's numba layer aborts the whole
@@ -529,9 +645,15 @@ async def main() -> None:
         shutil.rmtree(data_dir, ignore_errors=True)
 
 
+def gap_split(r: dict) -> str:
+    if "gap2_s" not in r:
+        return "-"
+    return f"{r['gap2_wait_s']}/{r['gap2_write_s']}/{r['gap2_other_s']}"
+
+
 def print_table(results: list[dict]) -> None:
     head = (
-        "| run | model | link s | first sound s | total s | cost | slides | min | issues | render err | stalls | stall s | longest wait s | cue acc | missing/min | preview "
+        "| run | model | start s | tools before | link s | gap2 s | wait/write/other s | opening s | first sound s | total s | cost | slides | min | issues | render err | stalls | stall s | longest wait s | cue acc | missing/min | preview "
         "| s/slide | s/change | >20 s | zooms | multi-shot | forced | decode | quiz | small text | plain | fit | variety | layouts | takeaways | icons "
         "| alike | features |"
     )
@@ -539,7 +661,9 @@ def print_table(results: list[dict]) -> None:
     for r in sorted(results, key=lambda r: (r["model"], r["id"])):
         s, pl, a = r.get("summary", {}), r.get("player", {}), r.get("asr", {})
         print(
-            f"| {r['id']} | {r['model']} | {r.get('link_after_start', '-')} | {pl.get('first_sound_s') or '-'} | {r.get('finished_at', 0):.0f} | "
+            f"| {r['id']} | {r['model']} | {r.get('start_s', '-')} | {len(r['tools_before_start']) if 'tools_before_start' in r else '-'} | "
+            f"{r.get('link_after_start', '-')} | {r.get('gap2_s', '-')} | {gap_split(r)} | {s.get('opening_s', '-')} | "
+            f"{pl.get('first_sound_s') or '-'} | {r.get('finished_at', 0):.0f} | "
             f"${r.get('cost') or 0:.2f} | {s.get('slides', '-')} | {s.get('duration_s', 0) / 60:.1f} | {r['issues']} | "
             f"{len(pl.get('render_errors', [])) if pl else '-'} | {pl.get('stalls', '-')} | {pl.get('stall_s', '-')} | "
             f"{pl.get('longest_stall_s', '-')} | "
