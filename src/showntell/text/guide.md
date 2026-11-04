@@ -14,7 +14,7 @@ Settle the arc before the next call: a viewer cannot skim back.
 - **Length by purpose:** a concept or how-X-works piece, 1 to 2 minutes (150 to 300 spoken words); a code change or review, 2 to 4 minutes (300 to 600). Replies give the running length; past four minutes they warn (`too_long`): finish, or save the rest for a second walkthrough.
 - **Chapters:** past about twelve slides, open each part with a `## Title {.chapter}` card; narration optional.
 - **Analogies** only when they do real work: at most one per idea, each part tied to something on screen, never the opening, not revisited once made.
-- **Read first:** open the files and diffs before writing; if playback catches up, the player pauses.
+- **Read in steps:** read what the next slide needs, send it, then read on; a long read between calls lets playback catch up, and the player pauses.
 - **Show behaviour.** After two or three code or diff slides, show the code running: a Mermaid sequence or state diagram, or a terminal (`code_run`).
 - **Show the thing.** A concept explainer draws what it explains: the sun, the ray, the lens. Mermaid is for flows, structure and states, not objects.
 - **Change in place.** When a drawn thing changes state between slides (a part moving, a value growing), redraw it on the next slide with `{.morph}` on the heading and the same `id`s on what moves: it glides instead of cutting.

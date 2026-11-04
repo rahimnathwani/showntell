@@ -1,7 +1,7 @@
 {
   "start_walkthrough": {
     "title": "Start walkthrough",
-    "description": "Create a narrated walkthrough. Pass its opening in `opening`: the reply then comes once that is voiced, with the handle, the playable link and the full authoring guide. Send the link to the user at once, in a message, before your next tool call; they watch while you add the body with add_slides. Without `opening`, the reply is short and your first add_slides call must carry the opening instead.",
+    "description": "Create a narrated walkthrough. Call it first, before reading files or researching: the opening plays while you do. Pass its opening in `opening`: the reply then comes once that is voiced, with the handle, the playable link and the full authoring guide. Send the link to the user at once, in a message, before your next tool call; they watch while you add the body with add_slides. Without `opening`, the reply is short and your first add_slides call must carry the opening instead.",
     "args": {
       "title": "Walkthrough title, shown on the title slide and in the player. Lead with the subject's keywords; under about 50 characters fits the title slide.",
       "description": "One or two sentences on what the walkthrough covers and for whom, up to 200 characters. Shown in the list and gallery and written into exported files as metadata; never spoken or shown on a slide.",
@@ -9,7 +9,7 @@
       "voice": "English Kokoro voice id. Omit for the default. Voices:",
       "speed": "Speech rate from 0.8 to 1.3; 1.0 is normal.",
       "project_dir": "Absolute path of the project. Code blocks with file= and image paths are read from it and must stay inside it. Defaults to the client's root, then the server's working directory.",
-      "opening": "The opening in Markdown, voiced before this call returns: a `#` title heading, an optional `>` subtitle line, then one or two short spoken sentences as a plain paragraph. Nothing more; the body goes in add_slides. Example:\n# How the retry loop works\n> Backoff in the HTTP client\n\nA failed request can be sent up to four times. We'll follow one through the client.",
+      "opening": "The opening in Markdown, voiced before this call returns: a `#` title heading, an optional `>` subtitle line, then one or two short spoken sentences as a plain paragraph that hold without research: the question, the goal or why it matters, and any fact the request gives; what you have yet to read waits for later slides. Nothing more; the body goes in add_slides. Example:\n# How the retry loop works\n> Backoff in the HTTP client\n\nA failed request can be sent up to four times. We'll follow one through the client.",
       "theme": "Colour theme: dark (default), light, paper (warm light), night (indigo and pink), ocean (teal and coral), studio (bright, violet) or contrast (high contrast). Pick one that suits the subject. Omit to use the project's showntell.theme.json or the default. Viewers can switch it."
     }
   },
