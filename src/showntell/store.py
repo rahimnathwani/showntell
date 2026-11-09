@@ -517,7 +517,7 @@ class Session:
         if self.staged:  # source.md already has them: a restart voices them and swaps them in
             state["staged"] = [asdict(x) for x in self.staged.values()]
         tmp.write_text(json.dumps(state))
-        tmp.rename(d / "state.json")
+        tmp.replace(d / "state.json")
         (d / "source.md").write_text(self.source)
         self.store._remember(self.w.id, state, (d / "state.json").stat().st_mtime_ns)
 

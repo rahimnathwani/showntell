@@ -216,7 +216,7 @@ class Narrator:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.cache_dir / f"{job.key}.part.wav"
         sf.write(tmp, np.clip(audio, -1, 1), SAMPLE_RATE, subtype="PCM_16", format="WAV")
-        tmp.rename(self.audio_path(job.key))
+        tmp.replace(self.audio_path(job.key))
         (self.cache_dir / f"{job.key}.json").write_text(json.dumps(result))
         self.stats["jobs"] += 1
         self.stats["audio_s"] += duration
