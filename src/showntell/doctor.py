@@ -117,7 +117,7 @@ def doctor(cfg: Config, args) -> None:
     try:
         cfg.data_dir.mkdir(parents=True, exist_ok=True)
         probe = cfg.data_dir / ".doctor"
-        probe.write_text("ok")
+        probe.write_text("ok", encoding="utf-8")
         probe.unlink()
         _row(OK, "data folder", str(cfg.data_dir))
     except OSError as e:

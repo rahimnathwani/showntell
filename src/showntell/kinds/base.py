@@ -55,7 +55,7 @@ class Kind:
 @functools.cache
 def catalogue_format(name: str) -> str:
     """A kind's `format` entry in text/kinds.json, the same text the slide-kinds resource gives."""
-    for k in json.loads(CATALOGUE.read_text())["kinds"]:
+    for k in json.loads(CATALOGUE.read_text(encoding="utf-8"))["kinds"]:
         if k["kind"] == name:
             return k.get("format", "")
     return ""

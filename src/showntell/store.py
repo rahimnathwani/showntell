@@ -516,9 +516,9 @@ class Session:
         state = self.w.to_state()
         if self.staged:  # source.md already has them: a restart voices them and swaps them in
             state["staged"] = [asdict(x) for x in self.staged.values()]
-        tmp.write_text(json.dumps(state))
+        tmp.write_text(json.dumps(state), encoding="utf-8")
         tmp.replace(d / "state.json")
-        (d / "source.md").write_text(self.source)
+        (d / "source.md").write_text(self.source, encoding="utf-8")
         self.store._remember(self.w.id, state, (d / "state.json").stat().st_mtime_ns)
 
     def close(self) -> None:
@@ -642,7 +642,7 @@ class Store:
         if not path.is_file():
             return None
         try:
-            d = json.loads(path.read_text())
+            d = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             log.warning("unreadable state for %s", wid)
             return None
@@ -651,7 +651,7 @@ class Store:
         w = Walkthrough.from_state(d)
         s = Session(self, w)
         src = self.walk_dir(wid) / "source.md"
-        s.source = src.read_text() if src.is_file() else ""
+        s.source = src.read_text(encoding="utf-8") if src.is_file() else ""
         # Rebuild the parser position so later appends continue cleanly.
         s.builder.parser = Parser()
         s.builder.parser.started = True
@@ -726,7 +726,7 @@ class Store:
         if hit and hit[0] == mtime:
             return hit[1]
         try:
-            return self._remember(wid, json.loads(st.read_text()), mtime)
+            return self._remember(wid, json.loads(st.read_text(encoding="utf-8")), mtime)
         except (OSError, ValueError, KeyError, TypeError):
             return None
 

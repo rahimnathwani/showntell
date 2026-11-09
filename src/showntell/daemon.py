@@ -64,7 +64,7 @@ def instance_lock(cfg: Config) -> FileLock | None:
 
 def read_lock(cfg: Config) -> dict | None:
     try:
-        return json.loads(cfg.lockfile.read_text())
+        return json.loads(cfg.lockfile.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 

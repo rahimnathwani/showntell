@@ -159,11 +159,11 @@ class StubLogin:
         saved: dict[str, str] = {}
         if path.is_file():
             try:
-                saved = json.loads(path.read_text())
+                saved = json.loads(path.read_text(encoding="utf-8"))
             except ValueError:
                 saved = {}
         tokens = {e: saved.get(e) or f"dev-{secrets.token_urlsafe(24)}" for e in emails}
-        path.write_text(json.dumps(tokens, indent=1))
+        path.write_text(json.dumps(tokens, indent=1), encoding="utf-8")
         os.chmod(path, 0o600)
         return cls(tokens)
 

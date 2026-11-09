@@ -127,7 +127,7 @@ def installed() -> bool:
     try:
         import playwright
 
-        meta = json.loads((Path(playwright.__file__).parent / "driver" / "package" / "browsers.json").read_text())
+        meta = json.loads((Path(playwright.__file__).parent / "driver" / "package" / "browsers.json").read_text(encoding="utf-8"))
         rev = next(b["revision"] for b in meta["browsers"] if b["name"] == "chromium-headless-shell")
         root = _registry()
     except Exception:  # Playwright missing, or laid out differently: let a launch decide
