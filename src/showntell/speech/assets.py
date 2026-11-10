@@ -133,7 +133,7 @@ def ensure_spacy(data_dir: Path, status: Status | None = None) -> Path | None:
         if not (tmp / "config.cfg").is_file():
             raise RuntimeError("the spaCy model archive had an unexpected layout")
         try:
-            tmp.rename(target)
+            tmp.replace(target)
         except OSError:
             if not (target / "config.cfg").is_file():  # not another process finishing first
                 raise

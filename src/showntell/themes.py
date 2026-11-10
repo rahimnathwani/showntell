@@ -16,7 +16,7 @@ _COLOR = re.compile(r"^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\
 
 def token_names() -> list[str]:
     """Colour tokens defined by the default theme in themes.css."""
-    css = CSS.read_text()
+    css = CSS.read_text(encoding="utf-8")
     block = css[css.index(":root") : css.index("}", css.index(":root"))]
     return [n for n in re.findall(r"--([a-z0-9-]+):", block) if n != "scheme"]
 
@@ -45,7 +45,7 @@ def project_theme(root: str | None) -> tuple[str | None, dict, list[str]]:
     if not p.is_file():
         return None, {}, []
     try:
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         return None, {}, [f"{PROJECT_FILE} is not valid JSON: {e}"]
     theme = d.get("theme")

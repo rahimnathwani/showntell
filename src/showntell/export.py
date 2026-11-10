@@ -136,7 +136,7 @@ def export(
     state = data_dir / "walkthroughs" / wid / "state.json"
     if not state.is_file():
         raise SystemExit(f"no walkthrough {wid} in {data_dir}")
-    w = Walkthrough.from_state(json.loads(state.read_text()))
+    w = Walkthrough.from_state(json.loads(state.read_text(encoding="utf-8")))
     pending = [x for s in w.slides for x in s.says if x.text and x.status != "ready"]
     if pending:
         print(f"warning: {len(pending)} paragraph(s) have no audio yet and will be shown without sound", file=sys.stderr)
@@ -172,22 +172,23 @@ def export(
             else:
                 shutil.copyfile(src, out / "audio" / f"{key}.wav")
     data["status"] = "finished"
-    (out / "data.json").write_text(json.dumps(data))
+    (out / "data.json").write_text(json.dumps(data), encoding="utf-8")
     (out / "index.html").write_text(
-        render_player(w.title, w.frame, "", static_href, live=False, theme=w.theme, tokens=w.tokens, description=w.description)
+        render_player(w.title, w.frame, "", static_href, live=False, theme=w.theme, tokens=w.tokens, description=w.description),
+        encoding="utf-8",
     )
-    (out / "captions.vtt").write_text(vtt(w))
+    (out / "captions.vtt").write_text(vtt(w), encoding="utf-8")
     src_md = data_dir / "walkthroughs" / wid / "source.md"
     if src_md.is_file():
-        (out / "source.md").write_text(src_md.read_text())
+        (out / "source.md").write_text(src_md.read_text(encoding="utf-8"))
     if poster and copy_static and (write_poster(out) or _copy_poster(data_dir / "walkthroughs" / wid, out)):
-        page = (out / "index.html").read_text()
+        page = (out / "index.html").read_text(encoding="utf-8")
         meta = (
             '<meta property="og:image" content="poster.png">\n'
             '<meta name="twitter:card" content="summary_large_image">\n'
             '<meta name="twitter:image" content="poster.png">\n'
         )
-        (out / "index.html").write_text(page.replace("</head>", meta + "</head>", 1))
+        (out / "index.html").write_text(page.replace("</head>", meta + "</head>", 1), encoding="utf-8")
     return out
 
 
@@ -245,14 +246,14 @@ def _modules() -> dict[str, str]:
             target = posixpath.normpath(posixpath.join(here, m.group(3)))
             return f"{m.group(1)}{m.group(2)}showntell/js/{target}{m.group(2)}"
 
-        code = _IMPORT_RE.sub(bare, f.read_text())
+        code = _IMPORT_RE.sub(bare, f.read_text(encoding="utf-8"))
         out[f"showntell/js/{f.relative_to(root).as_posix()}"] = "data:text/javascript;base64," + base64.b64encode(code.encode()).decode()
     return out
 
 
 def _katex_css() -> str:
     """KaTeX's stylesheet with its fonts inside it (woff2 only, which every current browser reads)."""
-    css = (STATIC / "vendor" / "katex" / "katex.min.css").read_text()
+    css = (STATIC / "vendor" / "katex" / "katex.min.css").read_text(encoding="utf-8")
     fonts = STATIC / "vendor" / "katex" / "fonts"
 
     def src(m: re.Match) -> str:
@@ -268,7 +269,7 @@ def _library(rel: str) -> str | dict:
     import base64
     import gzip
 
-    text = (STATIC / rel).read_text()
+    text = (STATIC / rel).read_text(encoding="utf-8")
     if rel.endswith("highlight.min.js") or len(text) < GZIP_OVER:
         return text
     return {"gzip": base64.b64encode(gzip.compress(text.encode(), 9, mtime=0)).decode()}
@@ -310,7 +311,7 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
 
     with tempfile.TemporaryDirectory() as tmp:
         folder = export(data_dir, wid, Path(tmp) / "w", mp3=True, copy_static=False)
-        data = json.loads((folder / "data.json").read_text())
+        data = json.loads((folder / "data.json").read_text(encoding="utf-8"))
         for slide in data["slides"]:
             for say in slide["says"]:
                 if say.get("audio"):
@@ -318,7 +319,7 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
             v = slide.get("visual") or {}
             if slide["kind"] == "image" and str(v.get("src", "")).startswith("assets/"):
                 v["src"] = _data_uri(folder / v["src"])
-    w = Walkthrough.from_state(json.loads((data_dir / "walkthroughs" / wid / "state.json").read_text()))
+    w = Walkthrough.from_state(json.loads((data_dir / "walkthroughs" / wid / "state.json").read_text(encoding="utf-8")))
     files: dict[str, str | dict] = {}
     for kind in sorted({s["kind"] for s in data["slides"]}):
         for rel in LIBRARIES.get(kind, []):
@@ -328,7 +329,7 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
         files["vendor/fonts/Virgil.woff2"] = _data_uri(STATIC / "vendor/fonts/Virgil.woff2")
 
     page = render_player(w.title, w.frame, "", "__STATIC__", live=False, theme=w.theme, tokens=w.tokens, description=w.description)
-    css = "\n".join((STATIC / n).read_text() for n in ("themes.css", "player.css"))
+    css = "\n".join((STATIC / n).read_text(encoding="utf-8") for n in ("themes.css", "player.css"))
     # The player's own faces travel inside the stylesheet, as KaTeX's do.
     css = re.sub(r'url\("(vendor/fonts/[^"]+\.woff2)"\)', lambda m: f'url("{_data_uri(STATIC / m.group(1))}")', css)
     if "</style" in css:
@@ -343,7 +344,9 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
         '<link rel="stylesheet" href="__STATIC__/themes.css">\n<link rel="stylesheet" href="__STATIC__/player.css">',
         f"<style>\n{css}\n</style>",
     )
-    page = _swap(page, '<script src="__STATIC__/boot.js"></script>', f"<script>\n{(STATIC / 'boot.js').read_text()}</script>")
+    page = _swap(
+        page, '<script src="__STATIC__/boot.js"></script>', f"<script>\n{(STATIC / 'boot.js').read_text(encoding='utf-8')}</script>"
+    )
     page = _swap(page, '<script src="__STATIC__/vendor/hljs/highlight.min.js"></script>\n', "")
     page = _swap(
         page,
@@ -361,7 +364,7 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
     if "__STATIC__" in page:
         raise RuntimeError("player.html references a file the single page does not carry")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(page)
+    out.write_text(page, encoding="utf-8")
     return out
 
 
@@ -474,7 +477,7 @@ def _play_and_wait(cfg: Config, path: Path) -> str:
     from .service import RemoteService
 
     lock = daemon.ensure(cfg, log=lambda m: print(m, file=sys.stderr))
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     meta = file_meta(path, text)
 
     async def go() -> str:

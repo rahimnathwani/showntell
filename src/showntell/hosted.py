@@ -58,7 +58,7 @@ PROXY_HEADERS = (
 @functools.cache
 def _texts() -> dict:
     p = Path(__file__).parent / "text" / "hosted" / "replies.json"
-    return json.loads(p.read_text()) if p.is_file() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
 
 
 def say(name: str, default: str, **kw) -> str:

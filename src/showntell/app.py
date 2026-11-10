@@ -267,7 +267,7 @@ def load_lexicon(cfg: Config) -> dict[str, str]:
     """User word list: one `word = spoken form` per line."""
     out: dict[str, str] = {}
     if cfg.lexicon_file.is_file():
-        for line in cfg.lexicon_file.read_text().splitlines():
+        for line in cfg.lexicon_file.read_text(encoding="utf-8").splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 k, v = line.split("=", 1)
                 if k.strip() and v.strip():
