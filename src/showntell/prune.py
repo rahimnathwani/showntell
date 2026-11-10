@@ -31,7 +31,7 @@ def prune(data_dir: Path, older_than: float, dry_run: bool = False) -> dict:
     for d in sorted(walks.iterdir()) if walks.is_dir() else []:
         st = d / "state.json"
         try:
-            data = json.loads(st.read_text())
+            data = json.loads(st.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue  # not a walkthrough, or one being written: leave it
         if max(data.get("updated", 0), data.get("viewed", 0)) < cutoff:  # `viewed`: hosted mode only

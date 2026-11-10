@@ -90,7 +90,7 @@ def soundtrack(folder: Path, total: float, dest: Path) -> int:
     import numpy as np
     import soundfile as sf
 
-    data = json.loads((folder / "data.json").read_text())
+    data = json.loads((folder / "data.json").read_text(encoding="utf-8"))
     w = Walkthrough.from_state({**data, "key": "", "report_key": ""})
     audio_for = {x["id"]: x.get("audio") for s in data["slides"] for x in s["says"]}
     rate = 24000
@@ -248,7 +248,7 @@ async def _render_frames(
 
 
 def _has_cues(vtt: Path) -> bool:
-    return vtt.is_file() and "-->" in vtt.read_text()
+    return vtt.is_file() and "-->" in vtt.read_text(encoding="utf-8")
 
 
 def _mux(segs: list[Path], wav: Path, vtt: Path, out: Path, work: Path, title: str = "", description: str = "") -> None:
@@ -256,7 +256,7 @@ def _mux(segs: list[Path], wav: Path, vtt: Path, out: Path, work: Path, title: s
 
     level = level_filter(loudness(wav), sf.info(wav).samplerate)
     listing = work / "segments.txt"
-    listing.write_text("".join(f"file '{s.name}'\n" for s in segs))
+    listing.write_text("".join(f"file '{s.name}'\n" for s in segs), encoding="utf-8")
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-i", str(wav)]
     subs = _has_cues(vtt)
     if subs:
@@ -387,7 +387,7 @@ def render_mp4(
     with tempfile.TemporaryDirectory(prefix="showntell-mp4-") as tmp:
         work = Path(tmp)
         folder = export(data_dir, wid, work / "site")
-        w = Walkthrough.from_state({**json.loads((folder / "data.json").read_text()), "key": "", "report_key": ""})
+        w = Walkthrough.from_state({**json.loads((folder / "data.json").read_text(encoding="utf-8")), "key": "", "report_key": ""})
         total = timeline_total(w)
         n = max(1, round(total * fps))
         workers = max(1, min(workers, n))

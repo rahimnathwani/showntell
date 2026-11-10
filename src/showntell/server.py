@@ -51,7 +51,7 @@ def texts(deliver: str = "link", hosted: bool = False) -> dict:
         p = base / name
         if not p.is_file():
             return default
-        return json.loads(p.read_text()) if name.endswith(".json") else p.read_text()
+        return json.loads(p.read_text(encoding="utf-8")) if name.endswith(".json") else p.read_text(encoding="utf-8")
 
     out = {
         "instructions": load("instructions.md", "Narrated slide walkthroughs voiced locally."),
@@ -154,9 +154,13 @@ WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent
 
 
 def _roots(shared: ListRootsResult | None) -> list[str]:
-    from urllib.parse import unquote, urlparse
+    """The client's shared folders as local paths. `file:///D:/x` parses to the path `/D:/x`, which no
+    Windows path can be inside of; url2pathname gives the drive path there and leaves POSIX paths alone.
+    It also undoes the %-escapes, so the path must not be unquoted first: `a%2520b` names `a%20b`."""
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
 
-    return [unquote(urlparse(str(r.uri)).path) for r in (shared.roots if shared else []) if str(r.uri).startswith("file://")]
+    return [url2pathname(urlparse(str(r.uri)).path) for r in (shared.roots if shared else []) if str(r.uri).startswith("file://")]
 
 
 def _check_inside(shared: ListRootsResult | None, given: str, what: str) -> None:
@@ -610,7 +614,7 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         mime_type="application/json",
     )
     async def kinds_resource() -> str:
-        return (TEXT / "kinds.json").read_text()
+        return (TEXT / "kinds.json").read_text(encoding="utf-8")
 
     @mcp.resource(
         "showntell://walkthroughs/{wid}",
@@ -943,7 +947,7 @@ def render_player(
 ) -> str:
     from .themes import THEMES, clean_tokens, style_attr
 
-    page = (STATIC / "player.html").read_text()
+    page = (STATIC / "player.html").read_text(encoding="utf-8")
     theme = theme if theme in THEMES else "dark"
     style = html.escape(style_attr(clean_tokens(tokens or {})[0]))
     desc = html.escape(" ".join(description.split()))
@@ -989,7 +993,7 @@ def render_index(rows: list[dict], suffix: str, csrf: str = "", hosted: bool = F
             f"{button}</li>"
         )
     body = "\n".join(items) or '<li class="empty">No walkthroughs yet. Ask your coding agent for one.</li>'
-    page = (STATIC / "index.html").read_text().replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
+    page = (STATIC / "index.html").read_text(encoding="utf-8").replace("{{ROWS}}", body).replace("{{VERSION}}", __version__)
     # A hosted server voices them itself, and its users have no showntell to run.
     where, hint = (
         ("this server", "Ask your agent for a walkthrough.")

@@ -200,7 +200,7 @@ def play(cfg: Config, args) -> None:
     file = Path(args.file).expanduser().resolve()
     if not file.is_file():
         raise SystemExit(f"{file} not found")
-    text = file.read_text()
+    text = file.read_text(encoding="utf-8")
     meta = file_meta(file, text)
     project = Path(args.project).resolve() if args.project else _project_for(file)
     lock = daemon.ensure(cfg, log=lambda m: print(m, file=sys.stderr))
@@ -239,7 +239,7 @@ def list_cmd(cfg: Config) -> None:
     for d in walk.iterdir():
         st = d / "state.json"
         if st.is_file():
-            data = json.loads(st.read_text())
+            data = json.loads(st.read_text(encoding="utf-8"))
             dur = timeline_total(Walkthrough.from_state(data))
             rows.append((data.get("updated", 0), data["id"], data.get("title", ""), len(data.get("slides", [])), dur))
     for _, wid, title, n, dur in sorted(rows, reverse=True)[:30]:

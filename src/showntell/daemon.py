@@ -25,7 +25,7 @@ class FileLock:
 
     def acquire(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.fh = open(self.path, "a+")
+        self.fh = open(self.path, "a+", encoding="utf-8")
         try:
             if os.name == "nt":
                 import msvcrt
@@ -64,7 +64,7 @@ def instance_lock(cfg: Config) -> FileLock | None:
 
 def read_lock(cfg: Config) -> dict | None:
     try:
-        return json.loads(cfg.lockfile.read_text())
+        return json.loads(cfg.lockfile.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -73,7 +73,7 @@ def write_lock(cfg: Config, token: str) -> None:
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     tmp = cfg.lockfile.with_suffix(".part")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "pid": os.getpid(),

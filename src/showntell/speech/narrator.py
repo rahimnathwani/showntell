@@ -133,7 +133,7 @@ class Narrator:
         meta = self.cache_dir / f"{key}.json"
         if meta.is_file() and (self.cache_dir / f"{key}.wav").is_file():
             try:
-                return json.loads(meta.read_text())
+                return json.loads(meta.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 return None
         return None
@@ -216,8 +216,8 @@ class Narrator:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.cache_dir / f"{job.key}.part.wav"
         sf.write(tmp, np.clip(audio, -1, 1), SAMPLE_RATE, subtype="PCM_16", format="WAV")
-        tmp.rename(self.audio_path(job.key))
-        (self.cache_dir / f"{job.key}.json").write_text(json.dumps(result))
+        tmp.replace(self.audio_path(job.key))
+        (self.cache_dir / f"{job.key}.json").write_text(json.dumps(result), encoding="utf-8")
         self.stats["jobs"] += 1
         self.stats["audio_s"] += duration
         self.stats["compute_s"] += compute

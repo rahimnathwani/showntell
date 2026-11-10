@@ -19,7 +19,7 @@ LEADING = re.compile(r"^:([a-z0-9]+(?:-[a-z0-9]+)*):\s*")
 
 @lru_cache(maxsize=1)
 def _data() -> dict:
-    return json.loads(FILE.read_text())
+    return json.loads(FILE.read_text(encoding="utf-8"))
 
 
 def get(name: str) -> str | None:

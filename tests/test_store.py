@@ -571,6 +571,24 @@ async def test_state_is_saved_and_reloaded_by_a_fresh_store(service, store, tmp_
     assert (await LocalService(fresh).playable(r["handle"], 0.1))["status"] == "ready"
 
 
+def test_saving_again_replaces_the_state_where_rename_cannot_overwrite(store, monkeypatch):
+    """Path.rename fails on Windows when the target exists, which broke every save after the first."""
+    import pathlib
+
+    def windows_rename(self, target):
+        if pathlib.Path(target).exists():
+            raise FileExistsError(183, "Cannot create a file when that file already exists", str(target))
+        return os.rename(self, target)
+
+    monkeypatch.setattr(pathlib.Path, "rename", windows_rename)
+    s = store.create("First")
+    s.save_now()
+    s.w.title = "Second"
+    s.save_now()
+    state = json.loads((store.walk_dir(s.w.id) / "state.json").read_text(encoding="utf-8"))
+    assert state["title"] == "Second"
+
+
 async def test_pending_narration_is_queued_again_after_reload(tmp_path, idle_narrator, narrator, voiced):
     first = Store(tmp_path / "data", "http://localhost:4799", idle_narrator)
     first.loop = asyncio.get_running_loop()
