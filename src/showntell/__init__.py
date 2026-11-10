@@ -1,6 +1,6 @@
 """showntell: narrated slide walkthroughs for coding agents, voiced on your machine."""
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 
 def main() -> None:

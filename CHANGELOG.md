@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 (2026-11-10)
 
 - **Windows: project folders found:** a client's shared folder `file:///D:/x` parsed to `/D:/x`, inside which no Windows path lies, so every `start_walkthrough` from Claude Code failed with "outside the folders this client shares". Roots go through `url2pathname`, which also undoes %-escapes exactly once (a folder named `a%20b` stays `a%20b`).
 - **Windows: state saved after the first save:** `Path.rename` refuses to overwrite there (WinError 183), so a walkthrough lost its state on restart and `finish_walkthrough` returned 500. Saves, the narration cache and model downloads use `Path.replace`.
