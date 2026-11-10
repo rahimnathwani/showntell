@@ -180,7 +180,7 @@ def export(
     (out / "captions.vtt").write_text(vtt(w), encoding="utf-8")
     src_md = data_dir / "walkthroughs" / wid / "source.md"
     if src_md.is_file():
-        (out / "source.md").write_text(src_md.read_text(encoding="utf-8"))
+        (out / "source.md").write_text(src_md.read_text(encoding="utf-8"), encoding="utf-8")
     if poster and copy_static and (write_poster(out) or _copy_poster(data_dir / "walkthroughs" / wid, out)):
         page = (out / "index.html").read_text(encoding="utf-8")
         meta = (

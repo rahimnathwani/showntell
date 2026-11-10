@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Windows: project folders found:** a client's shared folder `file:///D:/x` parsed to `/D:/x`, inside which no Windows path lies, so every `start_walkthrough` from Claude Code failed with "outside the folders this client shares". Roots go through `url2pathname`, which also undoes %-escapes exactly once (a folder named `a%20b` stays `a%20b`).
+- **Windows: state saved after the first save:** `Path.rename` refuses to overwrite there (WinError 183), so a walkthrough lost its state on restart and `finish_walkthrough` returned 500. Saves, the narration cache and model downloads use `Path.replace`.
+- **Windows: UTF-8 whatever the locale:** text files were read in the locale's encoding, cp1252 on most Windows machines, so the player page returned 500 and `showntell doctor` crashed printing a check mark. Every text read and write names UTF-8, and a test fails on one that does not.
+
 ## 0.2.4 (2026-11-04)
 
 - **Every feature in the plain install:** the layout check at `finish_walkthrough`, `preview_slides`, the poster and MP4 export needed the `video` extra and a manual `playwright install chromium`, so most installs had none of them. Playwright is now a base dependency (a 43 MB wheel on macOS, 48 MB on Linux), and the daemon fetches Playwright's Chromium headless shell itself (99 MiB on Apple silicon, 120 MiB on Linux x86_64; not the full Chromium, which `install chromium` adds for another 195 MB): once the voice model is ready and the narrator has gone idle, so it never competes with the voice download or a first link, at background priority (`taskpolicy -b` on macOS, `nice` elsewhere), and once. `showntell[video]` still resolves, as an alias.

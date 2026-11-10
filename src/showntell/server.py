@@ -155,11 +155,12 @@ WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent
 
 def _roots(shared: ListRootsResult | None) -> list[str]:
     """The client's shared folders as local paths. `file:///D:/x` parses to the path `/D:/x`, which no
-    Windows path can be inside of; url2pathname gives the drive path there and leaves POSIX paths alone."""
-    from urllib.parse import unquote, urlparse
+    Windows path can be inside of; url2pathname gives the drive path there and leaves POSIX paths alone.
+    It also undoes the %-escapes, so the path must not be unquoted first: `a%2520b` names `a%20b`."""
+    from urllib.parse import urlparse
     from urllib.request import url2pathname
 
-    return [url2pathname(unquote(urlparse(str(r.uri)).path)) for r in (shared.roots if shared else []) if str(r.uri).startswith("file://")]
+    return [url2pathname(urlparse(str(r.uri)).path) for r in (shared.roots if shared else []) if str(r.uri).startswith("file://")]
 
 
 def _check_inside(shared: ListRootsResult | None, given: str, what: str) -> None:

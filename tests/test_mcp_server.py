@@ -116,6 +116,24 @@ async def test_project_dir_must_be_inside_a_folder_the_client_shares(service, tm
         assert str(shared) in text(r)  # the first shared folder, when none is given
 
 
+def test_shared_roots_become_local_paths(monkeypatch):
+    """`file:///D:/x` must come back as `D:\\x` on Windows, and escapes are undone exactly once."""
+    import nturl2path
+    import urllib.request
+
+    from mcp_types import ListRootsResult, Root
+
+    from showntell.server import _roots
+
+    def shared(*uris):
+        return ListRootsResult(roots=[Root(uri=u) for u in uris])
+
+    assert _roots(shared("file:///Users/me/My%20Code", "file:///tmp/a%2520b")) == ["/Users/me/My Code", "/tmp/a%20b"]
+    assert _roots(None) == []
+    monkeypatch.setattr(urllib.request, "url2pathname", nturl2path.url2pathname)  # what Windows uses
+    assert _roots(shared("file:///D:/One%20Drive/proj")) == ["D:\\One Drive\\proj"]
+
+
 async def test_start_with_opening_returns_the_playable_link(mcp):
     """The opening can ride along with the start call, saving a model round trip."""
     async with mcp as client:
