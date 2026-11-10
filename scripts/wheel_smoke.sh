@@ -34,7 +34,7 @@ This walkthrough checks the installed wheel.
 - parse
 - voice
 
-First [parse](#parse), then [voice](#voice).
+First [parse](#parse) the Markdown file into slides and their cues, and only then [voice](#voice) each paragraph.
 EOF
 
 echo "== play"
