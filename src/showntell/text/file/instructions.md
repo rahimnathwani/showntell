@@ -14,4 +14,4 @@ Pick the frame by content: the user likely watches on a phone. portrait fills th
 
 export_walkthrough keeps an MP4 within 16 MB by default, WhatsApp's video limit; pass max_mb for other channels: Telegram bots 50, Signal 100, email often 25. If it cannot fit, split the walkthrough into parts or raise the limit. Rendering takes about a tenth of the video's length plus a few seconds. format html saves one page that plays offline in a browser, for a user who would rather open it on a computer.
 
-To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, replace slides with revise_slide, then export again and send the new file.
+To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, replace slides with revise_slide, insert them with add_slides `after`, or move and remove them with arrange_slides, then export again and send the new file.

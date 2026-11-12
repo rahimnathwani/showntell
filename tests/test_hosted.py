@@ -224,6 +224,8 @@ def test_identity_resolves_tokens_and_cookies():
 WRITE_TOOLS = [
     ("add_slides", {"markdown": BODY}),
     ("revise_slide", {"slide": "lookup", "markdown": "It changed."}),
+    ("add_slides", {"after": "lookup", "markdown": "## More\n\nWords.\n"}),
+    ("arrange_slides", {"remove": ["lookup"]}),
     ("finish_walkthrough", {}),
     ("export_walkthrough", {"format": "html"}),
     ("preview_slides", {}),

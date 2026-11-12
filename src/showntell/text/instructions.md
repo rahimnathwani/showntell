@@ -12,4 +12,4 @@ The reply that carries the opening says when the link is playable: the start_wal
 
 When the user wants a video, or a file to share, send or attach, call export_walkthrough after finish_walkthrough and send them the file it saves.
 
-To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, and replace slides with revise_slide.
+To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, and replace slides with revise_slide, insert them with add_slides `after`, or move and remove them with arrange_slides.

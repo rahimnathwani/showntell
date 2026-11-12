@@ -32,6 +32,17 @@ log = logging.getLogger("showntell.store")
 
 MAX_SOURCE_BYTES = 1_000_000
 MAX_SLIDES = 80
+
+
+def _heading_with_id(line: str, sid: str) -> str:
+    """A heading line carrying `{#sid}`: replacing the id it had, or added to its attributes."""
+    m = re.search(r"\{([^{}]*)\}\s*$", line)
+    if not m:
+        return f"{line.rstrip()} {{#{sid}}}"
+    attrs = [a for a in m.group(1).split() if not a.startswith("#")]
+    return f"{line[: m.start()].rstrip()} {{{' '.join([f'#{sid}', *attrs])}}}"
+
+
 PARAGRAPH_GAP = 0.3  # matches the player's timeline
 STILL_S = 20.0  # longest stretch of narration with nothing changing on screen
 CUE_GAP_S = 1.5  # two cues closer than this: the first is gone before it can be read
@@ -58,6 +69,7 @@ class Session:
         self.source = ""
         # Revised slides waiting for their audio, shown to viewers only once voiced (by slide id).
         self.staged: dict[str, Slide] = {}
+        self.retired: dict[str, int] = {}  # removed slide id -> its last revision, so a new slide by that id voices afresh
         self._playable: asyncio.Event = asyncio.Event()
         self._save_handle: asyncio.TimerHandle | None = None
         # Set once deleted: speech callbacks, event streams and tool calls may still hold this
@@ -235,6 +247,173 @@ class Session:
         self.builder.parser.lines_seen += delta
         self.source = "\n".join(lines)
         return start
+
+    # -- inserting, removing and moving slides -------------------------------------------
+
+    def _check_settled(self, what: str) -> None:
+        """Slides can move only between whole slides: not while a code block or a diff's old side
+        waits for the next add_slides call to complete it."""
+        if self.builder.parser.pending.strip() or self.builder.pending_old:
+            raise ValueError(f"a code block is still open; complete it with add_slides before you {what}")
+
+    def _pieces(self) -> list[tuple[str | None, list[str]]]:
+        """The source cut into pieces, in source order: (slide id, its lines) for each slide, and
+        (None, lines) for anything between or around them (front matter, a questions section)."""
+        lines = self.source.split("\n")
+        blocks = Parser().feed(self.source)
+        first = next((x.line for x in blocks if x.kind != "front"), len(lines))
+        starts = sorted((sl.line if sl.line > 0 else first, sl.id) for sl in self.w.slides)
+        bounds = sorted({x.line for x in blocks if x.kind == "heading"} | {a for a, _ in starts} | {len(lines)})
+        out: list[tuple[str | None, list[str]]] = []
+        at = 1
+        for a, sid in starts:
+            if a > at:
+                out.append((None, lines[at - 1 : a - 1]))
+            end = next((b for b in bounds if b > a), len(lines) + 1)  # the next slide or section, or the end
+            out.append((sid, lines[a - 1 : end - 1]))
+            at = end
+        out.append((None, lines[at - 1 :]))
+        return out
+
+    def _set_source(self, pieces: list[tuple[str | None, list[str]]]) -> None:
+        """Write the pieces back as the source and move every slide's line to where it now starts."""
+        before = self.source.count("\n")
+        at, line_of = 1, {}
+        for sid, ls in pieces:
+            if sid is not None:
+                line_of[sid] = at
+            at += len(ls)
+        self.source = "\n".join(ln for _, ls in pieces for ln in ls)
+        for sl in [*self.w.slides, *self.staged.values()]:
+            if sl.id in line_of:
+                sl.line = line_of[sl.id]
+        self.builder.parser.lines_seen += self.source.count("\n") - before
+
+    def insert(self, after: str, markdown: str) -> dict:
+        """Put new slides right after slide `after`: built, checked and voiced as revise_slide
+        builds a slide, with ids kept apart from every slide there is."""
+        lim = self.store.hosted.limits if self.store.hosted else None
+        if lim:
+            self._check_size(markdown, lim)
+        self._check_settled("insert slides")
+        idx = next((i for i, s in enumerate(self.w.slides) if s.id == after), None)
+        if idx is None:
+            raise ValueError(f"no slide `{after}` to insert after. Slides: {', '.join(s.id for s in self.w.slides)}")
+        text = markdown.strip()
+        if not re.match(r"^#{1,6}\s", text):
+            raise ValueError("inserted slides start with a heading: `## Title`")
+        if len(self.source) + len(text) > MAX_SOURCE_BYTES:
+            raise ValueError("this walkthrough is over 1 MB of Markdown; start a new one")
+        scratch = Walkthrough(
+            id=self.w.id,
+            key="",
+            report_key="",
+            title=self.w.title,
+            frame=self.w.frame,
+            voice=self.w.voice,
+            speed=self.w.speed,
+            root=self.w.root,
+            sha=self.w.sha,
+        )
+        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
+        b.add(text + "\n", check_last=False)
+        if b.parser.pending.strip():
+            raise ValueError("a code block in the inserted Markdown is never closed; send whole slides")
+        new = list(scratch.slides)
+        if not new:
+            raise ValueError("the Markdown has no slide in it")
+        if len(self.w.slides) + len(new) > MAX_SLIDES:
+            raise ValueError(f"that would make {len(self.w.slides) + len(new)} slides; keep it under {MAX_SLIDES}")
+        taken = {s.id for s in self.w.slides} | set(self.staged)
+        sources = text.split("\n")
+        heads = [s.line for s in new] + [len(sources) + 1]
+        chunks = []
+        for k, s in enumerate(new):
+            chunk = sources[s.line - 1 : heads[k + 1] - 1]
+            sid = s.id
+            n = 2
+            while sid in taken:  # an id in use: the next free `-2`, `-3`, written into the heading
+                sid, n = f"{s.id}-{n}", n + 1
+            if sid != s.id:
+                chunk[0] = _heading_with_id(chunk[0], sid)
+            taken.add(sid)
+            s.id, s.rev = sid, self.retired.get(sid, 0) + 1
+            if s.kind == "title":
+                s.kind = "text"
+            for i, say in enumerate(s.says):
+                say.id = f"{s.id}.{i + 1}.{s.rev}"
+            b._check_finished_slide(s)
+            chunks.append(chunk if chunk and chunk[-1] == "" else [*chunk, ""])
+        if lim:
+            spoken = sum(x.duration or len(x.text.split()) / 2.7 for sl in [*self.w.slides, *new] for x in sl.says if x.text)
+            over = self._over_limits(lim, len(self.w.slides) + len(new), spoken)
+            if over:
+                raise ValueError(over)
+        pieces = self._pieces()
+        at = next(i for i, (sid, _) in enumerate(pieces) if sid == after) + 1
+        pieces[at:at] = [(s.id, c) for s, c in zip(new, chunks, strict=True)]
+        self.w.slides[idx + 1 : idx + 1] = new
+        self._set_source(pieces)
+        order = sum(len(x.says) for x in self.w.slides[: idx + 1])
+        voiced = 0
+        for s in new:
+            for i, say in enumerate(s.says):
+                if not say.pause:
+                    voiced += self._voice(s, say, order=order + i)
+            order += len(s.says)
+        self._changed({s.id for s in new})
+        issues = list(dict.fromkeys(b.issues))
+        return {"slide_ids": [s.id for s in new], "says": sum(len(s.says) for s in new), "revoiced": voiced, "issues": issues}
+
+    def arrange(self, order: list[str] | None, remove: list[str] | None) -> dict:
+        """Remove slides and put the rest in a new order. The title slide stays first, and every
+        slide kept must be named in `order` when it is given, so nothing goes missing unasked."""
+        self._check_settled("move or remove slides")
+        ids = [s.id for s in self.w.slides]
+        remove = list(dict.fromkeys(remove or []))
+        unknown = [x for x in [*remove, *(order or [])] if x not in ids]
+        if unknown:
+            raise ValueError(f"no slide {', '.join(f'`{x}`' for x in unknown)}. Slides: {', '.join(ids)}")
+        if not remove and order is None:
+            raise ValueError("pass `order`, `remove`, or both")
+        if ids and ids[0] in remove:
+            raise ValueError(f"the title slide `{ids[0]}` cannot be removed; revise it instead")
+        kept = [x for x in ids if x not in remove]
+        if order is not None:
+            if len(set(order)) != len(order):
+                raise ValueError("`order` names a slide twice")
+            both = [x for x in order if x in remove]
+            missing = [x for x in kept if x not in order]
+            if both:
+                raise ValueError(f"{', '.join(f'`{x}`' for x in both)} is both in `order` and in `remove`")
+            if missing:
+                raise ValueError(
+                    f"`order` leaves out {', '.join(f'`{x}`' for x in missing)}; list every slide you keep, or add it to `remove`"
+                )
+            if order and kept and order[0] != kept[0]:
+                raise ValueError(f"the title slide `{kept[0]}` stays first")
+            kept = list(order)
+        if kept == ids:
+            return {"removed": [], "moved": False, "order": ids}
+        by_id = {s.id: s for s in self.w.slides}
+        pieces = self._pieces()
+        slots = iter(kept)  # each slide's place in the source takes the next slide of the new order
+        text = {sid: ls for sid, ls in pieces if sid is not None}
+        out = []
+        for sid, ls in pieces:
+            if sid is None:
+                out.append((None, ls))
+            elif sid not in remove:
+                nxt = next(slots)
+                out.append((nxt, text[nxt]))
+        for sid in remove:
+            self.staged.pop(sid, None)
+            self.retired[sid] = max(self.retired.get(sid, 0), by_id[sid].rev)
+        self.w.slides = [by_id[x] for x in kept]
+        self._set_source(out)
+        self.builder.issues = []
+        self._changed(set(), meta=True)  # the player takes the new order from the delta
+        return {"removed": remove, "moved": [x for x in ids if x in kept] != kept, "order": kept}
 
     def _promote(self, slide_id: str) -> None:
         """Swap a staged revision in once all its narration has audio (or failed)."""

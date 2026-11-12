@@ -127,10 +127,15 @@ def _result(text: str, data: dict) -> CallToolResult:
 
 def _slide_link(url: str, slide: str) -> str:
     """A link that plays one slide and stops at its end."""
+    return _range_link(url, slide, slide)
+
+
+def _range_link(url: str, first: str, last: str) -> str:
+    """A link that plays from slide `first` to the end of slide `last`."""
     from urllib.parse import quote
 
     sep = "&" if "?" in url else "?"
-    return f"{url}{sep}from={quote(slide)}&to={quote(slide)}"
+    return f"{url}{sep}from={quote(first)}&to={quote(last)}"
 
 
 def _error(msg: str) -> CallToolResult:
@@ -337,7 +342,9 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             else reply("no_project", "No project folder: pass project_dir to show files from disk.")
         )
         if voice.strip() and voice.strip() != r.get("voice", voice.strip()):  # described, not named: say which voice it got
-            project += "\n" + reply("voice_chosen", 'Voice: {voice} ({about}), for "{asked}".', voice=r["voice"], about=VOICES[r["voice"]], asked=voice.strip())
+            project += "\n" + reply(
+                "voice_chosen", 'Voice: {voice} ({about}), for "{asked}".', voice=r["voice"], about=VOICES[r["voice"]], asked=voice.strip()
+            )
         if opening.strip():
             # The opening came with the call: voice it now and return the link, saving a round trip.
             res = await _append(r["handle"], opening, ctx, u)
@@ -355,9 +362,54 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
     async def add_slides(
         handle: Annotated[str, Field(description=arg_text("add_slides", "handle"))],
         markdown: Annotated[str, Field(description=arg_text("add_slides", "markdown"))],
+        after: Annotated[str, Field(description=arg_text("add_slides", "after"))] = "",
         ctx: Context = None,  # type: ignore[assignment]
     ) -> CallToolResult:
+        if after.strip():
+            return await _insert(handle, after.strip(), markdown, ctx)
         return await _append(handle, markdown, ctx)
+
+    async def _insert(handle: str, after: str, markdown: str, ctx: Context | None) -> CallToolResult:
+        try:
+            r = await service.insert(handle, after, markdown, **who(ctx))
+        except ValueError as e:
+            return _error(str(e))
+        ids = r["slide_ids"]
+        text = (
+            f"Inserted {len(ids)} slide(s) after `{after}`: {', '.join(ids)}; {r['revoiced']} paragraph(s) need audio. "
+            f"Totals: {r['total_slides']} slides, about {mmss(r['narration_s'])} of narration."
+        )
+        if not by_file:
+            text += f"\nWatch them: {_range_link(r['url'], ids[0], ids[-1])}"
+        issues = _issues_text(r["issues"], r["player_issues"])
+        return _result(
+            text + ("\n" + issues if issues else ""),
+            {"url": r["url"], "status": "inserted", "issues": r["issues"], "player_issues": r["player_issues"], "slide_ids": ids},
+        )
+
+    @mcp.tool(title=tool_text("arrange_slides", "title", "Arrange slides"), description=tool_text("arrange_slides"), annotations=WRITE)
+    async def arrange_slides(
+        handle: Annotated[str, Field(description=arg_text("arrange_slides", "handle"))],
+        order: Annotated[list[str] | None, Field(description=arg_text("arrange_slides", "order"))] = None,
+        remove: Annotated[list[str] | None, Field(description=arg_text("arrange_slides", "remove"))] = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> CallToolResult:
+        try:
+            r = await service.arrange(handle, order, remove, **who(ctx))
+        except ValueError as e:
+            return _error(str(e))
+        done = []
+        if r["removed"]:
+            done.append(f"Removed {', '.join(f'`{x}`' for x in r['removed'])}.")
+        if r["moved"]:
+            done.append("Moved slides.")
+        text = " ".join(done) or "Nothing changed: that is the order already."
+        text += f" Order now: {', '.join(r['order'])} ({r['total_slides']} slides, about {mmss(r['narration_s'])} of narration)."
+        issues = _issues_text(r["issues"], r["player_issues"])
+        return _result(
+            text + ("\n" + issues if issues else ""),
+            {"url": r["url"], "status": "arranged", "issues": r["issues"], "player_issues": r["player_issues"], "order": r["order"]},
+        )
 
     @mcp.tool(title=tool_text("revise_slide", "title", "Revise slide"), description=tool_text("revise_slide"), annotations=WRITE)
     async def revise_slide(

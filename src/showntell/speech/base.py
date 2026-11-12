@@ -42,8 +42,34 @@ VOICES = {
 DEFAULT_VOICE = "af_heart"
 
 _ACCENTS = {"american": "a", "us": "a", "usa": "a", "british": "b", "uk": "b", "english": "b", "england": "b", "brit": "b"}
-_GENDERS = {"female": "f", "woman": "f", "women": "f", "girl": "f", "feminine": "f", "male": "m", "man": "m", "men": "m", "boy": "m", "masculine": "m"}
-_FILLER = {"a", "an", "the", "voice", "accent", "accented", "narrator", "speaker", "with", "and", "please", "one", "default", "english-speaking"}
+_GENDERS = {
+    "female": "f",
+    "woman": "f",
+    "women": "f",
+    "girl": "f",
+    "feminine": "f",
+    "male": "m",
+    "man": "m",
+    "men": "m",
+    "boy": "m",
+    "masculine": "m",
+}
+_FILLER = {
+    "a",
+    "an",
+    "the",
+    "voice",
+    "accent",
+    "accented",
+    "narrator",
+    "speaker",
+    "with",
+    "and",
+    "please",
+    "one",
+    "default",
+    "english-speaking",
+}
 _GROUPS = {"af": "American female", "am": "American male", "bf": "British female", "bm": "British male"}
 
 
@@ -72,7 +98,12 @@ def resolve_voice(asked: str) -> str:
     words = [w for w in asked.lower().replace(",", " ").replace("-", " ").split() if w not in _FILLER]
     accent = {_ACCENTS[w] for w in words if w in _ACCENTS}
     sex = {_GENDERS[w] for w in words if w in _GENDERS}
-    traits = {w for v in VOICES.values() for w in v.replace(",", " ").replace("(", " ").replace(")", " ").split()} - {"american", "british", "female", "male"}
+    traits = {w for v in VOICES.values() for w in v.replace(",", " ").replace("(", " ").replace(")", " ").split()} - {
+        "american",
+        "british",
+        "female",
+        "male",
+    }
     wanted = [w for w in words if w in traits]
     unknown = [w for w in words if w not in _ACCENTS and w not in _GENDERS and w not in traits]
     if not words or unknown or len(accent) > 1 or len(sex) > 1:

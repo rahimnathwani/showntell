@@ -71,7 +71,7 @@ Every walkthrough has an `owner` (the user key) and a `shares` list. Access is c
 |---|---|---|---|
 | View page, `data.json`, audio, assets, poster, events | Yes | Yes | 404 |
 | Player issue reports (`/w/{id}/report`) | Yes | Yes | 404 |
-| `add_slides`, `revise_slide`, `finish_walkthrough`, `export_walkthrough`, delete | Yes | No | 404 |
+| `add_slides`, `revise_slide`, `arrange_slides`, `finish_walkthrough`, `export_walkthrough`, delete | Yes | No | 404 |
 | Appears in `list_walkthroughs` and the gallery page | Yes, as "yours" | Yes, as "shared with you" | No |
 
 - **Share targets:** a person, by email address in an allowed domain; or the whole company (everyone who passes sign-in). Both are explicit, per walkthrough, and the default is no shares.

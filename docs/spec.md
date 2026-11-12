@@ -35,8 +35,9 @@ graph TB
 | Tool | Arguments | Returns |
 |---|---|---|
 | **start_walkthrough** | `title`, `description`, `frame` (landscape, square, portrait), `theme` (dark, light, paper, night, ocean, studio, contrast), `voice`, `speed`, `project_dir`, `opening` | `handle`, `url`; with `opening`, the playable link and the guide |
-| **add_slides** | `handle`, `markdown` | `status`, `url` once playable, `issues`, progress, the guide on the first playable reply |
+| **add_slides** | `handle`, `markdown`, `after` (optional slide id) | `status`, `url` once playable, `issues`, progress, the guide on the first playable reply; with `after`, the slides go right after that one and the reply names their ids |
 | **revise_slide** | `handle`, `slide` (id), `markdown` (one slide) | `issues`; only changed narration is voiced again |
+| **arrange_slides** | `handle`, `order` (every kept slide id, optional), `remove` (ids, optional) | the new `order`; the title slide stays first, kept slides keep their audio and their Markdown moves with them in the source |
 | **finish_walkthrough** | `handle`, `questions` (optional list) | summary, `issues`; once the browser is ready, findings from drawing every slide headless |
 | **list_walkthroughs** | none | recent walkthroughs with handles, titles and links |
 | **export_walkthrough** | `handle`, `format` (mp4, html), `path` (optional), `max_mb` (optional) | `path`, `bytes`, `duration_s`, `shrunk`; waits for the narration, then writes an MP4 (needs ffmpeg and the browser) or one offline HTML page, by default in the project folder named after the title |

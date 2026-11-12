@@ -39,4 +39,4 @@ Call `start_walkthrough` before opening a file or running `git`: the opening pla
 
 ## Later changes
 
-`list_walkthroughs` finds an earlier handle, the resource `showntell://walkthroughs/{id}` holds its Markdown, and `revise_slide` replaces one slide.
+`list_walkthroughs` finds an earlier handle, the resource `showntell://walkthroughs/{id}` holds its Markdown, `revise_slide` replaces one slide, `add_slides` with `after` inserts slides, and `arrange_slides` moves or removes them.

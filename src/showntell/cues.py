@@ -270,12 +270,16 @@ class CueResolver:
                 if row and col is not None:
                     return {**base, "kind": "cell", "id": row, "col": col}
                 missing = f"no row `{r}`" if not row else f"no column `{k}`"
-                self._issue("cue_no_target", f"[{c.label}](#{t}): {missing} in the table on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id)
+                self._issue(
+                    "cue_no_target", f"[{c.label}](#{t}): {missing} in the table on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id
+                )
                 return None
             col = _table_col(t, cols)
             if col is not None:
                 return {**base, "kind": "col", "col": col}
-            self._issue("cue_no_target", f"[{c.label}](#{t}): no row or column `{t}` on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id)
+            self._issue(
+                "cue_no_target", f"[{c.label}](#{t}): no row or column `{t}` on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id
+            )
             return None
         if s.kind == "diagram":
             nodes = s.visual.get("nodes", {})

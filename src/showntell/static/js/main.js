@@ -26,6 +26,8 @@ function setData(w) {
   const { TL, pos } = S;
   const keepKey = TL.segs[pos.seg]?.key;
   const keepSlideId = S.W && TL.segs[pos.seg] ? S.W.slides[TL.segs[pos.seg].slide]?.id : null;
+  // The slides after the one playing, so a removed slide hands over to the next one still there.
+  const after = S.W && keepSlideId ? S.W.slides.slice(S.W.slides.findIndex((s) => s.id === keepSlideId) + 1).map((s) => s.id) : [];
   const first = !S.W;
   const W = S.W = w;
   S.TL = build(W);
@@ -39,6 +41,10 @@ function setData(w) {
   if (i < 0 && keepSlideId) {
     i = S.TL.segs.findIndex((s) => W.slides[s.slide]?.id === keepSlideId);
     S.pos.local = 0;
+  }
+  if (i < 0 && keepSlideId) { // removed: go on with the next slide that is left, else the last
+    const next = after.find((id) => W.slides.some((s) => s.id === id));
+    i = next ? S.TL.segs.findIndex((s) => W.slides[s.slide]?.id === next) : S.TL.segs.length - 1;
   }
   S.pos.seg = Math.max(0, i);
   const cur = W.slides[S.TL.segs[S.pos.seg]?.slide];

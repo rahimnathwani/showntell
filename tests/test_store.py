@@ -307,6 +307,132 @@ async def test_revise_with_two_slides_keeps_only_the_first_in_the_source(service
     assert "One." in src and "Two." not in src
 
 
+# -- inserting, removing and moving slides ----------------------------------------------------------
+
+THREE = "## One {#one}\n\nFirst point.\n\n## Two {#two}\n\nSecond point.\n\n## Three {#three}\n\nThird point.\n"
+TAIL = "\n## Questions {.questions}\n\n- What next?\n"
+
+
+def _rebuilt(store, src: str):
+    """The slide ids and questions the source builds afresh, as a restart or an export reads it."""
+    from showntell.build import Builder
+    from showntell.model import Walkthrough
+
+    w = Walkthrough(id="w" * 22, key="k", report_key="r", title="T")
+    Builder(w, store.walk_dir("x")).add(src)
+    return [x.id for x in w.slides], w.questions
+
+
+async def _source_matches(service, store, handle: str) -> str:
+    s = store.by_handle(handle)
+    src = await service.source(handle.split(".")[0])
+    ids, questions = _rebuilt(store, src)
+    assert ids == [x.id for x in s.w.slides] and questions == ["What next?"]
+    lines = src.split("\n")
+    assert all(lines[x.line - 1].startswith("#") for x in s.w.slides[1:]), [(x.id, x.line) for x in s.w.slides]
+    return src
+
+
+async def test_insert_puts_slides_after_one_and_voices_them(service, store, voiced):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE + TAIL)
+    v = await service.insert(r["handle"], "one", "## Between {#mid}\n\nA new point.\n\n## And {#and}\n\nAnother.\n")
+    s = store.by_handle(r["handle"])
+    assert v["slide_ids"] == ["mid", "and"] and v["total_slides"] == 6
+    assert [x.id for x in s.w.slides] == ["how-caching-works", "one", "mid", "and", "two", "three"]
+    src = await _source_matches(service, store, r["handle"])
+    assert src.index("Second point.") > src.index("Another.") > src.index("A new point.") > src.index("First point.")
+    assert src.index("## Questions") > src.index("Third point.")
+    assert s.w.slides[2].says[0].id == "mid.1.1" and s.w.slides[2].kind != "title"
+    assert s.builder.parser.lines_seen == s.source.count("\n")
+    # Appending afterwards still goes to the end, with line numbers that match the source.
+    a = await service.add(r["handle"], "## Four {#four}\n\n```python\nx = 1\n```\n")
+    assert [x.id for x in s.w.slides][-1] == "four"
+    four = next(i for i in a["issues"] if i["slide"] == "four")
+    assert s.source.split("\n")[four["line"] - 1] == "## Four {#four}"
+
+
+async def test_inserted_ids_stay_apart_from_those_in_use(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE + TAIL)
+    v = await service.insert(r["handle"], "two", "## Two {#two .build}\n\nAgain.\n\n## One\n\nOnce more.\n")
+    assert v["slide_ids"] == ["two-2", "one-2"]
+    src = await _source_matches(service, store, r["handle"])
+    assert "## Two {#two-2 .build}" in src and "## One {#one-2}" in src
+
+
+async def test_insert_refuses_what_it_cannot_place(service):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    with pytest.raises(ValueError, match="no slide `nope`"):
+        await service.insert(r["handle"], "nope", "## A\n\nB.\n")
+    with pytest.raises(ValueError, match="start with a heading"):
+        await service.insert(r["handle"], "one", "Just words.\n")
+    with pytest.raises(ValueError, match="never closed"):
+        await service.insert(r["handle"], "one", "## A\n\n```python\nx = 1\n")
+    await service.add(r["handle"], "## Open\n\n```python\nx = 1\n")  # left open for the next call
+    with pytest.raises(ValueError, match="still open"):
+        await service.insert(r["handle"], "one", "## A\n\nB.\n")
+    with pytest.raises(ValueError, match="still open"):
+        await service.arrange(r["handle"], None, ["two"])
+
+
+async def test_arrange_moves_and_removes_slides_and_their_source(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE + TAIL)
+    s = store.by_handle(r["handle"])
+    q = s.subscribe()
+    v = await service.arrange(r["handle"], ["how-caching-works", "three", "one"], ["two"])
+    assert v["removed"] == ["two"] and v["moved"] and v["order"] == ["how-caching-works", "three", "one"]
+    assert [x.id for x in s.w.slides] == ["how-caching-works", "three", "one"]
+    src = await _source_matches(service, store, r["handle"])
+    assert "Second point." not in src and src.index("First point.") > src.index("Third point.")
+    assert src.index("## Questions") > src.index("First point.")  # sections between slides stay put
+    d = s.delta(q.get_nowait()["slides"], True)
+    assert d["order"] == ["how-caching-works", "three", "one"]
+    s.unsubscribe(q)
+    # A slide added later by a removed slide's id is a new slide, voiced afresh.
+    v = await service.insert(r["handle"], "one", "## Two {#two}\n\nBack again.\n")
+    assert store.by_handle(r["handle"]).w.slides[-1].says[0].id == "two.1.2"
+
+
+async def test_arrange_keeps_the_title_first_and_every_slide_named(service):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    h = r["handle"]
+    with pytest.raises(ValueError, match="cannot be removed"):
+        await service.arrange(h, None, ["how-caching-works"])
+    with pytest.raises(ValueError, match="stays first"):
+        await service.arrange(h, ["one", "how-caching-works", "two", "three"], None)
+    with pytest.raises(ValueError, match="leaves out `three`"):
+        await service.arrange(h, ["how-caching-works", "two", "one"], None)
+    with pytest.raises(ValueError, match="both in `order` and in `remove`"):
+        await service.arrange(h, ["how-caching-works", "one", "two", "three"], ["two"])
+    with pytest.raises(ValueError, match="no slide `nope`"):
+        await service.arrange(h, None, ["nope"])
+    with pytest.raises(ValueError, match="names a slide twice"):
+        await service.arrange(h, ["how-caching-works", "one", "one", "two", "three"], None)
+    with pytest.raises(ValueError, match="pass `order`, `remove`"):
+        await service.arrange(h, None, None)
+    v = await service.arrange(h, ["how-caching-works", "one", "two", "three"], [])
+    assert v["order"] == ["how-caching-works", "one", "two", "three"] and not v["moved"] and not v["removed"]
+
+
+async def test_an_arranged_walkthrough_survives_a_restart(service, store, wait_until):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE + TAIL)
+    await service.arrange(r["handle"], ["how-caching-works", "three", "two", "one"], None)
+    await service.insert(r["handle"], "three", "## New {#new}\n\nA fresh point.\n")
+    s = store.by_handle(r["handle"])
+    s.save_now()
+    fresh = Store(store.data_dir, "http://localhost:4799", store.narrator)
+    fresh.loop = asyncio.get_running_loop()
+    t = fresh.get(s.w.id)
+    assert [x.id for x in t.w.slides] == ["how-caching-works", "three", "new", "two", "one"]
+    assert _rebuilt(store, t.source)[0] == [x.id for x in t.w.slides]
+    assert t.builder.parser.lines_seen == t.source.count("\n")
+
+
 # -- finishing ---------------------------------------------------------------------------------------
 
 

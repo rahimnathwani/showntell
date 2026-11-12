@@ -129,6 +129,27 @@ class LocalService:
         r["issues"] = _dicts(r["issues"] + s.take_late_issues())
         return {**r, "url": s.url, "player_issues": _dicts(s.take_player_issues())}
 
+    async def insert(self, handle: str, after: str, markdown: str, user=None) -> dict:
+        s = self.store.by_handle(handle, user)
+        r = s.insert(after, markdown)
+        r["issues"] = _dicts(r["issues"] + s.take_late_issues())
+        return {**r, "url": s.url, "total_slides": len(s.w.slides), **_counts(s), "player_issues": _dicts(s.take_player_issues())}
+
+    async def arrange(self, handle: str, order: list[str] | None, remove: list[str] | None, user=None) -> dict:
+        s = self.store.by_handle(handle, user)
+        first = s.w.slides[0].id if s.w.slides else ""
+        r = s.arrange(order, remove)
+        if s.w.slides and s.w.slides[0].id != first:  # the poster shows the title slide
+            (self.store.walk_dir(s.w.id) / "poster.png").unlink(missing_ok=True)
+        return {
+            **r,
+            "url": s.url,
+            "total_slides": len(s.w.slides),
+            **_counts(s),
+            "issues": _dicts(s.take_late_issues()),
+            "player_issues": _dicts(s.take_player_issues()),
+        }
+
     async def finish(self, handle: str, questions: list[str] | None, check: bool = True, user=None) -> dict:
         """Close the walkthrough. `check=False` skips drawing the slides headless, for callers
         that only wait for the audio (exporting a Markdown file)."""
@@ -469,6 +490,12 @@ class RemoteService:
     async def revise(self, handle, slide, markdown):
         return await self._call("revise", handle=handle, slide=slide, markdown=markdown)
 
+    async def insert(self, handle, after, markdown):
+        return await self._call("insert", handle=handle, after=after, markdown=markdown)
+
+    async def arrange(self, handle, order, remove):
+        return await self._call("arrange", handle=handle, order=order, remove=remove)
+
     async def finish(self, handle, questions, check=True):
         if check:  # a daemon from before `check` still takes the call
             return await self._call("finish", handle=handle, questions=questions)
@@ -488,7 +515,7 @@ class RemoteService:
         return await self._call("export", http_timeout=EXPORT_WAIT_S + 900, handle=handle, path=path, format=format, max_mb=max_mb)
 
 
-RPC_METHODS = {"start", "add", "playable", "revise", "finish", "list", "source", "preview", "export"}
+RPC_METHODS = {"start", "add", "playable", "revise", "insert", "arrange", "finish", "list", "source", "preview", "export"}
 EXPORT_WAIT_S = 300.0  # for the narration to finish voicing before an export
 MAX_SHARES = 100  # people one walkthrough is shared with, by address; beyond that, the whole company
 MAX_EMAIL = 254  # characters in an address (RFC 5321)

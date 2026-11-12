@@ -122,7 +122,7 @@ Recent Pi (checked with 1.3.0) has MCP built in.
    pi mcp add showntell -- uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.5 showntell mcp
    ```
 
-2. Check it with `pi mcp list`. It should say `showntell: connected, 7 tools`.
+2. Check it with `pi mcp list`. It should say `showntell: connected, 8 tools`.
 3. Start `pi` in your project and ask for a walkthrough.
 
 Older Pi without `pi mcp` needs the [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter) extension instead. Run `pi install npm:pi-mcp-adapter`, then put this in `~/.config/mcp/mcp.json`:

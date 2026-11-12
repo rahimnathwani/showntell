@@ -12,4 +12,4 @@ The reply that carries the opening says when the link is playable: the start_wal
 
 Walkthroughs belong to the user who made them; nobody else can open the link until the owner shares it with share_walkthrough, to named colleagues or the whole company.
 
-To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, and replace slides with revise_slide.
+To change a walkthrough later, find its handle with list_walkthroughs, read its Markdown from the resource showntell://walkthroughs/{id}, and replace slides with revise_slide, insert them with add_slides `after`, or move and remove them with arrange_slides.

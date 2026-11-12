@@ -43,6 +43,7 @@ async def test_tools_are_listed_with_titles(mcp):
             "start_walkthrough",
             "add_slides",
             "revise_slide",
+            "arrange_slides",
             "finish_walkthrough",
             "list_walkthroughs",
             "preview_slides",
@@ -54,7 +55,7 @@ async def test_tools_are_listed_with_titles(mcp):
 async def test_writing_tools_are_not_read_only_or_destructive(mcp):
     async with mcp as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-        for name in ("start_walkthrough", "add_slides", "revise_slide", "finish_walkthrough", "export_walkthrough"):
+        for name in ("start_walkthrough", "add_slides", "revise_slide", "arrange_slides", "finish_walkthrough", "export_walkthrough"):
             a = tools[name].annotations
             assert (a.read_only_hint, a.destructive_hint, a.open_world_hint) == (False, False, False), name
 
@@ -204,6 +205,21 @@ async def test_revise_slide(mcp):
         assert not r.is_error
         assert r.structured_content["status"] == "revised" and r.structured_content["slide"] == "lookup"
         assert "revision 2" in text(r)
+
+
+async def test_insert_and_arrange_slides(mcp):
+    async with mcp as client:
+        h = await start(client)
+        await client.call_tool("add_slides", {"handle": h["handle"], "markdown": OPENING + "\n" + BODY})
+        r = await client.call_tool(
+            "add_slides", {"handle": h["handle"], "after": "lookup", "markdown": "## After {#after}\n\nMore words.\n"}
+        )
+        assert not r.is_error and r.structured_content["status"] == "inserted" and r.structured_content["slide_ids"] == ["after"]
+        assert "Inserted 1 slide(s) after `lookup`" in text(r) and "from=after&to=after" in text(r)
+        r = await client.call_tool("arrange_slides", {"handle": h["handle"], "remove": ["lookup"]})
+        assert not r.is_error and r.structured_content["order"][-1] == "after" and "Removed `lookup`." in text(r)
+        r = await client.call_tool("arrange_slides", {"handle": h["handle"], "remove": ["how-caching-works"]})
+        assert r.is_error and "cannot be removed" in text(r)
 
 
 async def test_finish_walkthrough(mcp):

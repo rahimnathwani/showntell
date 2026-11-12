@@ -804,6 +804,34 @@ def test_newer_visuals_follow_the_narration(daemon, browser):
     page.close()
 
 
+def test_the_open_player_follows_slides_moved_and_removed(daemon, browser):
+    call = _rpc(daemon)
+    r = call("start", title="Arranged", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    md = "# Arranged\n\nOpening.\n\n" + "".join(f"## Slide {n} {{#s{n}}}\n\nPoint number {n} in a sentence.\n\n" for n in range(1, 5))
+    call("add", handle=r["handle"], markdown=md)
+    call("playable", handle=r["handle"], timeout=10)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(url + "?from=s2&to=s3")
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 5")
+    shown = "(document.querySelector('.slide:not(.leaving)')?.textContent.match(/Slide \\d/) || [''])[0]"
+    chapters = "[...document.querySelectorAll('#chapters button')].map((b) => b.textContent)"
+    page.wait_for_function(f"{shown} !== ''")
+    assert page.evaluate(shown) == "Slide 2"
+    call("arrange", handle=r["handle"], order=["arranged", "s3", "s1", "s4"], remove=["s2"])
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 4")
+    labels = page.evaluate(chapters)
+    assert "Slide 3" in labels[1] and "Slide 1" in labels[2] and "Slide 2" not in " ".join(labels)
+    page.wait_for_function(f"{shown} === 'Slide 3'")  # the slide on screen went: the next one left takes over
+    call("insert", handle=r["handle"], after="s3", markdown="## Inserted {#ins}\n\nA new point.\n")
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 5")
+    assert "Inserted" in page.evaluate(chapters)[2]
+    assert not errors, errors
+    page.close()
+
+
 TABLE_CUES = """# Tables
 
 Opening.
