@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6 (2026-11-12)
 
 - **Revised headings keep the slide's id:** a `revise_slide` heading without `{#id}` whose title would give another id gets the slide's id written in, so the source builds the same slide.
 - **Citations:** `[^id]` in narration now shows in the transcript as the source's number, with the source on hover and a click that jumps to it under Sources, where each source links back to the slides citing it. `[^id]: file=path lines=10-24 words` quotes those project lines there, read from disk. `finish_walkthrough` reports citations without a source (`note_missing`) and sources nobody cites (`note_unused`). Sources sent with `revise_slide` were dropped; they now join the walkthrough's, and a source whose line leaves the Markdown leaves the walkthrough. Quoted lines are cut at 200 characters.
