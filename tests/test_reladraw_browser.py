@@ -126,6 +126,7 @@ HOSTILE = """<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/
 <text x="1" y="20" style="cursor:\\75rl(https://evil.example/esc)">safe text</text></g></a>
 <use x:href="https://evil.example/use.svg#a"/><use href="#g"/>
 <rect mask="image-set('https://evil.example/set' 1x)" width="5" height="5" fill="url(https://evil.example/fill)"/>
+<rect width="2" height="2" fill="rgb(200, 0, 0)" stroke="hsl(120deg 50% 40%)"/>
 <image href="https://evil.example/image"/><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">x</div></foreignObject>
 </svg>"""
 
@@ -160,7 +161,8 @@ def test_the_sanitiser_keeps_only_drawing(daemon, browser):  # noqa: F811
     assert "evil" not in out["html"] and "\\75" not in out["html"] and "image-set" not in out["html"], out["html"]
     assert set(out["names"]) <= {"rect", "g", "text", "use"}, out["names"]  # filter is not drawn by the library
     assert 'fill="url(#g)"' in out["html"] and 'href="#g"' in out["html"] and "safe text" in out["html"]
-    assert not out["pwned"] and out["at"].startswith(url) and out["page"] == "#123456"
+    assert not out["pwned"] and out["at"].startswith(url) and out["page"] is None
+    assert 'fill="rgb(200, 0, 0)"' in out["html"] and "hsl(" in out["html"]  # plain color functions stay
     assert not outside, outside
     page.close()
 
@@ -193,4 +195,55 @@ def test_accent_text_reads_on_light_themes(daemon, browser, theme):  # noqa: F81
 
     hi, lo = sorted([lum(fill), lum(text)], reverse=True)
     assert (hi + 0.05) / (lo + 0.05) >= 4.5, (theme, fill, text)
+    page.close()
+
+
+REVEAL = """# Reveal
+
+Opening words.
+
+## S {#s .build}
+
+```reladraw
+node drive "Drive"
+node web "Web"  right of drive (gap: wide)
+node db "DB"  right of web (gap: wide)  badge: database
+region trust "trust boundary"  web top-left to db bottom-right  padding: 1
+point mid "halfway"  between drive and web
+edge req drive -> web "named line"
+edge web -> db "plain line"
+```
+
+First [the drive](#drive) alone. Then [the web](#web). Then [the database](#db).
+"""
+
+
+def test_reveal_covers_every_group_the_library_draws(daemon, browser):  # noqa: F811
+    call = _rpc(daemon)
+    r = call("start", title="Reveal", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    call("add", handle=r["handle"], markdown=REVEAL)
+    call("playable", handle=r["handle"], timeout=10)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page.goto(url)
+    page.wait_for_function("window.__showntell !== undefined")
+    seen = []
+    for cue in (0, 1, 2):
+        page.goto(f"{url}?at={_at(page, 's', 0, cue) + 0.3:.2f}")
+        page.wait_for_selector(".reladraw svg g[data-node]")
+        page.wait_for_timeout(600)
+        seen.append(
+            page.evaluate("""() => {
+          const out = {};
+          for (const g of document.querySelectorAll('.reladraw g[data-name]')) out[g.dataset.name] = g.classList.contains('veiled');
+          out.active = [...document.querySelectorAll('.reladraw g[data-node].active')].map((g) => g.dataset.node);
+          return out; }""")
+        )
+    first, second, third = seen
+    assert first["active"] == ["drive"] and second["active"] == ["web"], seen
+    assert not first["drive"] and first["web"] and first["db"] and first["req"], first
+    assert [v for k, v in first.items() if k.startswith("db.")] == [True], first  # the badge waits with its node
+    assert first["trust"] and first["mid"], first  # a region and a point wait for the whole
+    assert not second["req"] and second["web -> db"] and second["db"], second  # a named line shows with its ends
+    assert not any(v for k, v in third.items() if k != "active"), third  # the last cue reveals the rest
     page.close()

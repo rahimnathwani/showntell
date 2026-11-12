@@ -101,3 +101,14 @@ def test_find_prefers_text_over_a_name_in_another_case():
 def test_leading_blank_lines_are_kept_so_line_numbers_match():
     vis, _ = parse_reladraw('\n\nnode a "A"\n', {})
     assert vis["source"].split("\n")[2] == 'node a "A"'
+
+
+def test_texts_before_strings_hyphenated_names_commas_and_backgrounds():
+    # "x""" is a text and an empty text, not a string: nothing after it is skipped
+    vis, problems = parse_reladraw('node b "B"\nnode c "C"  right of b\nedge b -> c "x"""\nicon p """<svg/>"""\n', {})
+    assert problems and "pastes a picture" in problems[0]
+    vis, _ = parse_reladraw('node web-app "Web"\nnode db  right of web-app\nedge hy web-app -> db\nedge x o--|> y\n', {})
+    assert vis["edges"] == {"hy": ["web-app", "db"]}
+    lines = "node a\nnode b  right of a\n" + "\n".join('edge a -> b "x, y, z, w"' for _ in range(41))
+    assert parse_reladraw(lines, {})[1] == []
+    assert "diagram background:" in parse_reladraw("diagram  background: white\nnode a\n", {})[1][0]

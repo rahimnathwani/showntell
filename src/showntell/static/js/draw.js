@@ -158,7 +158,7 @@ function fitCode(content, bw, bh, grow, k) {
   const floor = CODE_PX / codeFont(content);
   if (k >= Math.max(floor, WRAP_BELOW)) return k;
   // Readable as it is: change the layout only for a real gain.
-  const need = k >= floor ? k * 1.1 : k + 0.01;
+  let need = k >= floor ? k * 1.1 : k + 0.01;
   // Too many lines, not too long ones: stacking and wrapping would only make it taller.
   const cw = Math.max(content.offsetWidth, content.scrollWidth), ch = Math.max(content.offsetHeight, content.scrollHeight);
   if (bh / ch <= bw / cw) return k;
@@ -167,6 +167,7 @@ function fitCode(content, bw, bh, grow, k) {
     const stacked = fitScale(content, bw, bh, grow);
     if (stacked >= need) k = stacked;
     else content.classList.remove("stacked");
+    need = Math.max(need, k + 0.01); // wrapping must also beat the stacked layout
     if (k >= Math.max(floor, WRAP_BELOW)) return k;
   }
   // Wrapping trades width for height: try the reading size first, then smaller ones.

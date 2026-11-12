@@ -24,14 +24,16 @@ MAX_BYTES = 100_000
 MAX_NODES = 80
 MAX_EDGES = 160
 NAME = re.compile(r"[^\s:,;\"()\[\]]+")
-ARROW = re.compile(r"^\S*-\S*$")  # a mark, a shaft of - or --, a mark: ->, <->, --, o--|>
+# A line's arrow: a mark, a shaft of - or --, a mark (->, <->, --, o--|>, odot--arrow, (dot)--[bar]).
+_MARK = r"(?:[<>|*o]{0,2}|\(?(?:o?arrow|o?dot|o?diamond|bar|none)\)?|\[(?:o?arrow|o?dot|o?diamond|bar|none)\])"
+ARROW = re.compile(rf"^{_MARK}--?{_MARK}$")
 
 
 def _statements(body: str) -> tuple[list[tuple[int, str]], list[int]]:
     """(line, text) of each statement, with comments removed and indented lines joined to the one
-    above; and the line of each statement that opens a `\"\"\"` string (an icon's SVG or a
-    description), whose content is skipped. A `\"\"\"` string is found before comments are, so
-    a `//` inside it (a namespace URL) is not one."""
+    above; and the line of each statement that opens a triple-quoted string (an icon's SVG or a
+    description), whose content is skipped. One scanner reads quotes, strings and comments, so a
+    `//` inside a string is not a comment, and a text followed by an empty text is not a string."""
     out: list[tuple[int, str]] = []
     pasted: list[int] = []
     lines = body.split("\n")
@@ -40,17 +42,14 @@ def _statements(body: str) -> tuple[list[tuple[int, str]], list[int]]:
         raw = lines[n]
         n += 1
         start = n  # this line's number, before a string's lines are skipped
-        line = _uncomment(raw)
-        at = raw.find('"""')
-        if at >= 0 and len(_uncomment(raw[:at])) == at:  # the marks open a string, not inside a comment
-            head = raw[:at]
+        line, at = _scan(raw)
+        if at >= 0:
+            pasted.append(out[-1][0] if line[:1].isspace() and out else start)
             rest = raw[at + 3 :]
-            pasted.append(out[-1][0] if head[:1].isspace() and out else start)
             # Skip to the closing marks, on this line or a later one.
             while '"""' not in rest and n < len(lines):
                 rest = lines[n]
                 n += 1
-            line = head
         if not line.strip():
             continue
         if line[:1].isspace() and out:
@@ -60,21 +59,27 @@ def _statements(body: str) -> tuple[list[tuple[int, str]], list[int]]:
     return out, pasted
 
 
-def _uncomment(line: str) -> str:
-    """The line up to a `//` outside quotes."""
+def _scan(line: str) -> tuple[str, int]:
+    """The line up to a `//` comment or a triple-quoted string outside quotes, and where that
+    string opens (-1 for none)."""
     quoted = False
     i = 0
     while i < len(line):
         c = line[i]
-        if c == "\\" and quoted:
-            i += 2
-            continue
-        if c == '"':
-            quoted = not quoted
-        elif not quoted and line.startswith("//", i):
-            return line[:i]
+        if quoted:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                quoted = False
+        elif line.startswith('"""', i):
+            return line[:i], i
+        elif c == '"':
+            quoted = True
+        elif line.startswith("//", i):
+            return line[:i], -1
         i += 1
-    return line
+    return line, -1
 
 
 def _text(rest: str) -> str | None:
@@ -116,8 +121,10 @@ def parse_reladraw(body: str, attrs: dict) -> tuple[dict, list[str]]:
     seen: set[str] = set()
     lines = 0
     for _, st in statements:
+        if re.match(r"diagram\b.*\bbackground:", st):
+            problems.append("it sets `diagram background:`; the slide's theme sets the background, so leave it out")
         if st.startswith("edge"):
-            lines += 1 + st.count(",")
+            lines += 1 + st.split('"', 1)[0].count(",")  # `edge a -> b, c` is two lines; commas in texts are not
             named = _edge(st)
             if named:
                 edges[named[0]] = [named[1], named[2]]

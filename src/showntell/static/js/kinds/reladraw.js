@@ -23,6 +23,7 @@ export default {
     parts.visual = host;
     parts.reladraw = v;
     body.append(host);
+    if (!v.source) return undefined; // the builder refused the block and said why
     return ready().then((lib) => {
       let out;
       try {
@@ -41,7 +42,6 @@ export default {
       }
       host.append(svg);
       parts.svg = svg;
-      if (svg.dataset.page) { host.classList.add("page"); svg.style.background = svg.dataset.page; }
       svg.querySelectorAll("g[data-node]").forEach((g) => parts.items.set(g.dataset.node, g));
       const found = out.findings || [];
       found.slice(0, MAX_FINDINGS).forEach((f) => {
@@ -228,7 +228,7 @@ function drawn(lib, source) {
 // geometry and paint attributes. Anything else is dropped (links are unwrapped): no HTML, no
 // outside reference (an href only to the drawing's own ids, url() only as url(#id)), no style
 // attribute or element, no escapes. The full-page background goes too, so the slide shows
-// through; a background the author chose (`diagram background:`) is kept as the svg's own.
+// through (the builder refuses `diagram background:`, since the slide's theme sets it).
 const ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan",
   "defs", "marker", "clipPath", "mask", "title", "desc", "linearGradient", "radialGradient", "stop", "symbol", "use"]);
 const ATTRS = new Set(["id", "class", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "fx", "fy", "width", "height",
@@ -242,6 +242,7 @@ const ATTRS = new Set(["id", "class", "x", "y", "x1", "y1", "x2", "y2", "cx", "c
   "data-name", "data-node", "data-edge", "data-line"]);
 const XLINK_NS = "http://www.w3.org/1999/xlink";
 const TRANSFORM = /^(\s*(matrix|translate|scale|rotate|skewX|skewY)\(\s*[-+\d.eE\s,]*\)\s*,?)*\s*$/;
+const COLOR_FN = /^\s*(rgb|rgba|hsl|hsla)\(\s*[-+\d.%\s,/a-z]*\)\s*$/i; // numbers, units and `deg` only
 const SAFE_VALUE = /^[^\\]*$/; // no CSS escapes; values are set as attributes, never parsed as markup
 
 export function clean(text) {
@@ -257,7 +258,7 @@ export function clean(text) {
       if (!ATTRS.has(name) || !SAFE_VALUE.test(val)) continue;
       if (name === "href" && !/^#[\w-]+$/.test(val)) continue;
       // Functions only where SVG has them: transforms, and url(#id) pointing inside the drawing.
-      if (name === "transform" ? !TRANSFORM.test(val) : val.includes("(") && !/^\s*url\(#[\w-]+\)\s*$/.test(val)) continue;
+      if (name === "transform" ? !TRANSFORM.test(val) : val.includes("(") && !/^\s*url\(#[\w-]+\)\s*$/.test(val) && !COLOR_FN.test(val)) continue;
       out.setAttribute(name, val);
     }
     for (const n of src.childNodes) {
@@ -272,11 +273,7 @@ export function clean(text) {
   const svg = copy(root);
   const first = svg.querySelector(":scope > rect");
   const vb = svg.viewBox.baseVal;
-  if (first && vb && +first.getAttribute("width") === vb.width && +first.getAttribute("height") === vb.height) {
-    const fill = first.getAttribute("fill");
-    if (fill && hex(fill) !== theme().background) svg.dataset.page = hex(fill);
-    first.remove();
-  }
+  if (first && vb && +first.getAttribute("width") === vb.width && +first.getAttribute("height") === vb.height) first.remove();
   svg.removeAttribute("width");
   svg.removeAttribute("height");
   return svg;
