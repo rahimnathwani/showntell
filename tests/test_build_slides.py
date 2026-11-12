@@ -93,6 +93,13 @@ def test_front_matter_sets_walkthrough_settings(build):
     assert (w.title, w.frame, w.voice, w.speed) == ("From front", "portrait", "am_adam", 1.1)
 
 
+def test_front_matter_voice_may_be_described(build):
+    w, b = build("---\nvoice: British male\n---\n# T\n\nA.\n")
+    assert w.voice == "bm_george" and not b.issues
+    w, b = build("---\nvoice: Australian male\n---\n# T\n\nA.\n")
+    assert w.voice == "af_heart" and any("no voice is australian" in i for i in b.issues)
+
+
 def test_front_matter_values_are_validated(build):
     w, b = build("---\nframe: banana\nvoice: nobody\nspeed: 9\n---\n# T\n\nA.\n")
     assert w.frame == "landscape" and w.voice == "af_heart" and w.speed <= 1.4

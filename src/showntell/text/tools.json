@@ -6,7 +6,7 @@
       "title": "Walkthrough title, shown on the title slide and in the player. Lead with the subject's keywords; under about 50 characters fits the title slide.",
       "description": "One or two sentences on what the walkthrough covers and for whom, up to 200 characters. Shown in the list and gallery and written into exported files as metadata; never spoken or shown on a slide.",
       "frame": "Slide shape: landscape (default, 1280×720), square (960×960) or portrait (720×1280, for phones).",
-      "voice": "English Kokoro voice id. Omit for the default. Voices:",
+      "voice": "English Kokoro voice id, or a description such as `British male` or `American female, soft` for the closest one. Omit for the default. Voices:",
       "speed": "Speech rate from 0.8 to 1.3; 1.0 is normal.",
       "project_dir": "Absolute path of the project. Code blocks with file= and image paths are read from it and must stay inside it. Defaults to the client's root, then the server's working directory.",
       "opening": "The opening in Markdown, voiced before this call returns: a `#` title heading, an optional `>` subtitle line, then one or two short spoken sentences as a plain paragraph that hold without research: the question, the goal or why it matters, and any fact the request gives; what you have yet to read waits for later slides. Nothing more; the body goes in add_slides. Example:\n# How the retry loop works\n> Backoff in the HTTP client\n\nA failed request can be sent up to four times. We'll follow one through the client.",

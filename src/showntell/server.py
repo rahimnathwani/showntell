@@ -26,7 +26,7 @@ from .build import LIMITS
 from .hosted import user_of
 from .issues import as_dict, line_text, summarize
 from .service import RPC_METHODS, LocalService, mmss
-from .speech.base import VOICES
+from .speech.base import VOICES, voice_catalogue
 
 log = logging.getLogger("showntell")
 PKG = Path(__file__).parent
@@ -308,7 +308,7 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
         frame: Annotated[
             Literal["landscape", "square", "portrait"], Field(description=arg_text("start_walkthrough", "frame"))
         ] = "landscape",
-        voice: Annotated[str, Field(description=arg_text("start_walkthrough", "voice") + " " + ", ".join(VOICES) + ".")] = "",
+        voice: Annotated[str, Field(description=arg_text("start_walkthrough", "voice") + " " + voice_catalogue())] = "",
         speed: Annotated[float, Field(description=arg_text("start_walkthrough", "speed"))] = 1.0,
         project_dir: Annotated[str, Field(description=arg_text("start_walkthrough", "project_dir"))] = "",
         opening: Annotated[str, Field(description=arg_text("start_walkthrough", "opening"))] = "",
@@ -336,6 +336,8 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             if r.get("root")
             else reply("no_project", "No project folder: pass project_dir to show files from disk.")
         )
+        if voice.strip() and voice.strip() != r.get("voice", voice.strip()):  # described, not named: say which voice it got
+            project += "\n" + reply("voice_chosen", 'Voice: {voice} ({about}), for "{asked}".', voice=r["voice"], about=VOICES[r["voice"]], asked=voice.strip())
         if opening.strip():
             # The opening came with the call: voice it now and return the link, saving a round trip.
             res = await _append(r["handle"], opening, ctx, u)

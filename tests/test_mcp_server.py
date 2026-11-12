@@ -277,6 +277,17 @@ async def test_bad_voice_is_a_tool_error(mcp):
         assert r.is_error and "unknown voice" in text(r)
 
 
+async def test_a_described_voice_is_named_in_the_reply(mcp):
+    async with mcp as client:
+        (tool,) = [t for t in (await client.list_tools()).tools if t.name == "start_walkthrough"]
+        about = tool.input_schema["properties"]["voice"]["description"]
+        assert "British male: bm_george" in about and "am_adam (deep)" in about
+        r = await client.call_tool("start_walkthrough", {"title": "T", "voice": "British female"})
+        assert not r.is_error and 'Voice: bf_emma (British female), the closest to "British female".' in text(r)
+        r = await client.call_tool("start_walkthrough", {"title": "T", "voice": "bm_lewis"})
+        assert "Voice:" not in text(r)
+
+
 async def test_bad_project_dir_is_a_tool_error(mcp, tmp_path):
     async with mcp as client:
         r = await client.call_tool("start_walkthrough", {"title": "T", "project_dir": str(tmp_path / "missing")})

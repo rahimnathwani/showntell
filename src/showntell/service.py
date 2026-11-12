@@ -59,7 +59,7 @@ class LocalService:
                 raise ValueError(f"project_dir {project_dir} is not a folder")
             root = str(p.resolve())
         s = self.store.create(title, frame, voice, speed, root, theme, description, owner=user)
-        return {"handle": s.handle, "url": s.url, "frame": s.w.frame, "root": root, "speech": self.speech_status()}
+        return {"handle": s.handle, "url": s.url, "frame": s.w.frame, "root": root, "voice": s.w.voice, "speech": self.speech_status()}
 
     def _check_room(self, user) -> None:
         """Hosted: room for one more walkthrough under the user's limits."""

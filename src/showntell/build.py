@@ -150,7 +150,7 @@ class Builder(CueResolver, Checks):
     def _apply(self, b: Block) -> None:
         if b.kind == "front":
             from .model import FRAMES
-            from .speech.base import VOICES
+            from .speech.base import resolve_voice
 
             a = b.attrs
             if a.get("title"):
@@ -169,10 +169,10 @@ class Builder(CueResolver, Checks):
                         line=b.line,
                     )
             if a.get("voice"):
-                if a["voice"] in VOICES:
-                    self.w.voice = a["voice"]
-                else:
-                    self._issue("front_matter", f"Front matter voice `{a['voice']}` is unknown; kept {self.w.voice}.", line=b.line)
+                try:
+                    self.w.voice = resolve_voice(a["voice"])
+                except ValueError as e:
+                    self._issue("front_matter", f"Front matter voice: {e} Kept {self.w.voice}.", line=b.line)
             if a.get("theme"):
                 from .themes import THEMES
 

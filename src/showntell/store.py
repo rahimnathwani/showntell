@@ -24,7 +24,7 @@ from .checks import cues_bunched
 from .format import Parser
 from .issues import Issue, player_issue
 from .model import FRAMES, STATE_VERSION, Say, Slide, Walkthrough, public_slide, slide_from_state
-from .speech.base import VOICES
+from .speech.base import resolve_voice
 from .speech.narrator import Narrator, cue_time
 from .themes import THEMES
 
@@ -608,9 +608,7 @@ class Store:
         if theme and theme not in THEMES:
             raise ValueError(f"theme must be one of {', '.join(THEMES)}")
         project_theme, tokens, theme_problems = themes.project_theme(root)
-        voice = voice or self.default_voice
-        if voice not in VOICES:
-            raise ValueError(f"unknown voice {voice!r}; choose one of {', '.join(VOICES)}")
+        voice = resolve_voice(voice or self.default_voice)
         w = Walkthrough(
             id=secrets.token_urlsafe(16),
             key=secrets.token_urlsafe(16),

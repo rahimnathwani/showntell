@@ -53,6 +53,28 @@ async def test_create_validates_frame_and_voice(store):
         store.create("T", voice="robot")
 
 
+@pytest.mark.parametrize(
+    ("asked", "voice"),
+    [
+        ("bm_lewis", "bm_lewis"),
+        ("British male", "bm_george"),
+        ("american female, soft", "af_nicole"),
+        ("a deep male voice", "am_adam"),
+        ("UK woman", "bf_emma"),
+        ("male", "am_michael"),
+    ],
+)
+async def test_create_finds_a_voice_from_a_description(store, asked, voice):
+    assert store.create("T", voice=asked).w.voice == voice
+
+
+@pytest.mark.parametrize("asked", ["Australian male", "american british", "male female", "robot"])
+async def test_a_voice_nobody_has_names_the_voices_there_are(store, asked):
+    with pytest.raises(ValueError, match="unknown voice") as e:
+        store.create("T", voice=asked)
+    assert "American or British" in str(e.value) and "bm_george" in str(e.value)
+
+
 async def test_create_clamps_speed_and_defaults_title(store):
     assert store.create("", speed=3).w.speed == 1.3
     assert store.create("T", speed=0.1).w.speed == 0.8

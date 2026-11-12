@@ -21,7 +21,7 @@ On a miss it [calls the loader](#L18) and stores the result.
 
 | Part | Rule |
 |---|---|
-| **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice`, `speed`. Tools pass these as arguments instead. |
+| **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice` (an id such as `bm_george`, or a description such as `British male` or `American female, soft`, which picks the closest voice), `speed`. Tools pass these as arguments instead. |
 | **Slide** | every heading (`#`, `##` or `###`) starts a slide. The level does not matter. |
 | **Title slide** | the first slide renders as a title slide when it has no visual. A `>` quote under it is the subtitle. |
 | **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`) or a draw.io diagram |

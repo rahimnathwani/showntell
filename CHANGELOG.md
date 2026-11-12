@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Voices by description:** `start_walkthrough`'s voice list is grouped as American or British, female or male, with each voice's trait, and `voice` (also front matter and `SHOWNTELL_VOICE`) takes a description such as `British male` or `a deep male voice`; the reply names the voice chosen. A description no voice fits, such as another accent, is an error that lists the voices there are.
 - **Go deeper from the player:** the menu copies a request for a follow-up walkthrough on the slide on screen, naming the walkthrough, slide, time and what the narration says, ending where the viewer adds a question. It sits under the change request and works in exports.
 - **Table columns and cells:** cues can point at a column (`#col-3`, or `#col-p99` by its heading) or at one cell (`#row-2/col-3`, `#mem/p99`). A column lights its heading and visible cells; a cell dims the rest of the table, reveals the rows down to its own on a `.build` slide, and takes `{.decode}`.
 - **Speed in a link:** `?speed=1.5` starts the player at that speed, held to 0.5x to 3x, without changing the speed the viewer saved; `<showntell-player speed="1.25">` passes it on. The menu now runs from 0.5x to 3x and lists a linked speed it lacked.

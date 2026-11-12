@@ -41,6 +41,46 @@ VOICES = {
 }
 DEFAULT_VOICE = "af_heart"
 
+_ACCENTS = {"american": "a", "us": "a", "usa": "a", "british": "b", "uk": "b", "english": "b", "england": "b", "brit": "b"}
+_GENDERS = {"female": "f", "woman": "f", "women": "f", "girl": "f", "feminine": "f", "male": "m", "man": "m", "men": "m", "boy": "m", "masculine": "m"}
+_FILLER = {"a", "an", "the", "voice", "accent", "accented", "narrator", "speaker", "with", "and", "please", "one", "default", "english-speaking"}
+_GROUPS = {"af": "American female", "am": "American male", "bf": "British female", "bm": "British male"}
+
+
+def voice_catalogue() -> str:
+    """The voices grouped by accent and sex, with any trait in brackets: for the tool description."""
+    out = []
+    for prefix, name in _GROUPS.items():
+        ids = []
+        for vid, about in VOICES.items():
+            if vid.startswith(prefix + "_"):
+                trait = (about.split(", ", 1)[1] if ", " in about else "").replace(" (default)", "")
+                if vid == DEFAULT_VOICE:
+                    trait = "default" + (f", {trait}" if trait else "")
+                ids.append(f"{vid} ({trait})" if trait else vid)
+        out.append(f"{name}: {', '.join(ids)}")
+    return "; ".join(out) + "."
+
+
+def resolve_voice(asked: str) -> str:
+    """A voice id from an id, or from a description such as `British male` or `American female, soft`:
+    the first voice of that accent and sex with the most of the traits asked for. Raises ValueError
+    naming what exists when the description asks for something no voice has, such as another accent."""
+    asked = (asked or "").strip()
+    if asked in VOICES:
+        return asked
+    words = [w for w in asked.lower().replace(",", " ").replace("-", " ").split() if w not in _FILLER]
+    accent = {_ACCENTS[w] for w in words if w in _ACCENTS}
+    sex = {_GENDERS[w] for w in words if w in _GENDERS}
+    traits = {w for v in VOICES.values() for w in v.replace(",", " ").replace("(", " ").replace(")", " ").split()} - {"american", "british", "female", "male"}
+    wanted = [w for w in words if w in traits]
+    unknown = [w for w in words if w not in _ACCENTS and w not in _GENDERS and w not in traits]
+    if not words or unknown or len(accent) > 1 or len(sex) > 1:
+        what = f"unknown voice {asked!r}" + (f" (no voice is {' '.join(unknown)})" if unknown and words else "")
+        raise ValueError(f"{what}. English voices are American or British, female or male: {voice_catalogue()}")
+    picks = [v for v in VOICES if (not accent or v[0] in accent) and (not sex or v[1] in sex)]
+    return max(picks, key=lambda v: sum(w in VOICES[v] for w in wanted))  # max keeps the first of equals
+
 
 @dataclass
 class Token:
