@@ -391,6 +391,12 @@ async def test_every_edit_keeps_the_source_building_what_plays(service, store):
         ("revise", "also", "No citation now."),  # [^a] is cited nowhere: its line and note go
         ("insert", "how-caching-works", "## Fresh {#cited}\n\nNew claim[^c].\n\n[^c]: Source C.\n"),
         ("revise", "cited", "Still the claim[^c], said again."),  # its source line stays though the revision lacks it
+        (
+            "insert",
+            "cited",
+            "## Part four {#p4 .chapter}\n\nA chapter with code.\n\n```python\ne = 5\n```\n\nIts code spills, as appended.\n",
+        ),
+        ("revise", "p2", "## Part two {#p2 .chapter}\n\nRevised, and still a chapter.\n"),
     ]
     for op, x, y in steps:
         if op == "arrange":
@@ -401,7 +407,9 @@ async def test_every_edit_keeps_the_source_building_what_plays(service, store):
             await service.revise(h, x, y)
         await _source_matches(service, store, h)
     w = store.by_handle(h).w
-    assert [(x.id, x.visual["n"]) for x in w.slides if x.kind == "chapter"] == [("p2", 1), ("p1", 2), ("part-three", 3)]
+    assert [(x.id, x.visual["n"]) for x in w.slides if x.kind == "chapter"] == [("p4", 1), ("p2", 2), ("p1", 3), ("part-three", 4)]
+    p4 = [x.id for x in w.slides].index("p4")
+    assert w.slides[p4 + 1].kind == "code"  # the visual under an inserted chapter got its own slide
     assert w.notes == {"c": "Source C."} and "Source A." not in s.source
 
 
@@ -435,6 +443,17 @@ async def test_with_two_lines_for_one_source_the_one_left_wins(service, store):
     assert s.w.notes["a"] == "Second def."
     await service.arrange(r["handle"], None, ["two"])
     assert s.w.notes["a"] == "First def."
+    await _source_matches(service, store, r["handle"])
+
+
+async def test_with_two_quoted_sources_for_one_id_the_one_left_wins(service, store, project):
+    r = await started(service, project_dir=str(project))
+    md = "## One {#one}\n\nA[^a].\n\n[^a]: file=src/cache.py lines=1-2 First\n\n## Two {#two}\n\nB[^a].\n\n[^a]: file=src/cache.py lines=5-6 Second\n"
+    await service.add(r["handle"], OPENING + "\n" + md)
+    s = store.by_handle(r["handle"])
+    assert s.w.cited["a"]["start"] == 5
+    await service.arrange(r["handle"], None, ["two"])
+    assert s.w.cited["a"]["start"] == 1 and s.w.notes["a"].startswith("First")
     await _source_matches(service, store, r["handle"])
 
 

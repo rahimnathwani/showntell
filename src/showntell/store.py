@@ -170,19 +170,7 @@ class Session:
             attrs = [f"#{old.id}"] + [f".{c}" for c in old.classes]
             attrs += [f'{k}="{v}"' for k, v in old.attrs.items() if isinstance(v, str)]
             text = f"## {old.title} {{{' '.join(attrs)}}}\n\n{text}"
-        scratch = Walkthrough(
-            id=self.w.id,
-            key="",
-            report_key="",
-            title=self.w.title,
-            frame=self.w.frame,
-            voice=self.w.voice,
-            speed=self.w.speed,
-            root=self.w.root,
-            sha=self.w.sha,
-        )
-        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
-        b.add(text + "\n", check_last=False)
+        scratch, b = self._scratch(text, after_first=idx > 0)
         issues = list(b.issues)
         if not scratch.slides:
             raise ValueError("the Markdown has no slide in it")
@@ -320,6 +308,15 @@ class Session:
         self.builder.parser.lines_seen += self.source.count("\n") - before
         self._sync_notes()
 
+    @staticmethod
+    def _note_text(raw: str) -> str:
+        """The note text a `file=` source line gives, as the builder writes it."""
+        m = re.match(r"file=(\S+)(?:\s+lines=(\S+))?\s*(.*)$", raw, re.S)
+        if not m:
+            return raw
+        where = m.group(1) + (f", lines {m.group(2)}" if m.group(2) else "")
+        return f"{m.group(3).strip()} ({where})" if m.group(3).strip() else where
+
     def _cited(self) -> set[str]:
         return {n for sl in [*self.w.slides, *self.staged.values()] for x in sl.says for n in x.notes}
 
@@ -332,12 +329,14 @@ class Session:
 
     def _sync_notes(self) -> None:
         """Keep only the sources the source Markdown still defines, so state and Markdown agree."""
-        defs = {b.attrs["id"]: b.text for b in Parser().feed(self.source) if b.kind == "footnote"}  # the last one wins, as in the builder
-        for nid, raw in defs.items():
-            if not raw.startswith("file="):  # quoted lines keep what was read when they were sent
-                self.w.notes[nid] = raw
+        blocks = {b.attrs["id"]: b for b in Parser().feed(self.source) if b.kind == "footnote"}  # the last one wins, as in the builder
+        for nid, blk in blocks.items():
+            if not blk.text.startswith("file="):
+                self.w.notes[nid] = blk.text
                 self.w.cited.pop(nid, None)
-        defined = set(defs)
+            elif self.w.notes.get(nid) != self._note_text(blk.text):  # another definition than the one in state: read it
+                self.builder._note(blk)
+        defined = set(blocks)
         for nid in [n for n in self.w.notes if n not in defined]:
             del self.w.notes[nid]
         for nid in [n for n in self.w.cited if n not in defined]:
@@ -373,19 +372,7 @@ class Session:
             raise ValueError("inserted slides start with a heading: `## Title`")
         if len(self.source) + len(text) > MAX_SOURCE_BYTES:
             raise ValueError("this walkthrough is over 1 MB of Markdown; start a new one")
-        scratch = Walkthrough(
-            id=self.w.id,
-            key="",
-            report_key="",
-            title=self.w.title,
-            frame=self.w.frame,
-            voice=self.w.voice,
-            speed=self.w.speed,
-            root=self.w.root,
-            sha=self.w.sha,
-        )
-        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
-        b.add(text + "\n", check_last=False)
+        scratch, b = self._scratch(text, after_first=True)
         if b.parser.pending.strip():
             raise ValueError("a code block in the inserted Markdown is never closed; send whole slides")
         if scratch.questions:
@@ -504,6 +491,32 @@ class Session:
         self.builder.issues = []
         self._changed(self._renumber_chapters(), meta=True)  # the player takes the new order from the delta
         return {"removed": remove, "moved": [x for x in ids if x in kept] != kept, "order": kept}
+
+    def _scratch(self, text: str, after_first: bool) -> tuple[Walkthrough, Builder]:
+        """Build Markdown on its own, for a revision or an insert. `after_first`: as slides that
+        follow others, so a first heading is not a title slide but builds as it would appended
+        (a `.chapter` heading is a chapter card, and a visual under it spills onto its own slide)."""
+        scratch = Walkthrough(
+            id=self.w.id,
+            key="",
+            report_key="",
+            title=self.w.title,
+            frame=self.w.frame,
+            voice=self.w.voice,
+            speed=self.w.speed,
+            root=self.w.root,
+            sha=self.w.sha,
+            retired=dict(self.w.retired),
+        )
+        lead = Slide(id="\0lead", kind="title", says=[Say(id="\0lead.1", text="Lead.", status="ready")])
+        if after_first:
+            scratch.slides.append(lead)
+        b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
+        b.add(text + "\n", check_last=False)
+        if after_first:
+            scratch.slides.remove(lead)
+            b.issues = [i for i in b.issues if i.slide != lead.id]
+        return scratch, b
 
     def _take_notes(self, scratch: Walkthrough) -> None:
         """Sources defined in a revised or inserted slide's Markdown join the walkthrough's."""
