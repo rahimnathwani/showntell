@@ -185,6 +185,19 @@ The [search box](#@4,16,55,9) sits above [the first result](#@4,31,92,14){.circl
 - **1993**: Released into the public domain
 
 It began with [a memo](#1989), and [two years later](#1991) anyone could use it.
+
+## Placed boxes {#placed .build}
+
+```reladraw
+style hot  fill: theme-primary
+node web "Web app"  layout: column
+node web.ui "Interface"
+node web.api "API"
+node store "Database"  right of web (gap: wide)  shape: cylinder  style: hot
+edge web.api -> store "queries"
+```
+
+The [web app](#web) asks [the database](#store).
 """
 
 KINDS = [
@@ -206,6 +219,7 @@ KINDS = [
     "image",
     "svg",
     "list",
+    "reladraw",
 ]
 
 
@@ -325,7 +339,7 @@ def test_every_kind_renders(daemon, browser, frame):
             i,
         )
         page.goto(f"{url}?at={t:.2f}")
-        page.wait_for_timeout(900 if slide["kind"] in ("diagram", "math") else 400)
+        page.wait_for_timeout(900 if slide["kind"] in ("diagram", "math", "reladraw") else 400)
         page.evaluate("document.querySelector('#overlay').hidden = true")
         state = page.evaluate(
             """() => {
@@ -500,7 +514,7 @@ def test_embedded_player_sends_events_and_takes_commands(daemon, browser):
     page.goto(f"http://127.0.0.1:{srv.server_port}/")
     page.wait_for_function("window.got.some(([t]) => t === 'ready')", timeout=15000)
     page.evaluate("document.getElementById('p').seek(document.getElementById('p').duration - 0.5)")
-    page.wait_for_function("window.got.some(([t, d]) => t === 'slidechange' && d.id === 'timeline')", timeout=10000)
+    page.wait_for_function("window.got.some(([t, d]) => t === 'slidechange' && d.id === 'placed')", timeout=10000)
     ready = page.evaluate("window.got.find(([t]) => t === 'ready')[1]")
     assert ready["slides"] == len(KINDS) and ready["duration"] > 0
     # Changing `speed` on a loaded player changes its speed in place, keeping the iframe.

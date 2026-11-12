@@ -14,8 +14,8 @@ node web.api
   // an indented comment continues the statement
 node store "Data / base"  right of web (gap: wide)
   shape: cylinder
-icon crate """
-<svg viewBox="0 0 24 24"><text>node fake "Not a node"</text></svg>
+description store """
+node fake "Not a node"
 """
 guide node ruler  below web
 node esc "Say \\"hi\\""  below store
@@ -66,3 +66,38 @@ def test_cues_reveal_and_file(build, project):
     assert "cue_no_target" in codes
     _, codes, _ = last(build, "## C\n\n```reladraw file=missing.reladraw\n```\n\nNothing.\n", root=project)
     assert "source_error" in codes
+
+
+def test_pasted_icons_are_refused_even_on_one_line():
+    one = 'icon c """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>"""\nnode a "A"  badge: c\n'
+    many = 'node a "A"\nicon c """\n<svg viewBox="0 0 1 1"/>\n"""\n'
+    for src in (one, many):
+        vis, problems = parse_reladraw(src, {})
+        assert vis == {} and len(problems) == 1 and "pastes a picture" in problems[0], problems
+    vis, problems = parse_reladraw('icon gh  letters: "GH"\nnode a "A"  icon: gh\nnode b "B"  icon: database\n', {})
+    assert not problems and [i["label"] for i in vis["items"]] == ["A", "B"]
+
+
+def test_a_description_string_hides_its_lines_and_markup_reads_as_text():
+    src = 'node a "A"\ndescription a """\nnode fake "x"  // http://not.a.comment\n"""\nnode b "shared / [dim]synced[/dim]"  below a\nnode c  icon: database\n'
+    vis, problems = parse_reladraw(src, {})
+    assert not problems and [(i["id"], i["label"]) for i in vis["items"]] == [("a", "A"), ("b", "shared synced"), ("c", "")]
+
+
+def test_named_lines_carry_their_ends_and_too_big_is_refused():
+    vis, _ = parse_reladraw('node a\nnode b  right of a\nedge req a -> b "named"\nedge a -> b\nedge ghost a -> z\n', {})
+    assert vis["edges"] == {"req": ["a", "b"]}
+    many = "\n".join(f"node n{i}" for i in range(81))
+    assert "at most 80 boxes" in parse_reladraw(many, {})[1][0]
+    lines = "node a\nnode b  right of a\n" + "\n".join("edge a -> b" for _ in range(161))
+    assert "161 lines" in parse_reladraw(lines, {})[1][0]
+
+
+def test_find_prefers_text_over_a_name_in_another_case():
+    vis, _ = parse_reladraw('node a "Cache"\nnode cache "Store"\n', {})
+    assert find(vis, "Cache") == "a" and find(vis, "cache") == "cache" and find(vis, "Store") == "cache"
+
+
+def test_leading_blank_lines_are_kept_so_line_numbers_match():
+    vis, _ = parse_reladraw('\n\nnode a "A"\n', {})
+    assert vis["source"].split("\n")[2] == 'node a "A"'

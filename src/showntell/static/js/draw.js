@@ -157,22 +157,24 @@ const WRAP_BELOW = 0.85; // code shrunk further than this for one long line wrap
 function fitCode(content, bw, bh, grow, k) {
   const floor = CODE_PX / codeFont(content);
   if (k >= Math.max(floor, WRAP_BELOW)) return k;
+  // Readable as it is: change the layout only for a real gain.
+  const need = k >= floor ? k * 1.1 : k + 0.01;
   // Too many lines, not too long ones: stacking and wrapping would only make it taller.
   const cw = Math.max(content.offsetWidth, content.scrollWidth), ch = Math.max(content.offsetHeight, content.scrollHeight);
   if (bh / ch <= bw / cw) return k;
   if (content.matches(".diff")) {
     content.classList.add("stacked");
     const stacked = fitScale(content, bw, bh, grow);
-    if (stacked > k) k = stacked;
+    if (stacked >= need) k = stacked;
     else content.classList.remove("stacked");
-    if (k >= floor) return k;
+    if (k >= Math.max(floor, WRAP_BELOW)) return k;
   }
   // Wrapping trades width for height: try the reading size first, then smaller ones.
   // Code that changes in steps is held at its widest step's width; wrapping replaces that.
   const minWidth = content.style.minWidth;
   content.style.minWidth = "";
   content.classList.add("wrapped");
-  for (let g = Math.min(grow, Math.max(floor, 1)); g > k + 0.01; g -= 0.04) {
+  for (let g = Math.min(grow, Math.max(floor, 1)); g >= need; g -= 0.04) {
     content.style.width = `${Math.floor((bw / g) * 0.98)}px`;
     const h = Math.max(content.offsetHeight, content.scrollHeight);
     if (content.scrollWidth <= (bw / g) * 0.98 + 1 && h * g <= bh * 0.98) return g;

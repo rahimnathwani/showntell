@@ -74,12 +74,8 @@ export default {
     const label = parts.svg.querySelector(".nodeLabel, text");
     const px = (label ? parseFloat(getComputedStyle(label).fontSize) : 20) * k;
     if (px && px < READABLE_PX - 3) {
-      // Say which way to turn it: a drawing taller than the body's shape wants to run across.
-      const tall = vb && vb.width && vb.height / vb.width > body.clientHeight / Math.max(1, body.clientWidth);
       report(`Slide ${slide.id}: the diagram had to shrink until its labels are about ${Math.round(px)} px high, too small to read.`
-        + (tall ? " It is too tall for the slide: lay it out left to right (flowchart LR), or split it or use fewer nodes."
-          : " It is too wide for the slide: lay it out top to bottom (flowchart TB), or split it or use fewer nodes."),
-        "text_too_small", slide.id);
+        + turn(slide.visual?.source, vb, body), "text_too_small", slide.id);
     }
     // Beside code or takeaways, a narrow diagram is the point of the layout.
     const beside = ["side", "pair"].some((c) => slide.classes?.includes(c));
@@ -88,6 +84,16 @@ export default {
     return true;
   },
 };
+
+// How to fix a diagram shrunk too far. A flowchart running the wrong way for the slide's shape
+// is told to turn; anything else (or a flowchart already running the right way) to shrink.
+function turn(source, vb, body) {
+  const m = /^\s*(?:flowchart|graph)\s+(TB|TD|BT|LR|RL)\b/m.exec(source || "");
+  const tall = vb && vb.width && vb.height / vb.width > body.clientHeight / Math.max(1, body.clientWidth);
+  if (m && tall && /^(TB|TD|BT)$/.test(m[1])) return " It is too tall for the slide: lay it out left to right (flowchart LR), or split it or use fewer nodes.";
+  if (m && !tall && /^(LR|RL)$/.test(m[1])) return " It is too wide for the slide: lay it out top to bottom (flowchart TB), or split it or use fewer nodes.";
+  return " Split it, or use fewer nodes.";
+}
 
 async function mermaidReady() {
   await loadScript(`${STATIC}/vendor/mermaid.min.js`);

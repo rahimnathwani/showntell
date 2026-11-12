@@ -249,6 +249,7 @@ body:not(.portrait) .diff.wrapped:not(.stacked) { grid-template-columns: repeat(
 .reladraw { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .reladraw svg { display: block; max-width: none; overflow: visible; }
 .reladraw .err { color: var(--muted); font-size: 22px; text-align: center; }
+.reladraw.page svg { border-radius: 14px; box-shadow: 0 10px 30px var(--shadow); }
 .reladraw g[data-node], .reladraw g[data-edge] { transition: opacity 0.4s, filter 0.3s; }
 .reladraw g[data-node].active { filter: drop-shadow(0 0 10px var(--accent-glow)); }
 .chart svg { width: 100%; height: 100%; font-family: var(--sans); }
@@ -266,6 +267,8 @@ body:not(.portrait) .diff.wrapped:not(.stacked) { grid-template-columns: repeat(
 .chart g.entry.active rect { stroke: var(--fg); stroke-width: 3; }
 .chart g.entry.veiled { opacity: 0; transform: none; }
 /* Unpointed bars and lines fade; their names and values stay readable. */
+.chart :is(.has-active, svg.has-active) > g.entry:not(.active) { opacity: 1; filter: none; }
+.chart :is(.has-active, svg.has-active) > g.entry.note:not(.active) { opacity: 0.6; }
 .chart :is(.has-active, svg.has-active) > g.entry:not(.active) :is(rect, .line, .dot) { opacity: 0.35; }
 .chart :is(.has-active, svg.has-active) > g.entry:not(.active) :is(.vlabel, .slabel) { opacity: 0.7; }
 .chart rect, .chart .line, .chart .dot, .chart .vlabel, .chart .slabel { transition: opacity 0.4s; }

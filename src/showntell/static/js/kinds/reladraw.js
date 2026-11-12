@@ -26,7 +26,7 @@ export default {
     return ready().then((lib) => {
       let out;
       try {
-        out = lib.draw(v.source || "", { theme: theme(), measurer: measurer(), fontSize: FONT_PX, margin: 6 });
+        out = drawn(lib, v.source || "");
       } catch (e) {
         const where = e.line ? `line ${e.line} of the block: ` : "";
         host.innerHTML = `<div class="err">The diagram could not be drawn.</div>`;
@@ -41,6 +41,7 @@ export default {
       }
       host.append(svg);
       parts.svg = svg;
+      if (svg.dataset.page) { host.classList.add("page"); svg.style.background = svg.dataset.page; }
       svg.querySelectorAll("g[data-node]").forEach((g) => parts.items.set(g.dataset.node, g));
       const found = out.findings || [];
       found.slice(0, MAX_FINDINGS).forEach((f) => {
@@ -72,16 +73,18 @@ export default {
   reveal(reveal, parts, veil) {
     const svg = parts.svg, v = parts.reladraw;
     if (!svg || !("items" in reveal)) return;
-    const top = (name) => v.part_of?.[name] ?? name;
+    // A node's top-level part is the first segment of its dotted name (a badge is `db.badge`).
     const shown = (name) => {
-      const i = v.ids.indexOf(top(name));
-      return i < 0 || i < reveal.items;
+      const i = v.ids.indexOf(String(name).split(".")[0]);
+      return i < 0 ? reveal.items >= v.ids.length : i < reveal.items;
     };
-    for (const g of svg.querySelectorAll("g[data-node]")) veil(g, !shown(g.dataset.node));
     const all = v.ids.length <= reveal.items;
-    for (const g of svg.querySelectorAll("g[data-edge]")) {
-      const ends = edgeEnds(g.dataset.name || "", v);
-      veil(g, !(ends ? ends.every(shown) : all));
+    for (const g of svg.querySelectorAll("g[data-name]")) {
+      if (g.dataset.node) veil(g, !shown(g.dataset.node));
+      else if (g.dataset.edge !== undefined) {
+        const ends = v.edges?.[g.dataset.name] || edgeEnds(g.dataset.name || "", v);
+        veil(g, !(ends ? ends.every(shown) : all));
+      } else veil(g, !all); // regions, points, bundles: once everything shows
     }
   },
 
@@ -90,7 +93,9 @@ export default {
     if (!svg) return undefined;
     if (cue.kind === "item") {
       const g = parts.items.get(cue.id);
-      return g ? { rects: [g.getBoundingClientRect()] } : help.wholeVisual();
+      if (!g) return help.wholeVisual();
+      g.classList.add("active");
+      return { rects: [g.getBoundingClientRect()] };
     }
     if (cue.kind === "text" && cue.text) {
       const want = norm(cue.text);
@@ -146,7 +151,7 @@ function measurer() {
     measure(text, size) {
       const lines = window.reladraw.splitLines(text);
       canvas.font = `400 ${size}px ${family}`;
-      const width = Math.max(...lines.map((l) => canvas.measureText(l.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")).width));
+      const width = Math.max(...lines.map((l) => canvas.measureText(l).width));
       return { width: Math.ceil(width), height: lines.length * lh(size), lines };
     },
   };
@@ -157,7 +162,8 @@ function theme() {
   const css = getComputedStyle(document.body);
   const v = (n, fb) => hex(css.getPropertyValue(n).trim() || fb);
   const page = v("--stage", "#111111"), fg = v("--fg", "#e6e6e6");
-  const accent = (c) => ({ color: c, subtle: mix(c, page, 0.25), on: luminance(c) > 0.45 ? page : fg });
+  // Text on a solid accent: the theme's own for its accent, else whichever of page and text reads.
+  const accent = (c, on) => ({ color: c, subtle: mix(c, page, 0.25), on: on || (contrast(c, page) > contrast(c, fg) ? page : fg) });
   return {
     background: page,
     boxFill: v("--node", "#1c1c28"),
@@ -169,7 +175,7 @@ function theme() {
     edge: v("--muted", "#8b8b8b"),
     iconInk: v("--muted", "#8b8b8b"),
     iconShade: v("--panel-2", "#2a2a35"),
-    primary: accent(v("--accent", "#ffc857")),
+    primary: accent(v("--accent", "#ffc857"), css.getPropertyValue("--on-accent").trim() ? v("--on-accent") : null),
     secondary: accent(v("--c2", "#6fb6ff")),
   };
 }
@@ -192,31 +198,86 @@ function mix(a, b, t) {
   return `#${x.map((c, i) => Math.round(c * t + y[i] * (1 - t)).toString(16).padStart(2, "0")).join("")}`;
 }
 function luminance(h) {
-  const [r, g, b] = rgb(h).map((c) => c / 255);
+  const [r, g, b] = rgb(h).map((c) => c / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
+function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
 
-// The drawing as an element, with nothing that could leave the page: links unwrapped, outside
-// pictures and embedded HTML removed, references only to the drawing's own ids. The full-page
-// background rectangle goes too, so the slide shows through.
-function clean(text) {
-  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
-  const svg = doc.documentElement;
-  if (!svg || svg.namespaceURI !== SVG_NS || svg.querySelector("parsererror")) return null;
-  for (const a of [...svg.querySelectorAll("a")]) a.replaceWith(...a.childNodes);
-  svg.querySelectorAll("script, foreignObject, image, iframe, style").forEach((n) => n.remove());
-  for (const n of svg.querySelectorAll("*")) {
-    for (const at of [...n.attributes]) {
-      const name = at.name.toLowerCase(), val = at.value.trim();
-      if (name.startsWith("on")) n.removeAttribute(at.name);
-      else if ((name === "href" || name === "xlink:href") && !val.startsWith("#")) n.removeAttribute(at.name);
-      else if (/url\(\s*['"]?(?!#)/i.test(val)) n.removeAttribute(at.name);
+// A drawing per source: the library lays out on the main thread, so a slide drawn again (a seek,
+// a transition) reuses the first result. The theme is fixed for the page's life.
+const memo = new Map();
+function drawn(lib, source) {
+  if (!memo.has(source)) {
+    let out;
+    try {
+      out = { ...lib.draw(source, { theme: theme(), measurer: measurer(), fontSize: FONT_PX, margin: 6 }) };
+    } catch (e) {
+      out = { error: e };
     }
+    memo.set(source, out);
   }
+  const out = memo.get(source);
+  if (out.error) throw out.error;
+  return out;
+}
+
+// The drawing as an element rebuilt from an allowlist: SVG elements the library draws, and their
+// geometry and paint attributes. Anything else is dropped (links are unwrapped): no HTML, no
+// outside reference (an href only to the drawing's own ids, url() only as url(#id)), no style
+// attribute or element, no escapes. The full-page background goes too, so the slide shows
+// through; a background the author chose (`diagram background:`) is kept as the svg's own.
+const ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan",
+  "defs", "marker", "clipPath", "mask", "title", "desc", "linearGradient", "radialGradient", "stop", "symbol", "use"]);
+const ATTRS = new Set(["id", "class", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "fx", "fy", "width", "height",
+  "d", "points", "viewBox", "preserveAspectRatio", "transform", "fill", "fill-opacity", "fill-rule", "clip-rule", "stroke",
+  "stroke-width", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+  "stroke-opacity", "opacity", "font-family", "font-size", "font-weight", "font-style", "text-anchor", "dominant-baseline",
+  "alignment-baseline", "baseline-shift", "letter-spacing", "text-decoration", "dx", "dy", "rotate", "textLength",
+  "lengthAdjust", "marker-start", "marker-mid", "marker-end", "markerWidth", "markerHeight", "markerUnits", "refX", "refY",
+  "orient", "clip-path", "mask", "maskUnits", "maskContentUnits", "clipPathUnits", "gradientUnits", "gradientTransform",
+  "offset", "stop-color", "stop-opacity", "visibility", "display", "paint-order", "vector-effect", "href",
+  "data-name", "data-node", "data-edge", "data-line"]);
+const XLINK_NS = "http://www.w3.org/1999/xlink";
+const TRANSFORM = /^(\s*(matrix|translate|scale|rotate|skewX|skewY)\(\s*[-+\d.eE\s,]*\)\s*,?)*\s*$/;
+const SAFE_VALUE = /^[^\\]*$/; // no CSS escapes; values are set as attributes, never parsed as markup
+
+export function clean(text) {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  const root = doc.documentElement;
+  if (!root || root.namespaceURI !== SVG_NS || root.localName !== "svg" || doc.querySelector("parsererror")) return null;
+  const copy = (src) => {
+    const out = document.createElementNS(SVG_NS, src.localName);
+    for (const at of src.attributes) {
+      const name = at.localName, val = at.value;
+      const ns = at.namespaceURI;
+      if (ns && !(ns === XLINK_NS && name === "href")) continue; // xmlns declarations, xml:, foreign attributes
+      if (!ATTRS.has(name) || !SAFE_VALUE.test(val)) continue;
+      if (name === "href" && !/^#[\w-]+$/.test(val)) continue;
+      // Functions only where SVG has them: transforms, and url(#id) pointing inside the drawing.
+      if (name === "transform" ? !TRANSFORM.test(val) : val.includes("(") && !/^\s*url\(#[\w-]+\)\s*$/.test(val)) continue;
+      out.setAttribute(name, val);
+    }
+    for (const n of src.childNodes) {
+      if (n.nodeType === Node.TEXT_NODE) out.append(n.data);
+      else if (n.nodeType !== Node.ELEMENT_NODE || n.namespaceURI !== SVG_NS) continue;
+      else if (n.localName === "a") for (const c of copyChildren(n)) out.append(c);
+      else if (ELEMENTS.has(n.localName)) out.append(copy(n));
+    }
+    return out;
+  };
+  const copyChildren = (a) => [...copy(a).childNodes];
+  const svg = copy(root);
   const first = svg.querySelector(":scope > rect");
   const vb = svg.viewBox.baseVal;
-  if (first && vb && +first.getAttribute("width") === vb.width && +first.getAttribute("height") === vb.height) first.remove();
+  if (first && vb && +first.getAttribute("width") === vb.width && +first.getAttribute("height") === vb.height) {
+    const fill = first.getAttribute("fill");
+    if (fill && hex(fill) !== theme().background) svg.dataset.page = hex(fill);
+    first.remove();
+  }
   svg.removeAttribute("width");
   svg.removeAttribute("height");
-  return document.importNode(svg, true);
+  return svg;
 }
