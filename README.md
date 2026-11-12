@@ -321,6 +321,7 @@ The repository is also a GitHub Action: it voices a walkthrough's Markdown on th
 | **Present it yourself** | the menu's "Present with notes", or `?present=1`: no voice, Space or → for the next step, narration as notes, and an audience window that follows |
 | **Pause at each step** | the menu: stops after each paragraph that revealed a part |
 | **Ask for a change** | the menu copies a request naming the slide, the time and what the narration says, to paste to your agent |
+| **Speed** | the menu, or `?speed=1.5` in a link (0.5 to 3), which starts that page there without changing the speed the viewer saved |
 | **Theme** | the menu, or `?theme=light` |
 | **Keyboard** | Space, ←/→ 5 s, Shift ←/→ slides, C captions, T transcript; lists are one tab stop with arrow keys |
 
@@ -331,7 +332,7 @@ The repository is also a GitHub Action: it voices a walkthrough's Markdown on th
 <showntell-player src="https://your.host/my-walkthrough/" poster="https://your.host/my-walkthrough/poster.png"></showntell-player>
 ```
 
-The element plays an exported folder or a live link in an iframe, forwards `ready`, `slidechange`, `timeupdate`, `durationchange`, `waiting`, `play`, `pause` and `ended` events, and has `play()`, `pause()` and `seek(seconds)`. With `poster`, the player loads on the first click. Browsers block public pages from loading a link on your own machine, so embed exported folders, not `localhost` links.
+The element plays an exported folder or a live link in an iframe, forwards `ready`, `slidechange`, `timeupdate`, `durationchange`, `waiting`, `play`, `pause` and `ended` events, and has `play()`, `pause()` and `seek(seconds)`. With `poster`, the player loads on the first click; `speed="1.25"` starts it at that speed. Browsers block public pages from loading a link on your own machine, so embed exported folders, not `localhost` links.
 
 ## Settings
 

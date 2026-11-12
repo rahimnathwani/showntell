@@ -91,7 +91,12 @@ $("#prev").onclick = () => seekSlide(-1);
 $("#next").onclick = () => seekSlide(1);
 $("#replay").onclick = () => { $("#end").hidden = true; S.ended = false; seek(0); play(); };
 $("#end-transcript").onclick = () => setTranscript(true);
-$("#speed").value = String(S.rate);
+// A speed from the link or from storage that the menu does not list gets its own entry, in order.
+if (![...$("#speed").options].some((o) => parseFloat(o.value) === S.rate)) {
+  const later = [...$("#speed").options].find((o) => parseFloat(o.value) > S.rate) || null;
+  $("#speed").add(new Option(`${S.rate}×`, String(S.rate)), later);
+}
+$("#speed").value = [...$("#speed").options].find((o) => parseFloat(o.value) === S.rate).value;
 $("#speed").onchange = (e) => { S.rate = parseFloat(e.target.value) || 1; audio.playbackRate = S.rate; store.set("rate", S.rate); };
 $("#pause-after").checked = S.pauseAfterSlide;
 $("#pause-after").onchange = (e) => { S.pauseAfterSlide = e.target.checked; store.set("pauseAfterSlide", S.pauseAfterSlide); };

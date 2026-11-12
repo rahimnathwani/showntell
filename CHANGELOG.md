@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Speed in a link:** `?speed=1.5` starts the player at that speed, held to 0.5x to 3x, without changing the speed the viewer saved; `<showntell-player speed="1.25">` passes it on. The menu now runs from 0.5x to 3x and lists a linked speed it lacked.
+
 ## 0.2.5 (2026-11-10)
 
 - **Windows: project folders found:** a client's shared folder `file:///D:/x` parsed to `/D:/x`, inside which no Windows path lies, so every `start_walkthrough` from Claude Code failed with "outside the folders this client shares". Roots go through `url2pathname`, which also undoes %-escapes exactly once (a folder named `a%20b` stays `a%20b`).

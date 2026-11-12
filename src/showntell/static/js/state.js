@@ -15,6 +15,14 @@ export const AUDIENCE = params.get("audience") === "1"; // follows a presenter w
 // the idle motion: a drawing's breathing and a held close-up's creep.
 export const IDLE_MOTION = params.get("capture") !== "1" || params.get("motion") === "1";
 export const EMBEDDED = window.parent !== window;
+// ?speed= starts this page at that speed, held to 0.5x to 3x, without changing the speed the viewer
+// saved from the menu. Frame capture plays by the clock it is given, so it ignores the parameter.
+export const LINK_RATE = linkRate(params.get("speed"));
+function linkRate(v) {
+  const r = parseFloat(v);
+  if (!Number.isFinite(r) || r <= 0 || params.get("capture") === "1") return null;
+  return Math.round(Math.min(3, Math.max(0.5, r)) * 100) / 100;
+}
 export const FRAMES = { landscape: [1280, 720], square: [960, 960], portrait: [720, 1280] };
 
 export const stage = $("#stage"), host = $("#slide-host"), pointer = $("#pointer");
@@ -40,7 +48,7 @@ export const S = {
   shown: { slide: -1, rev: -1, id: "" }, // what is on screen
   view: null, // {root, ready, parts, body, done}
   lastCueKey: "", lastReveal: "", lastSay: "", lastWord: -2, lastAnnounced: "", frameKey: "",
-  rate: store.get("rate", 1),
+  rate: LINK_RATE ?? store.get("rate", 1),
   captionsOn: store.get("cc", true),
   pauseAfterSlide: store.get("pauseAfterSlide", false),
   pauseSteps: store.get("pauseSteps", false),

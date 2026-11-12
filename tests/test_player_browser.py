@@ -406,6 +406,36 @@ def test_a_token_in_the_link_is_not_a_start_time(daemon, browser):
     page.close()
 
 
+def test_speed_in_the_link_starts_there_and_leaves_the_saved_speed(daemon, browser):
+    url = _make(daemon, "landscape")
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    saved = "localStorage.getItem('showntell.rate')"
+    page.goto(url + "?speed=1.5")
+    page.wait_for_selector(".slide")
+    assert page.input_value("#speed") == "1.5"
+    assert page.evaluate(saved) is None  # the link does not overwrite the viewer's choice
+    page.goto(url + "?speed=9")  # held to the top of the range
+    page.wait_for_selector(".slide")
+    assert page.input_value("#speed") == "3"
+    page.goto(url + "?speed=1.3")  # not in the menu: listed in order, between 1.25 and 1.5
+    page.wait_for_selector(".slide")
+    values = page.eval_on_selector_all("#speed option", "os => os.map(o => o.value)")
+    assert page.input_value("#speed") == "1.3" and values.index("1.3") == values.index("1.25") + 1
+    page.goto(url + "?speed=fast")  # ignored
+    page.wait_for_selector(".slide")
+    assert page.input_value("#speed") == "1"
+    page.click("#more")
+    page.select_option("#speed", "2")  # the menu still saves
+    assert page.evaluate(saved) == "2"
+    page.goto(url + "?speed=0.75")  # and a link still wins on its own page
+    page.wait_for_selector(".slide")
+    assert page.input_value("#speed") == "0.75"
+    page.goto(url)
+    page.wait_for_selector(".slide")
+    assert page.input_value("#speed") == "2"
+    page.close()
+
+
 def test_presenting_steps_by_hand_without_voice(daemon, browser):
     url = _make(daemon, "landscape")
     page = browser.new_page(viewport={"width": 1440, "height": 900})

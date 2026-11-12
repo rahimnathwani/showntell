@@ -1,4 +1,4 @@
-// <showntell-player src="https://…/w/ID/" poster="poster.png" frame="landscape"></showntell-player>
+// <showntell-player src="https://…/w/ID/" poster="poster.png" frame="landscape" speed="1.25"></showntell-player>
 //
 // Embeds a walkthrough (a live link or an exported folder) in any page. The player runs in an
 // iframe; this element forwards its events and commands:
@@ -8,12 +8,12 @@
 //   props:   currentTime, duration, paused, slide
 // With `poster`, the iframe is not loaded until the poster is clicked, so a page can hold many
 // players cheaply. Mobile browsers only start audio from a tap inside the player, so the player's
-// own play button may need one more tap there.
+// own play button may need one more tap there. `speed` starts the player at that speed (0.5 to 3).
 
 const RATIOS = { landscape: "16 / 9", square: "1 / 1", portrait: "9 / 16" };
 
 class ShowntellPlayer extends HTMLElement {
-  static observedAttributes = ["src", "frame", "poster"];
+  static observedAttributes = ["src", "frame", "poster", "speed"];
 
   constructor() {
     super();
@@ -48,6 +48,7 @@ class ShowntellPlayer extends HTMLElement {
     const u = new URL(this.getAttribute("src") || "", document.baseURI);
     u.searchParams.set("embed", "1");
     if (autoplay) u.searchParams.set("autoplay", "1");
+    if (this.hasAttribute("speed")) u.searchParams.set("speed", this.getAttribute("speed"));
     return u.toString();
   }
 
