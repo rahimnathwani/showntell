@@ -153,7 +153,29 @@ def test_table_row_cue_by_id_and_generated_id(cues):
 
 def test_unknown_table_row_is_an_issue(cues):
     found, issues = cues(TABLE, "The [x](#zz) row.")
-    assert found == [] and any("no row `zz`" in i for i in issues)
+    assert found == [] and any("no row or column `zz`" in i and "col-1 to col-2" in i for i in issues)
+
+
+def test_table_column_cue_by_position_and_heading(cues):
+    (a, b), issues = cues(TABLE, "The [names](#col-1) and [speeds](#col-speed).")
+    assert (strip(a), strip(b)) == ({"kind": "col", "col": 0}, {"kind": "col", "col": 1}) and not issues
+
+
+def test_table_cell_cue_by_row_and_column(cues):
+    (a, b, c), issues = cues(TABLE, "Memory is [fast](#m/speed), disk is [slow](#row-2/col-2), and [its name](#row-2/col-name) is short.")
+    assert [strip(x) for x in (a, b, c)] == [
+        {"kind": "cell", "id": "m", "col": 1},
+        {"kind": "cell", "id": "row-2", "col": 1},
+        {"kind": "cell", "id": "row-2", "col": 0},
+    ]
+    assert not issues
+
+
+def test_table_cell_outside_the_table_is_an_issue(cues):
+    found, issues = cues(TABLE, "The [x](#row-9/col-1), the [y](#row-1/col-3) and the [z](#col-0).")
+    assert found == []
+    assert any("no row `row-9`" in i for i in issues) and any("no column `col-3`" in i for i in issues)
+    assert any("no row or column `col-0`" in i for i in issues)
 
 
 def test_diagram_node_cue_carries_its_label(cues):

@@ -180,7 +180,7 @@ A `$$ ... $$` block works too. The content is LaTeX rendered with KaTeX.
 
 ### Table
 
-A GitHub-style pipe table. Cells may hold inline code and emphasis. Rows are `#row-1`, `#row-2` and so on for cues; a row with a cell ending in `{#id}` (normally the last) also answers to that id.
+A GitHub-style pipe table. Cells may hold inline code and emphasis. Rows are `#row-1`, `#row-2` and so on for cues; a row with a cell ending in `{#id}` (normally the last) also answers to that id. Columns are `#col-1`, `#col-2` and so on, or `#col-` and the heading's slug (`#col-p99` for a `p99` heading); a cue at a column lights its heading and the cells on screen. One cell is its row, a slash and its column: `#row-2/col-3`, `#mem/col-p99`, or `#mem/p99` with the bare heading slug. On a `.build` slide a cell cue reveals the rows down to its own, as a row cue does; `{.decode}` works on a cell.
 
 ### List
 
@@ -360,6 +360,7 @@ A cue is a Markdown link inside narration. The label is spoken normally. The pla
 | **`#-L5`** | line 5 of the old side of a diff |
 | **`#+L7`**, **`#L7`** | line 7 of the new side of a diff |
 | **`#id`** | a list item, card, quiz choice (`#a`, `#b`), diagram node, table row, chart bar or series, or file-tree entry with that id |
+| **`#col-3`**, **`#row-2/col-3`** | a table column (by number or heading slug), or one cell |
 | **`#a->b->c`** | a flowchart path: a dot travels along those edges, one hop at a time |
 | **`#A->>B`** | a message in a sequence diagram, from participant `A` to `B`: the pointer goes to its text (the first such message; quoted text picks another) |
 | **`#@10,20,30,15`** | part of an image: left, top, width and height in percent |

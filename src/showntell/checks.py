@@ -247,13 +247,13 @@ class Checks:
         styles = [set((c.get("style") or "").split()) for c in cues]
         words = sum(len(x.text.split()) for x in s.says)
         # {.decode} scrambles a label the player can find: a drawing part, a diagram node, an item or a row.
-        can = {"svg": ("item", "text"), "diagram": ("node", "text"), "list": ("item",), "table": ("row",)}.get(s.kind, ())
+        can = {"svg": ("item", "text"), "diagram": ("node", "text"), "list": ("item",), "table": ("row", "cell")}.get(s.kind, ())
         for c, st in zip(cues, styles, strict=True):
             if "decode" in st and c.get("kind") not in can:
                 self._issue(
                     "cue_wrong_kind",
                     f"[{c.get('label')}](#{c.get('target')}){{.decode}} on slide `{s.id}` has no label the player can scramble, so it does nothing.",
-                    "Put `{.decode}` on a cue at a drawing part, a diagram node, a list item or a table row.",
+                    "Put `{.decode}` on a cue at a drawing part, a diagram node, a list item, a table row or a cell.",
                     slide=s.id,
                     line=s.line,
                 )
@@ -642,7 +642,7 @@ def _source_rank(s: Slide):
         return lambda c: ids.index(c["id"]) if c.get("kind") == "item" and c.get("id") in ids else None
     if s.kind == "table":
         ids = v.get("ids", [])
-        return lambda c: ids.index(c["id"]) if c.get("kind") == "row" and c.get("id") in ids else None
+        return lambda c: ids.index(c["id"]) if c.get("kind") in ("row", "cell") and c.get("id") in ids else None
     if kinds.part_kind(s.kind):
         ids, outer = v.get("ids", []), v.get("part_of", {})
         return lambda c: (

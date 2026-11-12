@@ -327,6 +327,7 @@ class Builder(CueResolver, Checks):
                         rid = rid or m.group(1)
                 ids.append(rid or f"row-{i + 1}")
             t["ids"] = ids
+            t["cols"] = [slugify(inline_plain(h)) if inline_plain(h).strip() else "" for h in t["head"]]  # `#col-latency`
             return self._set(self._slide_for_visual("table"), "table", t)
         if b.kind == "list":
             s = self._slide_for_visual("list")

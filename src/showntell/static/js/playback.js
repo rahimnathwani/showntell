@@ -35,7 +35,7 @@ function revealedIn(i) {
   const seg = S.TL.segs[i];
   const slide = seg && S.W.slides[seg.slide];
   if (!slide || !(slide.classes || []).includes("build") || seg.say < 0) return false;
-  return (slide.says[seg.say].cues || []).some((c) => ["item", "row", "lines", "node"].includes(c.kind));
+  return (slide.says[seg.say].cues || []).some((c) => ["item", "row", "cell", "lines", "node"].includes(c.kind));
 }
 
 function advance(dt) {

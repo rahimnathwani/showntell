@@ -124,7 +124,7 @@ Targets by visual; a slug is lowercase with hyphens:
 | **Code or drawing versions** | `#step-2` moves to version 2, if each block has `step`; in code, later line cues count in it |
 | **Diff** | `#-L5` old side, `#+L7` or `#L7` new; a `diff` block counts from its `@@` header |
 | **List, cards** | `#id` from `{#id}`, else the bold title's slug: `**Disk cache**` is `#disk-cache` |
-| **Table** | `#row-2`, or the `{#id}` ending a row's last cell |
+| **Table** | `#row-2`, or the `{#id}` ending a row's last cell; column `#col-3` or `#col-p99`; cell `#row-2/col-3` or `#mem/p99` |
 | **Diagram** | node, participant or state by its Mermaid id: `#db` |
 | **Flowchart path** | `#web->api->db`: a dot travels those edges, about 0.9 s a hop |
 | **Sequence message** | `#Sender->>Receiver`: the first message between them; add quoted text to pick another |

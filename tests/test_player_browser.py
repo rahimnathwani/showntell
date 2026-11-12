@@ -781,6 +781,56 @@ def test_newer_visuals_follow_the_narration(daemon, browser):
     page.close()
 
 
+TABLE_CUES = """# Tables
+
+Opening.
+
+## Latency by store {#lat}
+
+| Store | p50 | p99 |
+|---|---|---|
+| Memory | 1 ms | 3 ms {#mem} |
+| Disk | 8 ms | 90 ms |
+
+Look down the [tail column](#col-p99) first. The disk's [ninety milliseconds](#row-2/p99) is the problem, while [memory's median](#mem/col-2) stays low.
+"""
+
+
+def test_table_columns_and_cells_are_pointed_at(daemon, browser):
+    call = _rpc(daemon)
+    r = call("start", title="Tables", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    a = call("add", handle=r["handle"], markdown=TABLE_CUES)
+    assert not [i for i in a["issues"] if i["code"].startswith("cue_")], a["issues"]
+    call("playable", handle=r["handle"], timeout=10)
+    for _ in range(50):
+        if not call("finish", handle=r["handle"], questions=None)["pending"]:
+            break
+        time.sleep(0.2)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    marked = """[...document.querySelectorAll('.slide:not(.leaving) table.data .active')].map((e) => e.textContent.trim())"""
+    page.goto(url)
+    page.wait_for_function("window.__showntell !== undefined")
+    times = [_at(page, "lat", k, 0.4) for k in range(3)]
+    found = []
+    for t in times:
+        page.goto(f"{url}?at={t:.2f}")
+        page.wait_for_timeout(700)
+        found.append(
+            page.evaluate(
+                f"""[{marked}, document.querySelector('.slide:not(.leaving) table.data').classList.contains('has-active'),
+                !document.querySelector('#pointer').hidden]"""
+            )
+        )
+    assert found[0] == [["p99", "3 ms", "90 ms"], True, True]  # the column, heading included
+    assert found[1] == [["90 ms"], True, True]
+    assert found[2] == [["1 ms"], True, True]
+    assert not errors, errors
+    page.close()
+
+
 def test_reduced_motion_holds_still_and_moving_cues_are_announced(daemon, browser):
     call = _rpc(daemon)
     r = call("start", title="Calm", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))

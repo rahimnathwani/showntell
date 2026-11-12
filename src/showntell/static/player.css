@@ -178,6 +178,10 @@ table.data td:first-child { font-weight: 600; }
 table.data tr.entry { transition: background 0.3s, opacity 0.3s; }
 table.data tr.active { background: var(--accent-soft); }
 tbody.has-active tr:not(.active) { opacity: 0.5; }
+/* a column or one cell pointed at */
+table.data th, table.data td { transition: background 0.3s, opacity 0.3s; }
+table.data td.active, table.data th.active { background: var(--accent-soft); }
+table.data.has-active td:not(.active) { opacity: 0.5; }
 
 /* code */
 .codebox { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; min-width: 46%; max-width: 100%;

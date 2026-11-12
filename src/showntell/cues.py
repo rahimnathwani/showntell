@@ -260,12 +260,22 @@ class CueResolver:
             return None
         if s.kind == "table":
             ids = s.visual.get("ids", [])
-            if t in ids:
-                return {**base, "kind": "row", "id": t}
-            n = re.fullmatch(r"row-(\d+)", t)
-            if n and 1 <= int(n.group(1)) <= len(ids):  # by position, also when rows have their own ids
-                return {**base, "kind": "row", "id": ids[int(n.group(1)) - 1]}
-            self._issue("cue_no_target", f"[{c.label}](#{t}): no row `{t}` on slide `{s.id}`.", slide=s.id)
+            row = _table_row(t, ids)
+            if row:
+                return {**base, "kind": "row", "id": row}
+            cols = s.visual.get("cols") or [""] * len(s.visual.get("head", []))
+            if "/" in t:  # one cell: `#row-2/col-3`, `#postgres/col-latency` or `#postgres/latency`
+                r, _, k = t.partition("/")
+                row, col = _table_row(r, ids), _table_col(k, cols, bare=True)
+                if row and col is not None:
+                    return {**base, "kind": "cell", "id": row, "col": col}
+                missing = f"no row `{r}`" if not row else f"no column `{k}`"
+                self._issue("cue_no_target", f"[{c.label}](#{t}): {missing} in the table on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id)
+                return None
+            col = _table_col(t, cols)
+            if col is not None:
+                return {**base, "kind": "col", "col": col}
+            self._issue("cue_no_target", f"[{c.label}](#{t}): no row or column `{t}` on slide `{s.id}`. {_table_names(ids, cols)}", slide=s.id)
             return None
         if s.kind == "diagram":
             nodes = s.visual.get("nodes", {})
@@ -280,6 +290,31 @@ class CueResolver:
             return {**base, "kind": "node", "id": t, "text": c.text}
         self._issue("cue_wrong_kind", f"[{c.label}](#{t}): slide `{s.id}` shows a {s.kind}.", "Point at it with `#`.", slide=s.id)
         return {**base, "kind": "visual"}
+
+
+def _table_row(t: str, ids: list[str]) -> str | None:
+    """A row's id, by its own id or by position (`row-2`, also when rows have their own ids)."""
+    if t in ids:
+        return t
+    n = re.fullmatch(r"row-(\d+)", t)
+    return ids[int(n.group(1)) - 1] if n and 1 <= int(n.group(1)) <= len(ids) else None
+
+
+def _table_col(t: str, cols: list[str], bare: bool = False) -> int | None:
+    """A column's index, by position (`col-3`) or by its heading's slug (`col-latency`; inside a
+    cell target the slug alone, `latency`, works too)."""
+    n = re.fullmatch(r"col-(\d+)", t)
+    if n:
+        return int(n.group(1)) - 1 if 1 <= int(n.group(1)) <= len(cols) else None
+    name = t[4:] if t.startswith("col-") else t if bare else None
+    return cols.index(name) if name and name in cols else None
+
+
+def _table_names(ids: list[str], cols: list[str]) -> str:
+    own = [r for r in ids if not re.fullmatch(r"row-\d+", r)]
+    rows = f"Rows: row-1 to row-{len(ids)}" + (f" or {', '.join(own[:8])}" if own else "")
+    named = [f"col-{k}" for k in cols if k]
+    return f"{rows}. Columns: col-1 to col-{len(cols)}" + (f" or {', '.join(named[:8])}" if named else "") + ". A cell is `#row/column`."
 
 
 def _region(spec: str) -> list[float] | None:

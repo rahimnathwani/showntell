@@ -59,6 +59,16 @@ test("code reveal starts just before the first line pointed at", () => {
   assert.equal(revealLevel({ ...slide, classes: [] }, [], false), null);
 });
 
+test("table reveal counts rows and the rows holding cells pointed at", () => {
+  const cues = [{ kind: "row", id: "a" }, { kind: "cell", id: "c", col: 1 }, { kind: "col", col: 0 }];
+  const slide = { kind: "table", classes: ["build"], visual: { ids: ["a", "b", "c", "d"] }, says: [{ cues }] };
+  assert.deepEqual(revealLevel(slide, [], false), { rows: 0 });
+  assert.deepEqual(revealLevel(slide, cues.slice(0, 1), false), { rows: 1 });
+  assert.deepEqual(revealLevel(slide, cues, false), { rows: 3 });
+  const cellsOnly = { ...slide, says: [{ cues: [cues[1]] }] }; // a slide pointing only at cells still reveals row by row
+  assert.deepEqual(revealLevel(cellsOnly, [cues[1]], false), { rows: 3 });
+});
+
 test("pending narration is estimated and not ready", () => {
   const w = { slides: [{ id: "x", kind: "text", classes: [], visual: {}, says: [{ id: "x.1", status: "pending", text: "a b c d e f g h i j k l m n o p q r s t u v w x y z a" }] }] };
   const tl = build(w);

@@ -38,8 +38,8 @@
       "kind": "table",
       "fence": "pipe table",
       "use": "comparison across attributes",
-      "point": "#row-2, or {#id} at the end of a row's last cell",
-      "reveal": "rows up to the last one pointed at",
+      "point": "#row-2, or {#id} at the end of a row's last cell; a column #col-3 or #col-p99 (heading slug); a cell #row-2/col-3 or #mem/p99",
+      "reveal": "rows up to the last one pointed at, or holding a cell pointed at",
       "example": "| Store | Speed |\n|---|---|\n| Memory | fast {#mem} |\n| Disk | slow {#disk} |"
     },
     {

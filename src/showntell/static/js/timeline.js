@@ -110,7 +110,7 @@ export function stateAt(w, tl, t) {
 
 // For `.build` slides: how much is revealed, by the kind of part the slide's cues point at.
 // {items: n} for parts with ids (list items, chart bars, tree entries, numbers, messages),
-// {rows: n} for table rows, {line: n} for one pane of numbered lines (code, terminal),
+// {rows: n} for table rows (and the rows holding cells pointed at), {line: n} for one pane of numbered lines (code, terminal),
 // {nodes: n} for flowcharts; counted in source order. null when everything shows.
 export function revealLevel(slide, cues, all) {
   if (!slide || !(slide.classes || []).includes("build") || all || slide.pair) return null; // a pair shows whole
@@ -122,7 +122,12 @@ export function revealLevel(slide, cues, all) {
     return n;
   };
   if (every.some((c) => c.kind === "item")) return { items: upTo("item", v.ids || (v.items || []).map((it) => it.id)) };
-  if (every.some((c) => c.kind === "row")) return { rows: upTo("row", v.ids || []) };
+  if (every.some((c) => c.kind === "row" || c.kind === "cell")) { // a cell reveals the rows down to its own
+    const ids = v.ids || [];
+    let n = 0;
+    for (const c of cues) if (c.kind === "row" || c.kind === "cell") n = Math.max(n, ids.indexOf(c.id) + 1);
+    return { rows: n };
+  }
   const lineCues = every.filter((c) => c.kind === "lines");
   if (lineCues.length && !v.old) { // a diff's two panes always show whole
     // Show the lines leading up to the first one the narration points at.

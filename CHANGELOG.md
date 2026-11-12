@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Table columns and cells:** cues can point at a column (`#col-3`, or `#col-p99` by its heading) or at one cell (`#row-2/col-3`, `#mem/p99`). A column lights its heading and visible cells; a cell dims the rest of the table, reveals the rows down to its own on a `.build` slide, and takes `{.decode}`.
 - **Speed in a link:** `?speed=1.5` starts the player at that speed, held to 0.5x to 3x, without changing the speed the viewer saved; `<showntell-player speed="1.25">` passes it on. The menu now runs from 0.5x to 3x and lists a linked speed it lacked.
 
 ## 0.2.5 (2026-11-10)
