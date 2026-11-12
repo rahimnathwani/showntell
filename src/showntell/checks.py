@@ -616,6 +616,30 @@ class Checks:
                 self._issue(
                     "same_openings", f'{len(ids)} slides open with "{phrase}" ({", ".join(ids[:4])}).', "Vary the openings.", slide=ids[-1]
                 )
+        self._check_notes()
+
+    def _check_notes(self) -> None:
+        """Every `[^id]` has a `[^id]: source` line, and every source is cited somewhere."""
+        cited: dict[str, str] = {}
+        for s in self.w.slides:
+            for x in s.says:
+                for n in x.notes:
+                    cited.setdefault(n, s.id)
+        for n, sid in cited.items():
+            if n not in self.w.notes:
+                self._issue(
+                    "note_missing",
+                    f"[^{n}] on slide `{sid}` has no source line, so the transcript lists nothing for it.",
+                    f"Add `[^{n}]: the source` on a line of its own, with revise_slide.",
+                    slide=sid,
+                )
+        unused = [n for n in self.w.notes if n not in cited]
+        if unused:
+            self._issue(
+                "note_unused",
+                f"Source {', '.join(f'[^{n}]' for n in unused[:6])} is never cited in the narration, so it is listed apart from what it backs.",
+                "Put `[^id]` after the words it backs, or drop the source line.",
+            )
 
 
 # -- helpers ------------------------------------------------------------------------------

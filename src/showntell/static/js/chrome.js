@@ -57,15 +57,48 @@ function captionHtml(say) {
   }).join("");
 }
 
+// Sources numbered in the order the narration first cites them, then any never cited; and for each,
+// the slides that cite it.
+export function noteOrder(W) {
+  const order = [], by = {};
+  W.slides.forEach((s, i) => s.says.forEach((x) => (x.notes || []).forEach((n) => {
+    if (!(n in by)) { by[n] = []; order.push(n); }
+    if (!by[n].includes(i)) by[n].push(i);
+  })));
+  for (const n of Object.keys(W.notes || {})) if (!(n in by)) { by[n] = []; order.push(n); }
+  return { order, number: Object.fromEntries(order.map((n, k) => [n, k + 1])), slides: by };
+}
+
+function citedHtml(c) {
+  const rows = c.code.split("\n").map((ln, k) => `<span class="cl"><span class="g">${c.start + k}</span>${esc(ln)}</span>`).join("");
+  return `<div class="cited"><div class="cited-file">${esc(c.file)}</div><pre><code>${rows}</code></pre></div>`;
+}
+
 function renderTranscript() {
   const box = $("#transcript-body");
   const parts = [];
+  const notes = S.W.notes || {}, cited = S.W.cited || {};
+  const nums = noteOrder(S.W);
+  const mark = (n) => {
+    const k = nums.number[n];
+    const about = notes[n] ? stripMd(notes[n]) : "no source given";
+    // On hover, the source and the first lines it quotes.
+    const lines = cited[n] ? "\n\n" + cited[n].code.split("\n").slice(0, 8).join("\n") : "";
+    return `<button class="cite" data-note="${esc(n)}" title="${esc(about + lines)}" aria-label="Source ${k}: ${esc(about)}">${k}</button>`;
+  };
   S.W.slides.forEach((s, i) => {
-    const paras = s.says.filter((x) => x.text).map((x) => `<p data-say="${esc(x.id)}" tabindex="-1">${esc(x.text)}</p>`).join("");
+    const paras = s.says.filter((x) => x.text).map((x) =>
+      `<p data-say="${esc(x.id)}" tabindex="-1">${esc(x.text)}${[...new Set(x.notes || [])].map(mark).join("")}</p>`).join("");
     parts.push(`<section data-slide="${i}"><h3><button data-slide="${i}">${i + 1}. ${esc(stripMd(s.title))}</button></h3>${paras}</section>`);
   });
-  const notes = Object.entries(S.W.notes || {});
-  if (notes.length) parts.push(`<section class="notes"><h3>Sources</h3>${notes.map(([k, v]) => `<p><sup>${esc(k)}</sup> ${linkify(v)}</p>`).join("")}</section>`);
+  const listed = nums.order.filter((n) => n in notes);
+  if (listed.length) {
+    const items = listed.map((n) => {
+      const back = nums.slides[n].map((i) => `<button class="back" data-slide="${i}">slide ${i + 1}</button>`).join(" ");
+      return `<li id="source-${esc(n)}" value="${nums.number[n]}" tabindex="-1"><span>${linkify(notes[n])}</span>${cited[n] ? citedHtml(cited[n]) : ""}${back ? `<span class="backs">${back}</span>` : ""}</li>`;
+    }).join("");
+    parts.push(`<section class="notes"><h3>Sources</h3><ol>${items}</ol></section>`);
+  }
   box.innerHTML = parts.join("");
   markTranscript(S.lastSay);
   txNav.refresh();
@@ -115,6 +148,13 @@ function markTranscript(sayId) {
 }
 
 $("#transcript-body").addEventListener("click", (e) => {
+  const c = e.target.closest("button.cite");
+  if (c) { // to the source, without seeking to the paragraph around the mark
+    e.stopPropagation();
+    const li = $("#transcript-body").querySelector(`li#source-${CSS.escape(c.dataset.note)}`);
+    if (li) { li.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" }); li.focus({ preventScroll: true }); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1200); }
+    return;
+  }
   const b = e.target.closest("button[data-slide]");
   if (b) { const t = slideStart(S.TL, +b.dataset.slide); if (t !== null) seek(t); return; }
   const p = e.target.closest("p[data-say]");

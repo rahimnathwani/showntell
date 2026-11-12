@@ -549,6 +549,18 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 #transcript-body p:hover { background: var(--panel); }
 #transcript-body p.now { color: var(--fg); background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
 #transcript-body .notes p { cursor: default; }
+#transcript-body .notes ol { margin: 0; padding: 0 0 0 26px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+#transcript-body .notes li { margin: 0 0 12px; padding: 4px 6px; border-radius: 8px; transition: background 0.4s; }
+#transcript-body .notes li.flash, #transcript-body .notes li:focus { background: var(--panel); outline: none; }
+#transcript-body .notes .backs { display: block; margin-top: 4px; }
+#transcript-body .notes .back { background: none; border: 0; padding: 0; color: var(--node-line); font-size: 13px; cursor: pointer; }
+#transcript-body button.cite { vertical-align: super; font-size: 11px; line-height: 1; margin-left: 2px; padding: 1px 4px; border: 0; border-radius: 4px;
+  background: var(--accent-soft); color: var(--fg); cursor: pointer; }
+#transcript-body .cited { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+#transcript-body .cited-file { padding: 4px 8px; font-size: 12px; font-family: var(--mono, ui-monospace, monospace); color: var(--muted); border-bottom: 1px solid var(--line); }
+#transcript-body .cited pre { margin: 0; padding: 6px 0; max-height: 240px; overflow: auto; font-size: 12px; line-height: 1.45; }
+#transcript-body .cited .cl { display: block; white-space: pre; padding-right: 8px; }
+#transcript-body .cited .g { display: inline-block; width: 3.2em; padding-right: 8px; text-align: right; color: var(--muted); opacity: 0.6; user-select: none; }
 #transcript-body a { color: var(--node-line); }
 
 #menu button.row.link { width: 100%; background: none; border: 0; text-align: left; color: var(--fg); justify-content: flex-start; }

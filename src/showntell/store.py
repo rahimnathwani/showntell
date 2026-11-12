@@ -173,6 +173,7 @@ class Session:
         )
         b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
         b.add(text + "\n", check_last=False)
+        self._take_notes(scratch)
         issues = list(b.issues)
         if not scratch.slides:
             raise ValueError("the Markdown has no slide in it")
@@ -317,6 +318,7 @@ class Session:
         )
         b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
         b.add(text + "\n", check_last=False)
+        self._take_notes(scratch)
         if b.parser.pending.strip():
             raise ValueError("a code block in the inserted Markdown is never closed; send whole slides")
         new = list(scratch.slides)
@@ -414,6 +416,15 @@ class Session:
         self.builder.issues = []
         self._changed(set(), meta=True)  # the player takes the new order from the delta
         return {"removed": remove, "moved": [x for x in ids if x in kept] != kept, "order": kept}
+
+    def _take_notes(self, scratch: Walkthrough) -> None:
+        """Sources defined in a revised or inserted slide's Markdown join the walkthrough's."""
+        for nid, text in scratch.notes.items():
+            self.w.notes[nid] = text
+            if nid in scratch.cited:
+                self.w.cited[nid] = scratch.cited[nid]
+            else:
+                self.w.cited.pop(nid, None)
 
     def _promote(self, slide_id: str) -> None:
         """Swap a staged revision in once all its narration has audio (or failed)."""
@@ -661,6 +672,7 @@ class Session:
             "title": self.w.title,
             "questions": self.w.questions,
             "notes": self.w.notes,
+            "cited": self.w.cited,
             "order": [s.id for s in self.w.slides],
             "slides": [public_slide(s) for s in self.w.slides if s.id in slide_ids],
         }

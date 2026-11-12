@@ -60,7 +60,7 @@ function setData(w) {
 function mergeDelta(d) {
   const byId = new Map(S.W.slides.map((s) => [s.id, s]));
   for (const s of d.slides) byId.set(s.id, s);
-  setData({ ...S.W, status: d.status, title: d.title, questions: d.questions, notes: d.notes, slides: d.order.map((id) => byId.get(id)).filter(Boolean) });
+  setData({ ...S.W, status: d.status, title: d.title, questions: d.questions, notes: d.notes, cited: d.cited || S.W.cited, slides: d.order.map((id) => byId.get(id)).filter(Boolean) });
 }
 
 async function load() {

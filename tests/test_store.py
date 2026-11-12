@@ -433,6 +433,18 @@ async def test_an_arranged_walkthrough_survives_a_restart(service, store, wait_u
     assert t.builder.parser.lines_seen == t.source.count("\n")
 
 
+async def test_sources_in_revised_and_inserted_slides_are_kept(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    s = store.by_handle(r["handle"])
+    q = s.subscribe()
+    await service.revise(r["handle"], "one", "Backed by a paper[^p].\n\n[^p]: The paper.\n")
+    await service.insert(r["handle"], "two", "## New {#new}\n\nAnd a book[^b].\n\n[^b]: The book.\n")
+    assert s.w.notes == {"p": "The paper.", "b": "The book."}
+    assert s.delta(q.get_nowait()["slides"], False)["notes"]["p"] == "The paper."
+    s.unsubscribe(q)
+
+
 # -- finishing ---------------------------------------------------------------------------------------
 
 

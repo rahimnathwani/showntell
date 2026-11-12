@@ -26,6 +26,9 @@ CODES: dict[str, tuple[str, str]] = {
     "too_many_slides": ("warning", "the walkthrough is over the slide limit"),
     "too_long": ("warning", "narration is past the length the guide aims for"),
     "revise_kept_first": ("warning", "revise_slide got more than one slide and kept the first"),
+    "note_missing": ("warning", "a `[^id]` in the narration has no `[^id]:` source line"),
+    "note_unused": ("info", "a `[^id]:` source is never cited in the narration"),
+    "note_long": ("info", "a source quotes more lines of a file than the transcript shows"),
     # size
     "code_too_tall": ("warning", "code has more lines than the frame shows comfortably"),
     "code_too_wide": ("warning", "code lines are wider than the frame shows comfortably"),

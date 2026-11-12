@@ -62,6 +62,7 @@ class Walkthrough:
     status: str = "writing"  # writing, finished
     questions: list = field(default_factory=list)
     notes: dict = field(default_factory=dict)
+    cited: dict = field(default_factory=dict)  # note id -> {file, start, code}: lines a `[^id]: file=...` source quotes
     slides: list = field(default_factory=list)
     link_shared: bool = False
     guide_sent: bool = False
@@ -99,6 +100,7 @@ class Walkthrough:
             "status": self.status,
             "questions": self.questions,
             "notes": self.notes,
+            **({"cited": self.cited} if self.cited else {}),  # only when used, so older walkthroughs read the same
             "slides": [public_slide(s) for s in self.slides],
         }
 

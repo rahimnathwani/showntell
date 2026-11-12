@@ -31,6 +31,9 @@ SPEED_RANGE = (0.8, 1.3)
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"}
 
 
+NOTE_LINES = 30  # lines of a cited file the transcript shows
+
+
 def slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s[:40].strip("-") or "slide"
@@ -205,7 +208,7 @@ class Builder(CueResolver, Checks):
                 self.w.questions.append(inline_plain(b.text))
             return
         if b.kind == "footnote":
-            self.w.notes[b.attrs["id"]] = b.text
+            self._note(b)
             return
         if b.kind == "para":
             self._flush_old()
@@ -433,6 +436,41 @@ class Builder(CueResolver, Checks):
     def _name(self, b: Block) -> str:
         f = b.attrs.get("file", "")
         return Path(f).name if f else ""
+
+    def _note(self, b: Block) -> None:
+        """A source for `[^id]`. `file=path lines=10-24`, then any words, quotes those project lines
+        in the transcript's sources, read from disk like a code block."""
+        nid, text = b.attrs["id"], b.text
+        self.w.cited.pop(nid, None)
+        m = re.match(r"file=(\S+)(?:\s+lines=(\S+))?\s*(.*)$", text, re.S)
+        if not m:
+            self.w.notes[nid] = text
+            return
+        rel, spec, words = m.group(1), m.group(2), m.group(3).strip()
+        where = f"{rel}" + (f", lines {spec}" if spec else "")
+        self.w.notes[nid] = f"{words} ({where})" if words else where
+        if self._no_disk(b, f"`[^{nid}]: file={rel}`"):
+            return
+        try:
+            ex, _ = sources.read_excerpt(self.root, rel, spec)
+        except sources.SourceError as e:
+            self._issue(
+                "source_error",
+                f"Line {b.line}: source [^{nid}]: {e}",
+                "Fix the path or range, or describe the source in words.",
+                line=b.line,
+            )
+            return
+        lines = ex.code.split("\n")
+        if len(lines) > NOTE_LINES:
+            self._issue(
+                "note_long",
+                f"Line {b.line}: source [^{nid}] quotes {len(lines)} lines; the transcript shows the first {NOTE_LINES}.",
+                "Cite the lines that back the claim.",
+                line=b.line,
+            )
+            lines = lines[:NOTE_LINES]
+        self.w.cited[nid] = {"file": rel, "start": ex.start, "code": "\n".join(lines)}
 
     def _code_excerpt(self, b: Block) -> sources.Excerpt | None:
         if b.attrs.get("file"):

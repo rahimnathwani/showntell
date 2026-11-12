@@ -346,8 +346,20 @@ Narration is plain prose written to be heard. Markdown inside it is used like th
 | **`**bold**`, `_italic_`** | shown in captions; no effect on the voice |
 | **`[label](#target)`** | a cue: the pointer moves to the target as the label is spoken |
 | **`[text]{say="spoken"}`** | shows `text` in captions and speaks `spoken` instead; `spoken` may be phonemes between slashes, as in `say="/kˈOkəɹO/"` |
-| **`[^1]`** | reserved: citation, listed in the transcript and never read aloud |
+| **`[^1]`** | a citation, never read aloud: the transcript marks the paragraph with the source's number and lists the source under Sources (see Sources) |
 | **`{pause=1.5}`** | a paragraph holding only this adds silence, in seconds (at most 5) |
+
+
+### Sources
+
+```markdown
+The cache is read before the database[^read], as the design asked[^rfc].
+
+[^read]: file=src/cache.py lines=10-24 The read path
+[^rfc]: Design note 12, https://example.com/notes/12
+```
+
+`[^id]` after the words a source backs cites it; it is never read aloud or shown on a slide. A `[^id]: text` line, anywhere in the walkthrough and normally after the slide, gives the source. In the transcript each cited paragraph ends in the source's number (sources are numbered in the order the narration first cites them), whose hover shows the source, and whose click jumps to it under **Sources**. Each source there links back to the slides that cite it, and web addresses in it are links. `file=path`, with an optional `lines=10-24`, then any words, quotes those lines of a project file under the source, with their line numbers, read from disk like a code block (up to 30 lines; `note_long` past that). `finish_walkthrough` reports a citation with no source line (`note_missing`) and a source no paragraph cites (`note_unused`). Sources sent in `revise_slide` or in `add_slides` with `after` join the walkthrough's.
 
 ## Cues
 
@@ -446,4 +458,4 @@ Text is set in Inter, titles in Bricolage Grotesque and code in JetBrains Mono, 
 
 ## Reserved for later versions
 
-Pronunciation of other languages, citations, per-slide voice and speed, and scene animations. Parsers must ignore attributes and classes they do not know.
+Pronunciation of other languages, per-slide voice and speed, and scene animations. Parsers must ignore attributes and classes they do not know.

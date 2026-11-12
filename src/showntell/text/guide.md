@@ -95,7 +95,7 @@ Every slide but the title and brief transitions gets the visual that carries its
 - **Odd terms:** `[nginx]{say="engine x"}`, `[k8s]{say="kubernetes"}`, `[τ]{say="tau"}`.
 - **Plain prose only.** A heading starts a new slide and a list becomes the visual. Bold and italics show only in captions. No labels ("Narration:", "Title slide:"): every paragraph is spoken (`narration_label`).
 - **Paragraphs are breaths.** Each is voiced separately, then a short pause. A paragraph of only `{pause=1.5}` adds that much silence, five seconds at most.
-- **Sources.** `[^1]` plus a `[^1]: source` line lists it in the transcript, unspoken.
+- **Sources.** `[^1]` plus a `[^1]: source` line lists it in the transcript, unspoken; `[^1]: file=path lines=10-24 what it shows` quotes those project lines there.
 
 No hype or filler; replace lines like these with the fact they delay:
 

@@ -109,6 +109,31 @@ def test_front_matter_values_are_validated(build):
 def test_footnote_definitions_are_collected(build):
     w, _ = build("# T\n\nA fact[^src].\n\n[^src]: The paper.\n")
     assert w.notes == {"src": "The paper."} and w.slides[0].says[0].notes == ["src"]
+    assert "cited" not in w.public()  # a walkthrough without quoted lines reads as before
+
+
+def test_a_source_can_quote_project_lines(build, project):
+    w, b = build("# T\n\nThe cache reads first[^get].\n\n[^get]: file=src/cache.py lines=3-5 The read path\n", root=project)
+    assert w.notes["get"] == "The read path (src/cache.py, lines 3-5)" and not b.issues
+    assert w.cited["get"]["file"] == "src/cache.py" and w.cited["get"]["start"] == 3
+    assert len(w.cited["get"]["code"].split("\n")) == 3 and w.public()["cited"] == w.cited
+    w, _ = build("# T\n\nA fact[^f].\n\n[^f]: file=src/cache.py\n", root=project)
+    assert w.notes["f"] == "src/cache.py" and len(w.cited["f"]["code"].split("\n")) == 30  # held to what the transcript shows
+
+
+def test_a_source_that_cannot_be_read_or_is_long_is_reported(build, project):
+    _, b = build("# T\n\nA fact[^x].\n\n[^x]: file=src/missing.py lines=1-3\n", root=project)
+    assert any(i.code == "source_error" and "[^x]" in i for i in b.issues)
+    _, b = build("# T\n\nA fact[^x].\n\n[^x]: file=src/cache.py\n", root=project)
+    assert any(i.code == "note_long" for i in b.issues)
+
+
+def test_finish_reports_sources_missing_and_unused(build):
+    w, b = build("# T\n\nOne[^a] and two[^b].\n\n[^a]: Here.\n[^c]: Nowhere.\n")
+    b.issues = []
+    b.check_all()
+    codes = {i.code: i for i in b.issues}
+    assert "[^b]" in codes["note_missing"] and "[^c]" in codes["note_unused"] and "[^a]" not in codes["note_unused"]
 
 
 # -- visuals ----------------------------------------------------------------------------------
