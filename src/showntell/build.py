@@ -263,7 +263,9 @@ class Builder(CueResolver, Checks):
                 "Give each visual its own heading.",
                 slide=s.id,
             )
-            s = self._new_slide(Block("heading", self.visual_line, s.title, attrs={"classes": list(s.classes)}))
+            # A visual is never a chapter card: the spilled slide keeps every class but `.chapter`.
+            spill = [c for c in s.classes if c != "chapter"]
+            s = self._new_slide(Block("heading", self.visual_line, s.title, attrs={"classes": spill}))
         return s
 
     def _add_visual(self, b: Block) -> None:

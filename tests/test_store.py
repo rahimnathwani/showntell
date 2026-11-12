@@ -321,7 +321,10 @@ TAIL = "\n## Questions {.questions}\n\n- What next?\n"
 def _shape(w) -> dict:
     """What a walkthrough plays: each slide's id, kind, title, chapter number and narration, plus
     its sources and end questions."""
-    slides = [(s.id, s.kind, s.title, s.visual.get("n") if s.kind == "chapter" else None, [x.text for x in s.says]) for s in w.slides]
+    slides = [
+        (s.id, s.kind, s.title, sorted(s.classes), s.visual.get("n") if s.kind == "chapter" else None, [x.text for x in s.says])
+        for s in w.slides
+    ]
     return {"slides": slides, "notes": dict(w.notes), "cited": dict(w.cited), "questions": list(w.questions)}
 
 
@@ -348,7 +351,7 @@ async def _source_matches(service, store, handle: str) -> str:
 
 
 HARD = (
-    "## Part one {#p1 .chapter}\n\nThe first part.\n\n"
+    "## Part one {#p1 .chapter}\n\nThe first part.\n\n```python\nz = 0\n```\n\nCode under a chapter spills onto its own slide.\n\n"
     "## Code {#code}\n\n```python\na = 1\n```\n\nThe first block.\n\n```python\nb = 2\n```\n\nThe second block, spilled.\n\n"
     "## Cited\n\nA claim[^a] and another[^b].\n\n[^a]: Source A.\n[^b]: Source B.\n\n"
     "## Part two {#p2 .chapter}\n\nThe second part.\n\n"
@@ -364,10 +367,15 @@ async def test_every_edit_keeps_the_source_building_what_plays(service, store):
     h = r["handle"]
     await service.add(h, OPENING + "\n" + HARD)
     s = store.by_handle(h)
-    assert [x.id for x in s.w.slides] == ["how-caching-works", "p1", "code", "code-2", "cited", "p2", "also"]
+    assert [x.id for x in s.w.slides] == ["how-caching-works", "p1", "part-one", "code", "code-2", "cited", "p2", "also"]
+    assert s.w.slides[2].kind == "code" and "chapter" not in s.w.slides[2].classes
     await _source_matches(service, store, h)
     steps = [
-        ("arrange", ["how-caching-works", "code-2", "p1", "code", "cited", "p2", "also"], None),  # the spill moves off its parent
+        (
+            "arrange",
+            ["how-caching-works", "code-2", "p1", "code", "cited", "p2", "part-one", "also"],
+            None,
+        ),  # spills move off their parents
         ("arrange", None, ["code"]),  # and its parent goes
         ("arrange", None, ["cited"]),  # its sources go too, but [^a] is still cited by `also`
         (
@@ -375,7 +383,11 @@ async def test_every_edit_keeps_the_source_building_what_plays(service, store):
             "p2",
             "## Part three {.chapter}\n\nA new part.\n\n## Code {#code}\n\n```python\nc = 3\n```\n\n```python\nd = 4\n```\n\nSpilled again.\n",
         ),
-        ("arrange", ["how-caching-works", "p2", "code-2", "p1", "part-three", "code", "code-2-2", "also"], None),  # chapters swap
+        (
+            "arrange",
+            ["how-caching-works", "p2", "code-2", "p1", "part-three", "code", "code-2-2", "part-one", "also"],
+            None,
+        ),  # chapters swap
         ("revise", "also", "No citation now."),  # [^a] is cited nowhere: its line and note go
         ("insert", "how-caching-works", "## Fresh {#cited}\n\nNew claim[^c].\n\n[^c]: Source C.\n"),
         ("revise", "cited", "Still the claim[^c], said again."),  # its source line stays though the revision lacks it
@@ -391,6 +403,39 @@ async def test_every_edit_keeps_the_source_building_what_plays(service, store):
     w = store.by_handle(h).w
     assert [(x.id, x.visual["n"]) for x in w.slides if x.kind == "chapter"] == [("p2", 1), ("p1", 2), ("part-three", 3)]
     assert w.notes == {"c": "Source C."} and "Source A." not in s.source
+
+
+async def test_a_staged_revision_is_promoted_as_a_chapter_with_its_quoted_lines(service, store, wait_until, project):
+    r = await started(service, project_dir=str(project))
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    s = store.by_handle(r["handle"])
+    await wait_until(lambda: all(x.status == "ready" for sl in s.w.slides for x in sl.says if x.text))
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.2
+    v = await service.revise(r["handle"], "two", "## Part {#two .chapter}\n\nA new part[^f].\n\n[^f]: file=src/cache.py lines=1-2 Quoted\n")
+    assert v["staged"]
+    store.narrator.backend.delay = 0
+    await wait_until(lambda: not s.staged)
+    assert s.w.slides[2].kind == "chapter" and s.w.slides[2].visual["n"] == 1
+    events = []
+    while not q.empty():
+        events.append(q.get_nowait())
+    last = events[-1]
+    assert "two" in last["slides"] and last["meta"] and s.delta(last["slides"], last["meta"])["cited"]["f"]["start"] == 1
+    await _source_matches(service, store, r["handle"])
+    s.unsubscribe(q)
+
+
+async def test_with_two_lines_for_one_source_the_one_left_wins(service, store):
+    r = await started(service)
+    await service.add(
+        r["handle"], OPENING + "\n## One {#one}\n\nA[^a].\n\n[^a]: First def.\n\n## Two {#two}\n\nB[^a].\n\n[^a]: Second def.\n"
+    )
+    s = store.by_handle(r["handle"])
+    assert s.w.notes["a"] == "Second def."
+    await service.arrange(r["handle"], None, ["two"])
+    assert s.w.notes["a"] == "First def."
+    await _source_matches(service, store, r["handle"])
 
 
 async def test_a_removed_slide_and_its_staged_revision_are_not_reused(service, store, wait_until):
@@ -437,7 +482,8 @@ async def test_slides_that_do_not_line_up_with_the_source_are_not_moved(service,
     with pytest.raises(ValueError, match="no longer lines up"):
         await service.arrange(r["handle"], None, ["two"])
     with pytest.raises(ValueError, match="no longer lines up"):
-        await service.insert(r["handle"], "one", "## A\n\nB.\n")
+        await service.insert(r["handle"], "one", "## A\n\nB[^a].\n\n[^a]: OVERWRITTEN.\n")
+    assert "a" not in s.w.notes
 
 
 async def test_insert_puts_slides_after_one_and_voices_them(service, store, voiced):

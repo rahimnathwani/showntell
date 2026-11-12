@@ -39,7 +39,7 @@ HEADING_LINE = re.compile(r"^ {0,3}#{1,6}\s")
 
 def _heading_for(s: Slide) -> str:
     """A heading line that builds slide `s` again: its title, id, classes and attributes."""
-    attrs = [f"#{s.id}"] + [f".{c}" for c in s.classes]
+    attrs = [f"#{s.id}"] + [f".{c}" for c in s.classes if c != "chapter" or s.kind == "chapter"]
     attrs += [f'{k}="{v}"' for k, v in s.attrs.items() if isinstance(v, str)]
     return f"## {s.title} {{{' '.join(attrs)}}}"
 
@@ -332,7 +332,12 @@ class Session:
 
     def _sync_notes(self) -> None:
         """Keep only the sources the source Markdown still defines, so state and Markdown agree."""
-        defined = {b.attrs["id"] for b in Parser().feed(self.source) if b.kind == "footnote"}
+        defs = {b.attrs["id"]: b.text for b in Parser().feed(self.source) if b.kind == "footnote"}  # the last one wins, as in the builder
+        for nid, raw in defs.items():
+            if not raw.startswith("file="):  # quoted lines keep what was read when they were sent
+                self.w.notes[nid] = raw
+                self.w.cited.pop(nid, None)
+        defined = set(defs)
         for nid in [n for n in self.w.notes if n not in defined]:
             del self.w.notes[nid]
         for nid in [n for n in self.w.cited if n not in defined]:
@@ -343,7 +348,9 @@ class Session:
         Returns the ids of slides whose kind or number changed."""
         changed, n = set(), 0
         for i, s in enumerate(self.w.slides):
-            if i == 0 or "chapter" not in s.classes:
+            # As the builder does: a heading with `.chapter` and no visual of its own (a slide that
+            # spilled from a chapter before that rule, with a visual, stays what it shows).
+            if i == 0 or "chapter" not in s.classes or s.kind not in ("chapter", "text"):
                 continue
             n += 1
             if s.kind != "chapter" or s.visual.get("n") != n:
@@ -418,8 +425,8 @@ class Session:
             b._check_finished_slide(s)
             chunks.append(chunk)
         # Every check has passed: from here on the walkthrough changes.
+        pieces = self._pieces()  # may refuse, so before anything changes
         self._take_notes(scratch)
-        pieces = self._pieces()
         at = next(i for i, (sid, _) in enumerate(pieces) if sid == after) + 1
         pieces[at:at] = [(s.id, c) for s, c in zip(new, chunks, strict=True)]
         self.w.slides[idx + 1 : idx + 1] = new
@@ -516,7 +523,7 @@ class Session:
         idx = next((i for i, s in enumerate(self.w.slides) if s.id == slide_id), None)
         if idx is not None:
             self.w.slides[idx] = new
-            self._changed({slide_id})
+            self._changed({slide_id} | self._renumber_chapters(), meta=True)
 
     def finish(self, questions: list[str] | None, unchecked: tuple[str, str] | None = None) -> list[str]:
         """Close the walkthrough. `unchecked` is None when no layout check was attempted at finish,
