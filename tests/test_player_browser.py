@@ -436,6 +436,29 @@ def test_speed_in_the_link_starts_there_and_leaves_the_saved_speed(daemon, brows
     page.close()
 
 
+def test_the_menu_copies_requests_naming_the_slide(daemon, browser):
+    url = _make(daemon, "landscape")
+    origin = url.split("/w/")[0]
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    ctx.grant_permissions(["clipboard-read", "clipboard-write"], origin=origin)
+    page = ctx.new_page()
+    page.goto(url + "?from=flow&to=flow")
+    page.wait_for_selector(".slide")
+    copied = {}
+    for button in ("#ask", "#deeper"):
+        if page.is_hidden("#menu"):
+            page.click("#more")
+        label = page.text_content(button)
+        page.click(button)
+        page.wait_for_function(f"document.querySelector('{button}').textContent.startsWith('Copied')")
+        copied[button] = page.evaluate("navigator.clipboard.readText()")
+        page.wait_for_function(f"document.querySelector('{button}').textContent === {json.dumps(label)}", timeout=5000)
+    assert 'revise slide "flow"' in copied["#ask"] and copied["#ask"].endswith("Change: ")
+    assert 'go deeper on slide "flow"' in copied["#deeper"] and "follow-up walkthrough" in copied["#deeper"]
+    assert copied["#deeper"].endswith("I want to know: ") and "(id " in copied["#deeper"]
+    ctx.close()
+
+
 def test_presenting_steps_by_hand_without_voice(daemon, browser):
     url = _make(daemon, "landscape")
     page = browser.new_page(viewport={"width": 1440, "height": 900})

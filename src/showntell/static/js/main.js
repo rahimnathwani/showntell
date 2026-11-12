@@ -111,20 +111,29 @@ $("#theme").onchange = (e) => {
 $("#pause-steps").checked = S.pauseSteps;
 $("#pause-steps").onchange = (e) => { S.pauseSteps = e.target.checked; store.set("pauseSteps", S.pauseSteps); };
 $("#present").onclick = () => { const u = new URL(location.href); u.searchParams.set("present", "1"); location.href = u.toString(); };
-$("#ask").onclick = () => {
-  // A ready-made request for the agent: which slide, where, and what it currently says.
+// Ready-made requests for the agent, copied to paste in its chat: which slide, where, and what it
+// currently says, then what the viewer wants done.
+function slideRequest(ask) {
   const seg = currentSeg();
-  if (!S.W || !seg) return;
+  if (!S.W || !seg) return "";
   const slide = S.W.slides[seg.slide];
   const said = (sayOf(seg)?.text || "").slice(0, 160);
-  const text = `In the showntell walkthrough "${stripMd(S.W.title)}" (id ${S.W.id}), revise slide "${slide.id}" (${stripMd(slide.title)}), `
-    + `at ${mmss(now())}${said ? `, where the narration says: "${said}${said.length >= 160 ? "…" : ""}"` : ""}. Change: `;
+  const where = `slide "${slide.id}" (${stripMd(slide.title)}), at ${mmss(now())}${said ? `, where the narration says: "${said}${said.length >= 160 ? "…" : ""}"` : ""}`;
+  return `In the showntell walkthrough "${stripMd(S.W.title)}" (id ${S.W.id}), ${ask(where)}`;
+}
+function copyRequest(button, ask) {
+  const text = slideRequest(ask);
+  if (!text) return;
+  const label = button.dataset.label || (button.dataset.label = button.textContent);
   navigator.clipboard?.writeText(text).then(() => {
-    $("#ask").classList.add("done");
-    $("#ask").textContent = "Copied. Paste it to your agent";
-    setTimeout(() => { $("#ask").classList.remove("done"); $("#ask").textContent = "Copy a change request for this slide"; }, 2500);
+    button.classList.add("done");
+    button.textContent = "Copied. Paste it to your agent";
+    setTimeout(() => { button.classList.remove("done"); button.textContent = label; }, 2500);
   }).catch(() => {});
-};
+}
+$("#ask").onclick = () => copyRequest($("#ask"), (where) => `revise ${where}. Change: `);
+$("#deeper").onclick = () => copyRequest($("#deeper"), (where) =>
+  `go deeper on ${where}. Make a follow-up walkthrough that explains this part in more detail, starting from what this slide shows. I want to know: `);
 $("#chapters")?.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-slide]");
   if (b) { const t = slideStart(S.TL, +b.dataset.slide); if (t !== null) seek(t); $("#menu").hidden = true; }

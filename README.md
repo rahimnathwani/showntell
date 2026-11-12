@@ -321,6 +321,7 @@ The repository is also a GitHub Action: it voices a walkthrough's Markdown on th
 | **Present it yourself** | the menu's "Present with notes", or `?present=1`: no voice, Space or → for the next step, narration as notes, and an audience window that follows |
 | **Pause at each step** | the menu: stops after each paragraph that revealed a part |
 | **Ask for a change** | the menu copies a request naming the slide, the time and what the narration says, to paste to your agent |
+| **Go deeper** | the menu copies a request for a follow-up walkthrough on the slide on screen, with the same details, ending where you add your question |
 | **Speed** | the menu, or `?speed=1.5` in a link (0.5 to 3), which starts that page there without changing the speed the viewer saved |
 | **Theme** | the menu, or `?theme=light` |
 | **Keyboard** | Space, ←/→ 5 s, Shift ←/→ slides, C captions, T transcript; lists are one tab stop with arrow keys |
