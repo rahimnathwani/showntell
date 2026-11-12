@@ -166,7 +166,8 @@ body.portrait .slide.l-pair .slide-row { flex-direction: column; }
 .list.steps .entry::before { color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
 .list.bullets .entry::before { background: var(--c); }
 .entry.active { border-color: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); transform: translateY(-2px); }
-.has-active > .entry:not(.active) { opacity: 0.45; }
+/* A part the narration has moved past stays readable: faded and greyed, not gone. */
+.has-active > .entry:not(.active) { opacity: 0.62; filter: saturate(0.35); }
 
 /* tables */
 table.data { border-collapse: collapse; font-size: 23px; min-width: 60%; max-width: 100%; }
@@ -230,9 +231,9 @@ body:not(.portrait) .diff.wrapped:not(.stacked) { grid-template-columns: repeat(
 .diagram g.node > polygon { fill: color-mix(in srgb, var(--c1) 16%, var(--node)) !important; stroke: var(--c1) !important; stroke-width: 2px; }
 .diagram g.node > path, .diagram g.node > g > path { fill: color-mix(in srgb, var(--c3) 14%, var(--node)) !important; stroke: var(--c3) !important; }
 .diagram g.node > circle, .diagram g.node > ellipse { fill: color-mix(in srgb, var(--c5) 16%, var(--node)) !important; stroke: var(--c5) !important; stroke-width: 2px; }
-.diagram g.cluster > rect { fill: color-mix(in srgb, var(--c4) 5%, transparent) !important; stroke: color-mix(in srgb, var(--c4) 45%, transparent) !important; stroke-dasharray: 6 5; rx: 16px; ry: 16px; }
+.diagram g.cluster > rect { fill: color-mix(in srgb, var(--fg) 4%, transparent) !important; stroke: var(--line) !important; stroke-width: 1.5px; rx: 16px; ry: 16px; }
 /* Label colours only: Mermaid sized each box for its label's weight, so a bolder face would clip. */
-.diagram g.cluster .cluster-label, .diagram g.cluster text { fill: var(--c4) !important; color: var(--c4) !important; }
+.diagram g.cluster .cluster-label, .diagram g.cluster text { fill: var(--muted) !important; color: var(--muted) !important; }
 .diagram .actor:is(rect) { fill: color-mix(in srgb, var(--c2) 14%, var(--node)) !important; stroke: var(--c2) !important; rx: 10px; ry: 10px; }
 .math { font-size: 48px; }
 
@@ -245,6 +246,11 @@ body:not(.portrait) .diff.wrapped:not(.stacked) { grid-template-columns: repeat(
 .drawio.page { background: var(--page); border-radius: 14px; padding: 14px; box-sizing: border-box; box-shadow: 0 10px 30px var(--shadow); }
 .drawio-graph { width: 100%; height: 100%; overflow: hidden; position: relative; }
 .drawio .err { color: var(--muted); font-size: 22px; text-align: center; }
+.reladraw { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.reladraw svg { display: block; max-width: none; overflow: visible; }
+.reladraw .err { color: var(--muted); font-size: 22px; text-align: center; }
+.reladraw g[data-node], .reladraw g[data-edge] { transition: opacity 0.4s, filter 0.3s; }
+.reladraw g[data-node].active { filter: drop-shadow(0 0 10px var(--accent-glow)); }
 .chart svg { width: 100%; height: 100%; font-family: var(--sans); }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .axis { stroke: var(--muted); stroke-width: 2; }
@@ -259,7 +265,10 @@ body:not(.portrait) .diff.wrapped:not(.stacked) { grid-template-columns: repeat(
 .chart g.entry.active rect, .chart g.entry.active .line { filter: drop-shadow(0 0 10px var(--accent-glow)); }
 .chart g.entry.active rect { stroke: var(--fg); stroke-width: 3; }
 .chart g.entry.veiled { opacity: 0; transform: none; }
-.chart .has-active > g.entry:not(.active), .chart svg.has-active > g.entry:not(.active) { opacity: 0.35; }
+/* Unpointed bars and lines fade; their names and values stay readable. */
+.chart :is(.has-active, svg.has-active) > g.entry:not(.active) :is(rect, .line, .dot) { opacity: 0.35; }
+.chart :is(.has-active, svg.has-active) > g.entry:not(.active) :is(.vlabel, .slabel) { opacity: 0.7; }
+.chart rect, .chart .line, .chart .dot, .chart .vlabel, .chart .slabel { transition: opacity 0.4s; }
 
 /* chapter cards */
 .slide.k-chapter { justify-content: center; padding: 88px; }

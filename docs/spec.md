@@ -189,7 +189,7 @@ Findings from the open player, measured after a slide has settled. Their message
 | `text_too_small` | warning | a visual's text renders below a comfortable reading size; code reaches it only with too many lines, since long lines wrap |
 | `overflow` | warning | a visual still overflows the slide after shrinking |
 | `pointer_offstage` | warning | a cue's target is outside the visible slide |
-| `drawing_overlap` | warning | a line runs through a label in a drawing, or two labels overlap |
+| `drawing_overlap` | warning | a line runs through a label or a box in a drawing, or two labels or boxes overlap |
 | `diagram_shape` | info | a flowchart's direction leaves it small in the slide's shape |
 | `slow_render` | info | a slide took longer to draw than the player waits |
 | `viewer_waited` | info | the viewer caught up with the writer and waited |

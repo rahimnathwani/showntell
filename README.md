@@ -249,6 +249,7 @@ After [the final attempt](#L55) the error goes back to the caller.
 | **Diagram** | a `mermaid` block, any diagram type |
 | **Drawing** | an `svg` block, or `svg file=path` for an SVG from draw.io, Excalidraw or Inkscape; cues point at elements by id |
 | **draw.io diagram** | `drawio file=docs/arch.drawio`, drawn by the bundled draw.io viewer offline; cues point at cells by id or label |
+| **reladraw diagram** | a `reladraw` block: boxes placed relative to each other (`right of web`, `even with a`) and lines between them, drawn exactly as written in the slide's colors; cues point at nodes by name or text |
 | **Formula** | a `math` block or `$$ … $$`, rendered with KaTeX |
 | **Table** | a pipe table |
 | **List, steps, cards, timeline** | `-` or `1.` items; `.cards` on the heading for cards, `.timeline` for dated events |

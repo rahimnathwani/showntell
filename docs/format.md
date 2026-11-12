@@ -24,7 +24,7 @@ On a miss it [calls the loader](#L18) and stores the result.
 | **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice` (an id such as `bm_george`, `default`, or a description such as `British male` or `American female, soft`, which picks the first voice of that accent and sex with the most of the traits asked for), `speed`. Tools pass these as arguments instead. |
 | **Slide** | every heading (`#`, `##` or `###`) starts a slide. The level does not matter. |
 | **Title slide** | the first slide renders as a title slide when it has no visual. A `>` quote under it is the subtitle. |
-| **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`) or a draw.io diagram |
+| **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`), a draw.io diagram or a reladraw diagram |
 | **Shown text** | `>` quote lines are shown on the slide, never spoken: under a heading with a visual, a takeaway line; on a `.side` slide, takeaways beside the visual; on a slide with no visual, one large statement |
 | **Narration** | every other paragraph is spoken. Each paragraph is voiced separately, with a short pause after it. A paragraph that starts with `1. ` or `- ` right after the slide's visual is spoken too, since a list there would be a second visual. |
 | **Questions** | a slide whose heading has the `.questions` class is not shown; its list items become the questions offered at the end. Questions passed to `finish_walkthrough` replace them. |
@@ -336,6 +336,24 @@ The builder rebuilds the page from cells, styles, geometry and labels. Labels ke
 
 Cues point at a cell by its id, or by its label or the label's slug when that is unique (`#api`, `#Postgres`, `#api-server`); at a region with `#@left,top,width,height` in percent of the diagram; or at label text with `[label](# "text")`. With `.build`, the shapes directly on a layer appear in source order; a cue at a shape inside a container reveals the container, and an edge appears once both its ends are shown. More than 400 shapes and connectors is reported as `block_too_big`.
 
+### reladraw diagram
+
+````markdown
+```reladraw
+node web "Web app"  layout: column
+node web.ui "Interface"
+node web.api "API"
+node store "Database"  right of web (gap: wide)  shape: cylinder
+edge web.api -> store "queries"
+```
+````
+
+Boxes and lines in the [reladraw](https://github.com/reladraw/reladraw) language, where each box is placed relative to others (`below a`, `right of a (gap: wide)`, `even with a`) and lines are straight unless told how to bend. It suits a diagram whose arrangement matters, which Mermaid would lay out its own way and which hand-placed SVG gets wrong. Written inline, or read from the project with ```` ```reladraw file=docs/arch.reladraw ```` and an empty body. The library (`static/vendor/reladraw`, Apache-2.0, about 300 KB) loads only when a slide needs it. It draws in the slide's theme (its fills, lines, accent and face, so `theme-primary` is the slide's accent) and fits the drawing to the slide, growing a small one up to 1.6 times. Links (`url:`) and anything that would load from outside are dropped.
+
+Cues point at a node by its name (`#web.api`), or by its text or the text's slug when that is unique; at a region with `#@left,top,width,height`; or at text with `[label](# "text")`. With `.build`, top-level nodes appear in source order, a node inside another with it, and a line once both its ends are shown.
+
+**Checked.** reladraw never moves a box or reroutes a line to make room. What it finds, a line through a box or texts on top of each other, comes back as `drawing_overlap` naming the line of the block, and a syntax error as `render_error` with its line. More than 60 boxes is reported as `block_too_big`.
+
 ## Narration
 
 Narration is plain prose written to be heard. Markdown inside it is used like this:
@@ -421,6 +439,7 @@ With `.build` on the heading, the slide starts mostly empty and fills in as the 
 | **Terminal** | lines appear up to the end of the latest line range pointed at, as for code |
 | **Drawing** | the outermost elements with ids appear in source order up to the latest one pointed at (or holding the element pointed at); unfilled strokes draw themselves in |
 | **draw.io diagram** | shapes on a layer appear in source order up to the latest one pointed at (or holding the cell pointed at); an edge appears once both its ends are shown |
+| **reladraw diagram** | top-level nodes appear in source order up to the latest one pointed at (or holding the node pointed at); a line appears once both its ends are shown |
 
 Everything is visible once the slide's narration ends.
 

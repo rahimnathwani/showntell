@@ -10,6 +10,7 @@ showntell bundles these libraries in `src/showntell/static/vendor/`, unmodified:
 | **Rough.js** | 4.6.6 | MIT | https://github.com/rough-stuff/rough |
 | **Virgil** (font) | 3d4c829 | OFL-1.1 | https://github.com/excalidraw/virgil |
 | **draw.io viewer** (`viewer-static.min.js`) | 31.7.0 | Apache-2.0 | https://github.com/jgraph/drawio |
+| **reladraw** (`reladraw/reladraw.min.js`, its browser entry bundled with esbuild) | 0.29.0 | Apache-2.0 (NOTICE in `LICENSES/reladraw-NOTICE.txt`) | https://github.com/reladraw/reladraw |
 | **Inter** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/rsms/inter |
 | **Bricolage Grotesque** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/ateliertriay/bricolage |
 | **JetBrains Mono** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/JetBrains/JetBrainsMono |

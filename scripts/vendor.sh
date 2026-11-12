@@ -17,7 +17,7 @@ fetch_url() { # url sha256 destination
   curl -fsSL "$1" -o "$3"
   echo "$2  $3" | shasum -a 256 -c --quiet
 }
-rm -rf "$V/hljs" "$V/katex" "$V/mermaid.min.js" "$V/drawio" "$V/rough" "$V/fonts"
+rm -rf "$V/hljs" "$V/katex" "$V/mermaid.min.js" "$V/drawio" "$V/rough" "$V/fonts" "$V/reladraw"
 mkdir -p "$V/katex/fonts" "$V/hljs" "$V/drawio" "$V/LICENSES" "$V/rough" "$V/fonts"
 fetch mermaid 11.4.1 ec7b61b391aaa24bf666fd20e48d0a626eeb4a95b95bc6b3016a122d7f0bc2af
 cp "$TMP/mermaid/package/dist/mermaid.min.js" "$V/"
@@ -66,4 +66,13 @@ EOF
 DRAWIO=https://raw.githubusercontent.com/jgraph/drawio/v31.7.0
 fetch_url "$DRAWIO/src/main/webapp/js/viewer-static.min.js" 53a25e8f766e759835a3a6a35d7e88742cb41762ed631ddd6944e38723dade33 "$V/drawio/viewer-static.min.js"
 curl -fsSL "$DRAWIO/LICENSE" -o "$V/LICENSES/drawio.txt"
+# reladraw (Apache-2.0) ships ES modules; esbuild, pinned and run only here, bundles the browser
+# entry (no command line or server) into one script that sets window.reladraw, as the others do.
+fetch reladraw 0.29.0 d3afa9b0fd8d0d6dcc68012b19ac1f278e1a8c3f4b74431da5a0f935a1d0cdb6
+mkdir -p "$V/reladraw"
+cp scripts/vendor/reladraw-entry.js "$TMP/reladraw/entry.js"
+npx --yes esbuild@0.25.12 "$TMP/reladraw/entry.js" --bundle --format=iife --global-name=reladraw --minify --legal-comments=none \
+  --outfile="$V/reladraw/reladraw.min.js" --log-level=warning
+cp "$TMP/reladraw/package/LICENSE" "$V/LICENSES/reladraw.txt"
+cp "$TMP/reladraw/package/NOTICE" "$V/LICENSES/reladraw-NOTICE.txt"
 du -sh "$V"

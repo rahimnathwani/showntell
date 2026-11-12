@@ -31,12 +31,13 @@ import math from "./kinds/math.js";
 import stat from "./kinds/stat.js";
 import svg from "./kinds/svg.js";
 import drawio from "./kinds/drawio.js";
+import reladraw from "./kinds/reladraw.js";
 import table from "./kinds/table.js";
 import terminal from "./kinds/terminal.js";
 import { chapter, title } from "./kinds/title.js";
 import tree from "./kinds/tree.js";
 
-export const KINDS = { title, chapter, code, diff, list, table, diagram, math, chart, stat, chat, terminal, tree, image, svg, drawio };
+export const KINDS = { title, chapter, code, diff, list, table, diagram, math, chart, stat, chat, terminal, tree, image, svg, drawio, reladraw };
 
 // Narration-only slides: a statement. The shown text is the sentence and the heading a kicker
 // above it; without shown text the heading itself is the sentence.

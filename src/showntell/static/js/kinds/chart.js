@@ -3,10 +3,11 @@
 // lines draw left to right; values and callouts follow.
 
 import { el, reducedMotion } from "../draw.js";
-import { esc } from "../util.js";
+import { esc, spread } from "../util.js";
 
 // Drawing size per frame, in SVG units: close to the slide body's shape, so text keeps its size.
 const SIZES = { landscape: [1100, 600], square: [900, 820], portrait: [660, 940] };
+const MIN_W = 520, MIN_H = 340; // smaller bodies scale the drawing down instead
 const PALETTE = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)", "var(--c6)"];
 const DELAY_S = 0.35; // after the slide arrives
 const GROW_S = 0.8; // per bar or line
@@ -24,7 +25,26 @@ export default {
     c.querySelectorAll("g.entry").forEach((g) => parts.items.set(g.dataset.id, g));
     parts.visual = c;
     parts.svg = null;
+    parts.chart = v;
     body.append(c);
+  },
+
+  // Redraw at the body's own size, one SVG unit to one stage pixel, so text keeps its size beside
+  // takeaways or code instead of shrinking with a drawing made for the whole slide.
+  layout(body, parts) {
+    const c = parts.visual, v = parts.chart;
+    if (!c || !v) return;
+    const bw = Math.floor(body.clientWidth), bh = Math.floor(body.clientHeight);
+    if (bw < 200 || bh < 160) return;
+    const size = [Math.max(MIN_W, bw), Math.max(MIN_H, bh)];
+    if (c.dataset.size === size.join("x")) return;
+    c.dataset.size = size.join("x");
+    const active = [...c.querySelectorAll("g.entry.active")].map((g) => g.dataset.id);
+    c.innerHTML = drawChart(v, size);
+    c.querySelectorAll("g.entry").forEach((g) => {
+      parts.items.set(g.dataset.id, g);
+      if (active.includes(g.dataset.id)) { g.classList.add("active"); g.parentElement.classList.add("has-active"); }
+    });
   },
 
   // Fully drawn when everything shows at once (previews, the layout check, a slide revealed by
@@ -103,6 +123,7 @@ function drawChart(v, [W, H]) {
     const n = v.x.length;
     const x = (i) => m.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
     v.x.forEach((xv, i) => { marks += t(x(i), m.t + ih + 34, xv, "tick"); });
+    const labelY = spread(v.series.map((s) => y(s.values[s.values.length - 1] ?? 0) - 16), LABEL_GAP, m.t + 20, m.t + ih - 4);
     v.series.forEach((s, si) => {
       const col = PALETTE[si % PALETTE.length];
       const pts = s.values.map((val, i) => `${x(i)},${y(val)}`).join(" ");
@@ -110,7 +131,7 @@ function drawChart(v, [W, H]) {
       marks += `<g class="entry series" data-id="${esc(s.id)}" data-idx="${si}" style="--c:${col}">`
         + `<polyline points="${pts}" class="line"/>`
         + s.values.map((val, i) => `<circle cx="${x(i)}" cy="${y(val)}" r="7" class="dot"><title>${esc(`${s.name}: ${fmt(val, v.unit)}`)}</title></circle>`).join("")
-        + (last >= 0 ? t(Math.min(W - m.r, x(last)) - 8, y(s.values[last]) - 16, s.name, "slabel", "end") : "")
+        + (last >= 0 ? t(Math.min(W - m.r, x(last)) - 8, labelY[si], s.name, "slabel", "end") : "")
         + "</g>";
     });
     (v.notes || []).forEach((note) => {
@@ -142,6 +163,9 @@ function drawChart(v, [W, H]) {
   }
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${head}${grid}${axes}<line x1="${m.l}" x2="${W - m.r}" y1="${y(Math.max(lo, 0))}" y2="${y(Math.max(lo, 0))}" class="axis"/>${marks}</svg>`;
 }
+
+// Series names sit just above their line's last point, pushed apart where they would overlap.
+const LABEL_GAP = 28;
 
 // A callout: a short leader up from the point and the note's text.
 function noteMark(note, px, py, m, W, t) {

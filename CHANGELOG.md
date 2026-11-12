@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **reladraw diagrams:** a ```` ```reladraw ```` block (or `reladraw file=`) draws boxes placed relative to each other (`right of web (gap: wide)`, `even with a`) and lines between them, exactly as written, in the slide's colors and face. Cues point at nodes by name or text, `.build` reveals top-level nodes in order and lines with their ends, and the library's findings (a line through a box, texts on top of each other) and syntax errors come back with the line of the block. The library (reladraw 0.29.0, Apache-2.0) is bundled and loads only when a slide needs it; links and outside pictures are dropped.
+- **Charts beside takeaways keep their text size:** a chart is drawn at its slide body's own size instead of shrunk from a whole-slide drawing, so labels in a `.side` or `.pair` layout no longer fall to about 10 px. A line chart's series names no longer overlap, and pointing at one bar or line fades the others' bars but not their names and values.
+- **Parts the narration has passed stay readable:** cards, list items and numbers not pointed at fade to 62% and lose most of their color, instead of 45%, so a paused frame, a thumbnail or an MP4 still reads.
+- **Mermaid groups** are drawn with a quiet solid outline and muted title instead of a dashed accent-colored box. A diagram shrunk too small now says which way to turn it: left to right when it is too tall for the slide, top to bottom when too wide (before, it always suggested top to bottom).
+- **Code shrunk for one long line wraps sooner:** code that would be drawn below 85% of its size wraps its long lines instead, when that lets it grow.
+
 ## 0.2.6 (2026-11-12)
 
 - **Revised headings keep the slide's id:** a `revise_slide` heading without `{#id}` whose title would give another id gets the slide's id written in, so the source builds the same slide.

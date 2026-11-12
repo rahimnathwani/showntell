@@ -202,6 +202,7 @@ LIBRARIES = {
     "diff": ["vendor/hljs/highlight.min.js"],
     "terminal": ["vendor/hljs/highlight.min.js"],
     "drawio": ["vendor/drawio/viewer-static.min.js"],
+    "reladraw": ["vendor/reladraw/reladraw.min.js"],
 }
 MIME = {
     ".png": "image/png",

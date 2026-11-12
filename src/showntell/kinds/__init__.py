@@ -1,5 +1,5 @@
 """Bundled slide kinds beyond the core set: charts, numbers, exchanges, terminal sessions, file trees,
-drawings and draw.io diagrams.
+drawings, draw.io diagrams and reladraw diagrams.
 
 Each module defines `KIND`, a `base.Kind` with its fence languages, parser, size check and how
 cues find its parts; the builder looks kinds up here instead of naming them. Every part a cue can
@@ -10,7 +10,7 @@ showntell://slide-kinds); a block's problems quote that kind's `format` entry as
 
 from __future__ import annotations
 
-from . import chart, chat, drawio, stat, svg, terminal, tree
+from . import chart, chat, drawio, reladraw, stat, svg, terminal, tree
 from .base import Kind, find_part, labels
 from .chart import parse_chart
 from .chat import parse_chat
@@ -18,7 +18,9 @@ from .stat import parse_stat
 from .terminal import parse_terminal
 from .tree import parse_tree
 
-KINDS: dict[str, Kind] = {k.name: k for k in (chart.KIND, stat.KIND, chat.KIND, terminal.KIND, tree.KIND, svg.KIND, drawio.KIND)}
+KINDS: dict[str, Kind] = {
+    k.name: k for k in (chart.KIND, stat.KIND, chat.KIND, terminal.KIND, tree.KIND, svg.KIND, drawio.KIND, reladraw.KIND)
+}
 BY_LANG: dict[str, Kind] = {lang: k for k in KINDS.values() for lang in k.langs}
 
 __all__ = [

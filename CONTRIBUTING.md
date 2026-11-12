@@ -24,7 +24,7 @@ Run a daemon without a voice model with `uv run showntell serve --speech fake --
 | `src/showntell/cues.py` | resolving cues against a slide's visual, and inferring them when narration has none |
 | `src/showntell/checks.py` | findings on sizes, finished slides and the whole walkthrough |
 | `src/showntell/mermaid.py` | node ids, labels and edges read from Mermaid source |
-| `src/showntell/kinds/` | bundled kinds (chart, stat, chat, terminal, tree, svg, drawio), one module each, and their registry |
+| `src/showntell/kinds/` | bundled kinds (chart, stat, chat, terminal, tree, svg, drawio, reladraw), one module each, and their registry |
 | `src/showntell/store.py` | walkthrough sessions, speech requests, events, persistence |
 | `src/showntell/server.py` | MCP tools, prompts, resources and web routes |
 | `src/showntell/app.py` | the daemon: wiring and the request guard |

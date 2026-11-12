@@ -45,7 +45,7 @@ graph TB
 | `checks.py` | `Checks`: size findings on code and diffs, findings on each finished slide (narration, cues, reading the screen, reveal order) and on the whole walkthrough (code runs, openings) |
 | `mermaid.py` | node ids, labels and edges read from Mermaid source, for cues and edge paths |
 | `icons.py` | the bundled Lucide icons: lookup by name, close names for an unknown one, `:name:` at the start of text |
-| `kinds/` | one module per bundled kind (chart, stat, chat, terminal, tree, svg, drawio) and a registry by fence language and slide kind |
+| `kinds/` | one module per bundled kind (chart, stat, chat, terminal, tree, svg, drawio, reladraw) and a registry by fence language and slide kind |
 
 Each bundled kind is a `kinds.base.Kind`: its fence languages, a parser that returns the visual and problems, a size check, and how a cue names its parts. The builder, cue resolver and checks ask the registry instead of naming kinds, so a new kind is one Python module plus its player module, styles and catalogue entry (CONTRIBUTING.md lists them). A problem with a block goes back with the kind's `format` text from `text/kinds.json` as the fix.
 
@@ -66,7 +66,7 @@ Each bundled kind is a `kinds.base.Kind`: its fence languages, a parser that ret
 | **`present.js`** | presenter and audience windows, and commands from a page that embeds the player |
 | **`main.js`** | loads the walkthrough, follows live updates, wires the controls, capture mode |
 | **`render.js`** | the slide skeleton and the registry of slide kinds |
-| **`kinds/*.js`** | one module per slide kind (`code`, `diff`, `list`, `table`, `diagram`, `math`, `image`, `chart`, `stat`, `chat`, `terminal`, `tree`, `svg`, `drawio`, `title` with chapter cards) |
+| **`kinds/*.js`** | one module per slide kind (`code`, `diff`, `list`, `table`, `diagram`, `math`, `image`, `chart`, `stat`, `chat`, `terminal`, `tree`, `svg`, `drawio`, `reladraw`, `title` with chapter cards) |
 | **`draw.js`, `diff.js`, `util.js`** | DOM helpers shared by kinds (`fit`, highlighting, text ranges), the line and word diff, escaping and inline Markdown |
 | **`deco.js`** | icons copied into a slide, and the motif behind title slides |
 

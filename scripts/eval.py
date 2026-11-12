@@ -496,7 +496,7 @@ def summarize(w: Walkthrough | None, expect: list[str] | None = None) -> dict:
             }.items()
             if on
         }
-        if s.kind in ("stat", "chat", "chapter", "chart", "terminal", "tree", "svg", "drawio"):
+        if s.kind in ("stat", "chat", "chapter", "chart", "terminal", "tree", "svg", "drawio", "reladraw"):
             used.add(s.kind)
     for c in cues:
         if c.get("kind") in ("edge", "region", "step"):

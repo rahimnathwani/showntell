@@ -64,6 +64,7 @@ Every slide but the title and brief transitions gets the visual that carries its
 | **Specific code** | `file=` and `lines=`: code as it stands |
 | **One long function** | add `scroll`: reading size, scrolls to each cued range |
 | **Flow, structure, states** | Mermaid: short ids (`api`, `db`), labels of one to four words without parentheses or quotes, `alt="..."` on the heading |
+| **Boxes and arrows in an arrangement you choose** | ```` ```reladraw ````: `node web "Web app"`, `node db "Database"  right of web (gap: wide)`, `edge web -> db "queries"`; drawn exactly as placed, in the slide's colors. Prefer it to hand-placed SVG for boxes and lines. Syntax: showntell://slide-kinds |
 | **Physical, spatial or visual idea** | drawing: ```` ```svg ```` holding one `<svg viewBox="{{DRAWING}}">`, or `svg file=` an SVG export |
 | **An existing draw.io diagram** | ```` ```drawio file=docs/arch.drawio ```` (or `.drawio.svg`), empty body, `page="Name"` or `page=2`; a new picture is SVG |
 | **Comparison in words** | table: a few rows, short cells |
@@ -133,7 +134,7 @@ Targets by visual; a slug is lowercase with hyphens:
 | **Chat** | `#m1`, `#m2` in order |
 | **Tree** | path (`#src/cache/lru.py`) or unique name (`#lru.py`) |
 | **Image** | region `#@left,top,width,height` in percent |
-| **Drawing, draw.io** | element or cell id (`#ray`); a unique `<title>`, label or text, or its slug (`#air-molecule`); region as for images |
+| **Drawing, draw.io, reladraw** | element, cell or node id (`#ray`, `#web.api`); a unique `<title>`, label or text, or its slug (`#air-molecule`); region as for images |
 | **Any visual** | `#` the whole visual; `[label](# "text")` finds that text in it: a node label, a cell, a formula term |
 
 ## One picture, many shots

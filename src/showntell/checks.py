@@ -24,6 +24,7 @@ DENSE = ("code", "diff", "terminal", "table", "math")
 NOUNS = {
     "svg": "a drawing",
     "drawio": "a draw.io diagram",
+    "reladraw": "a reladraw diagram",
     "math": "a formula",
     "stat": "numbers",
     "chat": "an exchange",
@@ -257,7 +258,7 @@ class Checks:
                     slide=s.id,
                     line=s.line,
                 )
-        if "zoom_unused" not in once and s.kind in ("svg", "drawio", "image") and not any("zoom" in st for st in styles):
+        if "zoom_unused" not in once and s.kind in ("svg", "drawio", "reladraw", "image") and not any("zoom" in st for st in styles):
             parts = list(dict.fromkeys(c.get("target") for c in cues if c.get("target") and c.get("kind") in ("item", "region")))
             if len(parts) >= 3 and words >= 35:
                 once.add("zoom_unused")
@@ -273,7 +274,7 @@ class Checks:
                 )
         # Lists are left out: their items are parallel parts, and the last card is no answer.
         decoded = any("decode" in (c.get("style") or "") for t in self.w.slides for x in t.says for c in x.cues)
-        if "decode_unused" not in once and not decoded and s.kind in ("diagram", "svg", "drawio", "table"):
+        if "decode_unused" not in once and not decoded and s.kind in ("diagram", "svg", "drawio", "reladraw", "table"):
             rank = _source_rank(s)
             seq = [(rank(c), c) for c in cues]
             seq = [(r, c) for r, c in seq if r is not None]

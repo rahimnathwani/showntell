@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { captionPages, esc, inline, splitLines } from "../../src/showntell/static/js/util.js";
+import { captionPages, esc, inline, splitLines, spread } from "../../src/showntell/static/js/util.js";
 
 test("escapes before formatting", () => {
   assert.equal(esc(`<a href="x">`), "&lt;a href=&quot;x&quot;&gt;");
@@ -30,4 +30,11 @@ test("a caption never ends on a page of one or two words", () => {
   let pos = 0;
   const words = text.split(" ").map((w) => { const c0 = text.indexOf(w, pos); pos = c0 + w.length; return { c0, c1: pos }; });
   assert.deepEqual(captionPages(text, words).map((p) => p.length), [8]);
+});
+
+test("spread keeps far labels and pushes close ones apart, inside the bounds", () => {
+  assert.deepEqual(spread([100, 300], 28, 0, 500), [100, 300]);
+  assert.deepEqual(spread([200, 190, 205], 28, 0, 500), [218, 190, 246]);
+  assert.deepEqual(spread([5], 28, 20, 500), [20]);
+  assert.deepEqual(spread([490, 495], 28, 0, 500), [472, 500]);
 });

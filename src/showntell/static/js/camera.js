@@ -27,7 +27,7 @@ const clamp = (x) => Math.max(0, Math.min(1, x));
 
 // Still pictures breathe; code, lists and charts hold still unless a cue moves the camera.
 function breathes(slide) {
-  if (slide.kind === "svg" || slide.kind === "drawio") return !(slide.visual?.steps?.length > 1);
+  if (["svg", "drawio", "reladraw"].includes(slide.kind)) return !(slide.visual?.steps?.length > 1);
   return slide.kind === "image" && slide.says.some((x) => (x.cues || []).some((c) => c.kind === "region"));
 }
 

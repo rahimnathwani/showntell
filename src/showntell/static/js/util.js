@@ -65,3 +65,16 @@ export function captionPages(text, words) {
   }
   return pages;
 }
+
+// Positions for labels at heights `ys` that must sit at least `gap` apart: each keeps its height
+// unless one above it is too close, in their order by height, all kept between top and bottom.
+export function spread(ys, gap, top, bottom) {
+  const order = ys.map((y, i) => [y, i]).sort((a, b) => a[0] - b[0]);
+  const out = ys.slice();
+  let prev = -Infinity;
+  for (const [y, i] of order) { out[i] = Math.max(y, prev + gap, top); prev = out[i]; }
+  // Pushed past the bottom: shift the stack up as a whole.
+  const over = Math.max(...out) - bottom;
+  if (over > 0) for (const [, i] of order) out[i] -= over;
+  return out;
+}

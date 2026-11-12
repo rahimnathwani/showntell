@@ -6,7 +6,7 @@
   "no_images": "Line {line}: the image was not shown: this server takes no images, from paths or from the web.",
   "no_images_fix": "Draw it instead: ```svg, a ```mermaid diagram, a ```chart, or a table. Send the fixed slide with revise_slide.",
   "no_export_path": "This server cannot save to {given}: exports stay on the server for the owner to download. Call export_walkthrough again without path.",
-  "guide_hosted": "**On this server:** it reads nothing from disk or the web. Where the guide below says `file=`, `rev=`, `svg file=`, `drawio file=` or an image, put the content in the Markdown instead: code in a fenced block with `start=` for its first line number, a change as a unified ```diff block or old/new blocks, a picture as ```svg, a diagram or a chart.",
+  "guide_hosted": "**On this server:** it reads nothing from disk or the web. Where the guide below says `file=`, `rev=`, `svg file=`, `drawio file=`, `reladraw file=` or an image, put the content in the Markdown instead: code in a fenced block with `start=` for its first line number, a change as a unified ```diff block or old/new blocks, a picture as ```svg, a diagram or a chart.",
   "exported_hosted": "Saved on the server ({mb} MB, {duration}). The owner can download it, signed in, from {download}\nGive the user that link with a line on what it covers. Anyone they send the file to can play it. Don't repeat the script.",
   "markdown_too_big": "This call carries {kb:.0f} KB of Markdown; the limit is {limit:g} KB per call. Send fewer slides per call.",
   "too_many_slides": "Not added: that would make {n} slides, over this server's limit of {limit}. Finish this walkthrough and put the rest in a second one.",

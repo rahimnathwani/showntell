@@ -152,9 +152,11 @@ export function fit(body) {
 export const CODE_PX = 17; // smallest code text on the stage before long lines wrap
 const codeFont = (content) => parseFloat(getComputedStyle(content.querySelector(".code") || content).fontSize) || 22;
 
+const WRAP_BELOW = 0.85; // code shrunk further than this for one long line wraps instead, if that lets it grow
+
 function fitCode(content, bw, bh, grow, k) {
   const floor = CODE_PX / codeFont(content);
-  if (k >= floor) return k;
+  if (k >= Math.max(floor, WRAP_BELOW)) return k;
   // Too many lines, not too long ones: stacking and wrapping would only make it taller.
   const cw = Math.max(content.offsetWidth, content.scrollWidth), ch = Math.max(content.offsetHeight, content.scrollHeight);
   if (bh / ch <= bw / cw) return k;

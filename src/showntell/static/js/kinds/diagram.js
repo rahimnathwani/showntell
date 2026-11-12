@@ -74,8 +74,12 @@ export default {
     const label = parts.svg.querySelector(".nodeLabel, text");
     const px = (label ? parseFloat(getComputedStyle(label).fontSize) : 20) * k;
     if (px && px < READABLE_PX - 3) {
+      // Say which way to turn it: a drawing taller than the body's shape wants to run across.
+      const tall = vb && vb.width && vb.height / vb.width > body.clientHeight / Math.max(1, body.clientWidth);
       report(`Slide ${slide.id}: the diagram had to shrink until its labels are about ${Math.round(px)} px high, too small to read.`
-        + " Split it, or use fewer nodes or a top-to-bottom layout.", "text_too_small", slide.id);
+        + (tall ? " It is too tall for the slide: lay it out left to right (flowchart LR), or split it or use fewer nodes."
+          : " It is too wide for the slide: lay it out top to bottom (flowchart TB), or split it or use fewer nodes."),
+        "text_too_small", slide.id);
     }
     // Beside code or takeaways, a narrow diagram is the point of the layout.
     const beside = ["side", "pair"].some((c) => slide.classes?.includes(c));
