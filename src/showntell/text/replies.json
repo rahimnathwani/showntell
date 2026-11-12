@@ -3,6 +3,7 @@
   "project": "Project folder: {root}. file= paths and rev= read from it; if that is the wrong folder, start again with project_dir set to the right absolute path.",
   "no_project": "No project folder, so file= and rev= cannot read code. Pass project_dir, an absolute path, to start_walkthrough.",
   "voice_chosen": "Voice: {voice} ({about}), the closest to \"{asked}\".",
+  "voice_missed": "No voice of that accent and sex is {traits}; tell the user if it matters.",
   "playable": "Playable after {seconds} s: {url}\nSend this link to the user now, in a message, before your next tool call. Then send the first content slide alone and short, so it is ready within seconds; if the slides after it need reading, write this one from what the request gives (its parts, steps or numbers) and read afterwards; after that, one to three whole slides per add_slides call. The authoring guide follows.",
   "pending": "Slides saved. The opening audio is still being made, but the link already works: {url}\nShare it with the user now; playback starts when the audio is ready. Then keep adding slides.",
   "voice_error": "Slides saved, but voicing failed: {error}\nLink: {url}. Continue with the next add_slides call. If the error repeats, stop and ask the user to run `showntell doctor`.",

@@ -62,6 +62,11 @@ async def test_create_validates_frame_and_voice(store):
         ("a deep male voice", "am_adam"),
         ("UK woman", "bf_emma"),
         ("male", "am_michael"),
+        ("American English, female", "af_heart"),
+        ("English male", "bm_george"),
+        ("U.S. male", "am_michael"),
+        ("BM_GEORGE", "bm_george"),
+        ("the default voice", "af_heart"),
     ],
 )
 async def test_create_finds_a_voice_from_a_description(store, asked, voice):
@@ -313,24 +318,126 @@ THREE = "## One {#one}\n\nFirst point.\n\n## Two {#two}\n\nSecond point.\n\n## T
 TAIL = "\n## Questions {.questions}\n\n- What next?\n"
 
 
-def _rebuilt(store, src: str):
-    """The slide ids and questions the source builds afresh, as a restart or an export reads it."""
+def _shape(w) -> dict:
+    """What a walkthrough plays: each slide's id, kind, title, chapter number and narration, plus
+    its sources and end questions."""
+    slides = [(s.id, s.kind, s.title, s.visual.get("n") if s.kind == "chapter" else None, [x.text for x in s.says]) for s in w.slides]
+    return {"slides": slides, "notes": dict(w.notes), "cited": dict(w.cited), "questions": list(w.questions)}
+
+
+def _rebuilt(store, src: str, root=None):
+    """The walkthrough the source builds afresh, as a restart from Markdown or an export reads it."""
     from showntell.build import Builder
     from showntell.model import Walkthrough
 
-    w = Walkthrough(id="w" * 22, key="k", report_key="r", title="T")
+    w = Walkthrough(id="w" * 22, key="k", report_key="r", title="T", root=root)
     Builder(w, store.walk_dir("x")).add(src)
-    return [x.id for x in w.slides], w.questions
+    return w
 
 
 async def _source_matches(service, store, handle: str) -> str:
+    """The source Markdown builds exactly what plays, and every slide after the first starts at a heading."""
     s = store.by_handle(handle)
     src = await service.source(handle.split(".")[0])
-    ids, questions = _rebuilt(store, src)
-    assert ids == [x.id for x in s.w.slides] and questions == ["What next?"]
+    assert _shape(_rebuilt(store, src, s.w.root)) == _shape(s.w)
     lines = src.split("\n")
-    assert all(lines[x.line - 1].startswith("#") for x in s.w.slides[1:]), [(x.id, x.line) for x in s.w.slides]
+    # A slide spilled from the one before starts at its visual until an edit gives it a heading.
+    assert all(lines[x.line - 1].startswith(("#", "```")) for x in s.w.slides[1:]), [(x.id, x.line) for x in s.w.slides]
+    assert s.builder.parser.lines_seen == src.count("\n")
     return src
+
+
+HARD = (
+    "## Part one {#p1 .chapter}\n\nThe first part.\n\n"
+    "## Code {#code}\n\n```python\na = 1\n```\n\nThe first block.\n\n```python\nb = 2\n```\n\nThe second block, spilled.\n\n"
+    "## Cited\n\nA claim[^a] and another[^b].\n\n[^a]: Source A.\n[^b]: Source B.\n\n"
+    "## Part two {#p2 .chapter}\n\nThe second part.\n\n"
+    "## Also cites {#also}\n\nAgain the claim[^a].\n"
+    "\n## Questions {.questions}\n\n- What next?\n"
+)
+
+
+async def test_every_edit_keeps_the_source_building_what_plays(service, store):
+    """Spilled slides, chapters, citations and headings without ids, through a run of inserts,
+    moves, removals and revisions: after each, the source builds exactly what plays."""
+    r = await started(service)
+    h = r["handle"]
+    await service.add(h, OPENING + "\n" + HARD)
+    s = store.by_handle(h)
+    assert [x.id for x in s.w.slides] == ["how-caching-works", "p1", "code", "code-2", "cited", "p2", "also"]
+    await _source_matches(service, store, h)
+    steps = [
+        ("arrange", ["how-caching-works", "code-2", "p1", "code", "cited", "p2", "also"], None),  # the spill moves off its parent
+        ("arrange", None, ["code"]),  # and its parent goes
+        ("arrange", None, ["cited"]),  # its sources go too, but [^a] is still cited by `also`
+        (
+            "insert",
+            "p2",
+            "## Part three {.chapter}\n\nA new part.\n\n## Code {#code}\n\n```python\nc = 3\n```\n\n```python\nd = 4\n```\n\nSpilled again.\n",
+        ),
+        ("arrange", ["how-caching-works", "p2", "code-2", "p1", "part-three", "code", "code-2-2", "also"], None),  # chapters swap
+        ("revise", "also", "No citation now."),  # [^a] is cited nowhere: its line and note go
+        ("insert", "how-caching-works", "## Fresh {#cited}\n\nNew claim[^c].\n\n[^c]: Source C.\n"),
+        ("revise", "cited", "Still the claim[^c], said again."),  # its source line stays though the revision lacks it
+    ]
+    for op, x, y in steps:
+        if op == "arrange":
+            await service.arrange(h, x, y)
+        elif op == "insert":
+            await service.insert(h, x, y)
+        else:
+            await service.revise(h, x, y)
+        await _source_matches(service, store, h)
+    w = store.by_handle(h).w
+    assert [(x.id, x.visual["n"]) for x in w.slides if x.kind == "chapter"] == [("p2", 1), ("p1", 2), ("part-three", 3)]
+    assert w.notes == {"c": "Source C."} and "Source A." not in s.source
+
+
+async def test_a_removed_slide_and_its_staged_revision_are_not_reused(service, store, wait_until):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    s = store.by_handle(r["handle"])
+    await wait_until(lambda: all(x.status == "ready" for sl in s.w.slides for x in sl.says if x.text))
+    q = s.subscribe()
+    store.narrator.backend.delay = 0.3
+    v = await service.revise(r["handle"], "two", "Revised words.")
+    assert v["staged"] and s.staged["two"].rev == 2
+    await service.arrange(r["handle"], None, ["two"])
+    store.narrator.backend.delay = 0
+    await service.add(r["handle"], "## Two {#two}\n\nA new second point.\n")  # plain add_slides, not an insert
+    assert s.w.slides[-1].says[0].id == "two.1.3" and s.w.retired == {"two": 2}
+    s.unsubscribe(q)
+
+
+async def test_insert_reports_renamed_ids_and_refuses_questions(service):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    v = await service.insert(r["handle"], "one", "## Two {#two}\n\nAgain.\n")
+    assert v["renamed"] == {"two": "two-2"}
+    with pytest.raises(ValueError, match="slides only"):
+        await service.insert(r["handle"], "one", "## X\n\nWords.\n\n## Questions {.questions}\n\n- Why?\n")
+
+
+async def test_a_refused_insert_or_revise_leaves_the_sources_alone(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n## One {#one}\n\nA fact[^a].\n\n[^a]: The real source.\n")
+    with pytest.raises(ValueError, match="never closed"):
+        await service.insert(r["handle"], "one", "## X\n\nw[^a].\n\n[^a]: OVERWRITTEN.\n\n```python\nx = 1\n")
+    with pytest.raises(ValueError, match="no slide"):
+        await service.revise(r["handle"], "nope", "w[^a].\n\n[^a]: OVERWRITTEN.\n")
+    assert store.by_handle(r["handle"]).w.notes == {"a": "The real source."}
+
+
+async def test_slides_that_do_not_line_up_with_the_source_are_not_moved(service, store):
+    r = await started(service)
+    await service.add(r["handle"], OPENING + "\n" + THREE)
+    s = store.by_handle(r["handle"])
+    for x in s.w.slides:
+        x.line = 0
+    with pytest.raises(ValueError, match="no longer lines up"):
+        await service.arrange(r["handle"], None, ["two"])
+    with pytest.raises(ValueError, match="no longer lines up"):
+        await service.insert(r["handle"], "one", "## A\n\nB.\n")
 
 
 async def test_insert_puts_slides_after_one_and_voices_them(service, store, voiced):
@@ -429,7 +536,7 @@ async def test_an_arranged_walkthrough_survives_a_restart(service, store, wait_u
     fresh.loop = asyncio.get_running_loop()
     t = fresh.get(s.w.id)
     assert [x.id for x in t.w.slides] == ["how-caching-works", "three", "new", "two", "one"]
-    assert _rebuilt(store, t.source)[0] == [x.id for x in t.w.slides]
+    assert _shape(_rebuilt(store, t.source)) == _shape(t.w)
     assert t.builder.parser.lines_seen == t.source.count("\n")
 
 

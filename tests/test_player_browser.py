@@ -503,6 +503,12 @@ def test_embedded_player_sends_events_and_takes_commands(daemon, browser):
     page.wait_for_function("window.got.some(([t, d]) => t === 'slidechange' && d.id === 'timeline')", timeout=10000)
     ready = page.evaluate("window.got.find(([t]) => t === 'ready')[1]")
     assert ready["slides"] == len(KINDS) and ready["duration"] > 0
+    # Changing `speed` on a loaded player changes its speed in place, keeping the iframe.
+    frame_before = page.evaluate("document.getElementById('p').shadowRoot.querySelector('iframe') !== null")
+    page.evaluate("document.getElementById('p').setAttribute('speed', '1.5')")
+    inner = next(f for f in page.frames if f != page.main_frame)
+    inner.wait_for_function("document.querySelector('#speed').value === '1.5'", timeout=5000)
+    assert frame_before and page.evaluate("document.getElementById('p').shadowRoot.querySelectorAll('iframe').length") == 1
     page.close()
     srv.shutdown()
 
@@ -832,14 +838,55 @@ def test_the_open_player_follows_slides_moved_and_removed(daemon, browser):
     page.close()
 
 
+def test_a_range_and_the_position_follow_slides_by_id(daemon, browser):
+    call = _rpc(daemon)
+    r = call("start", title="Ranges", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    md = "# Ranges\n\nOpening.\n\n" + "".join(f"## Slide {n} {{#s{n}}}\n\nPoint number {n} in a sentence.\n\n" for n in range(1, 5))
+    call("add", handle=r["handle"], markdown=md)
+    call("playable", handle=r["handle"], timeout=10)
+    for _ in range(50):
+        if not call("finish", handle=r["handle"], questions=None)["pending"]:
+            break
+        time.sleep(0.2)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    starts = """(id) => import('./' + document.body.dataset.static + '/js/timeline.js').then((m) =>
+        fetch('data.json').then((r) => r.json()).then((w) => m.slideStart(m.build(w), w.slides.findIndex((s) => s.id === id))))"""
+    page.goto(url + "?from=s3&to=s4")
+    page.wait_for_function("window.__showntell.range?.()?.fromId === 's3'")
+    before = page.evaluate("window.__showntell.range()")
+    call("insert", handle=r["handle"], after="s1", markdown="## Inserted {#ins}\n\nA new point that takes some time to say.\n")
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 6")
+    after = page.evaluate("window.__showntell.range()")
+    assert (after["fromId"], after["toId"]) == ("s3", "s4") and after["start"] > before["start"]
+    assert abs(after["start"] - page.evaluate(starts, "s3")) < 0.01  # where s3 now starts
+    call("arrange", handle=r["handle"], order=None, remove=["s4"])
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 5")
+    assert page.evaluate("window.__showntell.range()") is None  # an end of the range went
+    # A viewer on the last slide when it is removed lands at the end, not on the slide before.
+    page.goto(url + f"?at={page.evaluate(starts, 's3') + 0.5:.2f}")
+    page.wait_for_selector(".slide")
+    call("arrange", handle=r["handle"], order=None, remove=["s3"])
+    page.wait_for_function("document.querySelectorAll('#chapters button').length === 4")
+    now, total = page.evaluate(
+        "[+document.querySelector('#progress').getAttribute('aria-valuenow'), +document.querySelector('#progress').getAttribute('aria-valuemax')]"
+    )
+    assert total > 0 and now >= total - 0.5, (now, total)
+    assert not errors, errors
+    page.close()
+
+
 def test_the_transcript_numbers_sources_and_shows_cited_lines(daemon, browser):
     call = _rpc(daemon)
     r = call("start", title="Sources", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
     md = (
         "# Sources\n\nOpening.\n\n## Claims {#claims}\n\nThe player is driven by time[^time]. Its timeline is built once[^line].\n\n"
-        "## Again {#again}\n\nAs we saw[^line], seeking is a lookup.\n\n"
+        "## Again {#again}\n\nAs we saw[^line], seeking is a lookup[^constructor].\n\n"
         "[^line]: file=src/showntell/static/js/timeline.js lines=1-4 The timeline module\n"
         "[^time]: The spec, https://example.com/spec\n"
+        "[^constructor]: An id that is also an object property.\n"
     )
     a = call("add", handle=r["handle"], markdown=md)
     assert not [i for i in a["issues"] if i["code"].startswith(("source_", "note_"))], a["issues"]
@@ -853,12 +900,12 @@ def test_the_transcript_numbers_sources_and_shows_cited_lines(daemon, browser):
     page.click("#tx")
     page.wait_for_selector("#transcript-body .notes li")
     marks = page.eval_on_selector_all("#transcript-body p button.cite", "bs => bs.map(b => [b.textContent, b.dataset.note])")
-    assert marks == [["1", "time"], ["2", "line"], ["2", "line"]]  # numbered by first citation
+    assert marks == [["1", "time"], ["2", "line"], ["2", "line"], ["3", "constructor"]]  # numbered by first citation
     items = page.eval_on_selector_all(
         "#transcript-body .notes li",
         "ls => ls.map(l => [l.value, l.id, l.querySelectorAll('.cited .cl').length, l.querySelectorAll('.back').length])",
     )
-    assert items == [[1, "source-time", 0, 1], [2, "source-line", 4, 2]]
+    assert items == [[1, "source-time", 0, 1], [2, "source-line", 4, 2], [3, "source-constructor", 0, 1]]
     assert page.text_content("#transcript-body #source-line .cited .g") == "1"
     assert page.get_attribute("#transcript-body p button.cite[data-note='line']", "title").startswith("The timeline module")
     assert page.eval_on_selector("#source-time a", "a => a.href") == "https://example.com/spec"
@@ -881,7 +928,17 @@ Opening.
 | Memory | 1 ms | 3 ms {#mem} |
 | Disk | 8 ms | 90 ms |
 
-Look down the [tail column](#col-p99) first. The disk's [ninety milliseconds](#row-2/p99) is the problem, while [memory's median](#mem/col-2) stays low.
+Look down the [tail column](#col-p99) first. The disk's [ninety milliseconds](#row-2/p99) is the problem, while [memory's median](#mem/col-2) stays low. Then [the disk row](#row-2) as a whole.
+
+## Built by cells {#built .build}
+
+| Store | p50 |
+|---|---|
+| Memory | 1 ms |
+| Disk | 8 ms |
+| Tape | 9 s |
+
+First [memory's median](#row-1/p50), then [the disk's](#row-2/p50).
 """
 
 
@@ -899,23 +956,25 @@ def test_table_columns_and_cells_are_pointed_at(daemon, browser):
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    marked = """[...document.querySelectorAll('.slide:not(.leaving) table.data .active')].map((e) => e.textContent.trim())"""
+    table = "document.querySelector('.slide:not(.leaving) table.data')"
+    state = f"""[[...{table}.querySelectorAll('.active')].map((e) => e.textContent.trim()), {table}.classList.contains('has-active'),
+        !document.querySelector('#pointer').hidden, [...{table}.querySelectorAll('tbody tr')].map((tr) => !tr.classList.contains('veiled'))]"""
     page.goto(url)
     page.wait_for_function("window.__showntell !== undefined")
-    times = [_at(page, "lat", k, 0.4) for k in range(3)]
+    times = [_at(page, "lat", k, 0.4) for k in range(4)] + [_at(page, "built", k, 0.4) for k in range(2)]
+    # One page, moving from cue to cue as playback does: each mark replaces the one before.
+    page.goto(f"{url}?capture=1")
+    page.wait_for_function("window.__showntell?.duration?.() > 0")
     found = []
     for t in times:
-        page.goto(f"{url}?at={t:.2f}")
-        page.wait_for_timeout(700)
-        found.append(
-            page.evaluate(
-                f"""[{marked}, document.querySelector('.slide:not(.leaving) table.data').classList.contains('has-active'),
-                !document.querySelector('#pointer').hidden]"""
-            )
-        )
-    assert found[0] == [["p99", "3 ms", "90 ms"], True, True]  # the column, heading included
-    assert found[1] == [["90 ms"], True, True]
-    assert found[2] == [["1 ms"], True, True]
+        page.evaluate("(t) => window.__showntell.seek(t)", t)
+        found.append(page.evaluate(state))
+    assert found[0][:3] == [["p99", "3 ms", "90 ms"], True, True]  # the column, heading included
+    assert found[1][:3] == [["90 ms"], True, True]
+    assert found[2][:3] == [["1 ms"], True, True]
+    assert found[3][0] == ["Disk8 ms90 ms"] and not found[3][1]  # a row cue clears the cell's marks
+    assert found[4][0] == ["1 ms"] and found[4][3] == [True, False, False]  # a cell reveals the rows down to its own
+    assert found[5][0] == ["8 ms"] and found[5][3] == [True, True, False]
     assert not errors, errors
     page.close()
 

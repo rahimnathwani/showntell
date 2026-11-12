@@ -10,9 +10,9 @@
 //   present.js   presenter and audience windows, commands from an embedding page
 //   render.js    drawing a slide, through the slide kinds in kinds/
 
-import { build, mmss, rangeEnd, revealedAt, slideStart } from "./timeline.js";
+import { build, mmss, revealedAt, slideStart } from "./timeline.js";
 import { $, AUDIENCE, audio, body, currentSeg, emit, LIVE, now, params, PRESENT, report, S, sayOf, store } from "./state.js";
-import { play, seek, seekSlide, setRange, toggle } from "./playback.js";
+import { placeRange, play, seek, seekSlide, setRange, toggle } from "./playback.js";
 import { layoutStage, render } from "./view.js";
 import { renderChrome, setCaptions, setTranscript, showOverlay, stripMd } from "./chrome.js";
 import { followPresenter, presenterSync, startPresenting, stepBy } from "./present.js";
@@ -42,17 +42,21 @@ function setData(w) {
     i = S.TL.segs.findIndex((s) => W.slides[s.slide]?.id === keepSlideId);
     S.pos.local = 0;
   }
-  if (i < 0 && keepSlideId) { // removed: go on with the next slide that is left, else the last
+  let toEnd = false;
+  if (i < 0 && keepSlideId) { // removed: go on with the next slide that is left, else to the end
     const next = after.find((id) => W.slides.some((s) => s.id === id));
     i = next ? S.TL.segs.findIndex((s) => W.slides[s.slide]?.id === next) : S.TL.segs.length - 1;
+    toEnd = !next;
+    S.pos.local = 0;
   }
   S.pos.seg = Math.max(0, i);
+  if (toEnd && S.TL.segs[S.pos.seg]) S.pos.local = S.TL.segs[S.pos.seg].dur + S.TL.segs[S.pos.seg].gap;
   const cur = W.slides[S.TL.segs[S.pos.seg]?.slide];
   if (cur && cur.id === S.shown.id && cur.rev !== S.shown.rev) S.shown.slide = -1; // revised: redraw
   renderChrome();
   if (!S.started) showOverlay();
   render(true);
-  if (S.range) S.range.end = rangeEnd(S.TL, S.range.to);
+  placeRange();
   if (PRESENT) presenterSync();
   emit("durationchange", { duration: S.TL.total, slides: W.slides.length, finished: W.status === "finished" });
 }
@@ -62,6 +66,9 @@ function mergeDelta(d) {
   for (const s of d.slides) byId.set(s.id, s);
   setData({ ...S.W, status: d.status, title: d.title, questions: d.questions, notes: d.notes, cited: d.cited || S.W.cited, slides: d.order.map((id) => byId.get(id)).filter(Boolean) });
 }
+
+// Read by tests: the range being played, by slide id and time.
+window.__showntell.range = () => (S.range ? { fromId: S.range.fromId, toId: S.range.toId, start: S.range.start, end: S.range.end } : null);
 
 async function load() {
   // A single-file export carries its walkthrough in the page; everything else reads data.json.
@@ -97,13 +104,24 @@ $("#prev").onclick = () => seekSlide(-1);
 $("#next").onclick = () => seekSlide(1);
 $("#replay").onclick = () => { $("#end").hidden = true; S.ended = false; seek(0); play(); };
 $("#end-transcript").onclick = () => setTranscript(true);
-// A speed from the link or from storage that the menu does not list gets its own entry, in order.
-if (![...$("#speed").options].some((o) => parseFloat(o.value) === S.rate)) {
-  const later = [...$("#speed").options].find((o) => parseFloat(o.value) > S.rate) || null;
-  $("#speed").add(new Option(`${S.rate}×`, String(S.rate)), later);
+// Show a speed in the menu, giving one the menu does not list its own entry, in order.
+function showRate() {
+  if (![...$("#speed").options].some((o) => parseFloat(o.value) === S.rate)) {
+    const later = [...$("#speed").options].find((o) => parseFloat(o.value) > S.rate) || null;
+    $("#speed").add(new Option(`${S.rate}×`, String(S.rate)), later);
+  }
+  $("#speed").value = [...$("#speed").options].find((o) => parseFloat(o.value) === S.rate).value;
 }
-$("#speed").value = [...$("#speed").options].find((o) => parseFloat(o.value) === S.rate).value;
+showRate();
 $("#speed").onchange = (e) => { S.rate = parseFloat(e.target.value) || 1; audio.playbackRate = S.rate; store.set("rate", S.rate); };
+// The embedding page changed the element's `speed`: as a link's speed, held to range and not saved.
+window.addEventListener("message", (e) => {
+  const m = e.data;
+  if (!m || m.target !== "showntell" || e.source !== window.parent || m.type !== "speed" || !(m.rate > 0)) return;
+  S.rate = Math.round(Math.min(3, Math.max(0.5, m.rate)) * 100) / 100;
+  audio.playbackRate = S.rate;
+  showRate();
+});
 $("#pause-after").checked = S.pauseAfterSlide;
 $("#pause-after").onchange = (e) => { S.pauseAfterSlide = e.target.checked; store.set("pauseAfterSlide", S.pauseAfterSlide); };
 $("#theme").value = store.get("theme", "") || "";

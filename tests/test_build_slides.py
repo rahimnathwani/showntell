@@ -128,6 +128,13 @@ def test_a_source_that_cannot_be_read_or_is_long_is_reported(build, project):
     assert any(i.code == "note_long" for i in b.issues)
 
 
+def test_a_source_quoting_long_lines_cuts_them(build, project):
+    (project / "src" / "min.js").write_text("x=" + "1" * 5000 + "\n")
+    w, b = build("# T\n\nA fact[^m].\n\n[^m]: file=src/min.js lines=1\n", root=project)
+    assert len(w.cited["m"]["code"]) == 201 and w.cited["m"]["code"].endswith("…")
+    assert any(i.code == "note_long" and "200 characters" in i for i in b.issues)
+
+
 def test_finish_reports_sources_missing_and_unused(build):
     w, b = build("# T\n\nOne[^a] and two[^b].\n\n[^a]: Here.\n[^c]: Nowhere.\n")
     b.issues = []

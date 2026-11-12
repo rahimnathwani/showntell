@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -88,29 +89,44 @@ def voice_catalogue() -> str:
     return "; ".join(out) + "."
 
 
+def _words(asked: str) -> list[str]:
+    return [w for w in re.sub(r"[.,;:()-]+", " ", asked.lower().replace("u.s.", "us").replace("u.k.", "uk")).split() if w not in _FILLER]
+
+
+def _traits() -> set[str]:
+    return {w for v in VOICES.values() for w in re.findall(r"[a-z]+", v)} - {"american", "british", "female", "male", "default"}
+
+
 def resolve_voice(asked: str) -> str:
-    """A voice id from an id, or from a description such as `British male` or `American female, soft`:
-    the first voice of that accent and sex with the most of the traits asked for. Raises ValueError
-    naming what exists when the description asks for something no voice has, such as another accent."""
+    """A voice id from an id (any case), `default`, or a description such as `British male` or
+    `American female, soft`: the first voice of that accent and sex with the most of the traits
+    asked for. `English` is a British accent only when no other accent is named, since every voice
+    speaks English. Raises ValueError naming what exists when the description has a word no voice
+    matches, such as another accent."""
     asked = (asked or "").strip()
-    if asked in VOICES:
-        return asked
-    words = [w for w in asked.lower().replace(",", " ").replace("-", " ").split() if w not in _FILLER]
+    if asked.lower() in VOICES:
+        return asked.lower()
+    words = _words(asked)
+    if not words and "default" in asked.lower():  # `default`, `the default voice`
+        return DEFAULT_VOICE
+    if "english" in words and any(_ACCENTS.get(w) for w in words if w != "english"):
+        words = [w for w in words if w != "english"]
     accent = {_ACCENTS[w] for w in words if w in _ACCENTS}
     sex = {_GENDERS[w] for w in words if w in _GENDERS}
-    traits = {w for v in VOICES.values() for w in v.replace(",", " ").replace("(", " ").replace(")", " ").split()} - {
-        "american",
-        "british",
-        "female",
-        "male",
-    }
+    traits = _traits()
     wanted = [w for w in words if w in traits]
     unknown = [w for w in words if w not in _ACCENTS and w not in _GENDERS and w not in traits]
     if not words or unknown or len(accent) > 1 or len(sex) > 1:
-        what = f"unknown voice {asked!r}" + (f" (no voice is {' '.join(unknown)})" if unknown and words else "")
-        raise ValueError(f"{what}. English voices are American or British, female or male: {voice_catalogue()}")
+        why = f" (no voice is {' '.join(unknown)})" if unknown and words else " (it names two accents or both sexes)" if words else ""
+        raise ValueError(f"unknown voice {asked!r}{why}. English voices are American or British, female or male: {voice_catalogue()}")
     picks = [v for v in VOICES if (not accent or v[0] in accent) and (not sex or v[1] in sex)]
     return max(picks, key=lambda v: sum(w in VOICES[v] for w in wanted))  # max keeps the first of equals
+
+
+def voice_misses(asked: str, voice: str) -> list[str]:
+    """The traits a description asked for that the voice chosen for it does not have."""
+    traits = _traits()
+    return [w for w in _words(asked) if w in traits and w not in VOICES.get(voice, "")]
 
 
 @dataclass

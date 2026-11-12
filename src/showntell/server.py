@@ -26,7 +26,7 @@ from .build import LIMITS
 from .hosted import user_of
 from .issues import as_dict, line_text, summarize
 from .service import RPC_METHODS, LocalService, mmss
-from .speech.base import VOICES, voice_catalogue
+from .speech.base import VOICES, voice_catalogue, voice_misses
 
 log = logging.getLogger("showntell")
 PKG = Path(__file__).parent
@@ -345,6 +345,9 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             project += "\n" + reply(
                 "voice_chosen", 'Voice: {voice} ({about}), for "{asked}".', voice=r["voice"], about=VOICES[r["voice"]], asked=voice.strip()
             )
+            missed = voice_misses(voice, r["voice"])
+            if missed:
+                project += " " + reply("voice_missed", "No voice of that accent and sex is {traits}.", traits=" or ".join(missed))
         if opening.strip():
             # The opening came with the call: voice it now and return the link, saving a round trip.
             res = await _append(r["handle"], opening, ctx, u)
@@ -379,6 +382,8 @@ def create_mcp(service, project_dir_default: str | None = None, deliver: str = "
             f"Inserted {len(ids)} slide(s) after `{after}`: {', '.join(ids)}; {r['revoiced']} paragraph(s) need audio. "
             f"Totals: {r['total_slides']} slides, about {mmss(r['narration_s'])} of narration."
         )
+        for was, now in (r.get("renamed") or {}).items():
+            text += f" `{was}` was taken, so that slide is `{now}`: use `{now}` in later calls."
         if not by_file:
             text += f"\nWatch them: {_range_link(r['url'], ids[0], ids[-1])}"
         issues = _issues_text(r["issues"], r["player_issues"])

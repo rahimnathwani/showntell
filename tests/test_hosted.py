@@ -433,6 +433,20 @@ async def test_disk_git_and_remote_sources_are_refused(srv, block, code):
         assert not (srv.store.walk_dir(wid_of(handle)) / "assets").exists()
 
 
+@pytest.mark.parametrize("spec", ["file=src/app.py lines=1-3", "file=../../etc/passwd", "file=/etc/passwd lines=1"])
+async def test_a_cited_file_is_never_read_on_a_hosted_server(srv, spec):
+    async with mcp_as(srv, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        r = await alice.call_tool("add_slides", {"handle": handle, "markdown": f"## Claim {{#c}}\n\nA fact[^x].\n\n[^x]: {spec}\n"})
+        assert not r.is_error and any(
+            i["code"] == "source_error" and "cannot read files" in i["message"] for i in r.structured_content["issues"]
+        )
+        r = await alice.call_tool("add_slides", {"handle": handle, "after": "c", "markdown": f"## More\n\nAgain[^y].\n\n[^y]: {spec}\n"})
+        assert not r.is_error and any(i["code"] == "source_error" for i in r.structured_content["issues"])
+        w = srv.store.get(wid_of(handle)).w
+        assert w.cited == {} and "root" not in json.dumps(w.notes)
+
+
 async def test_the_agent_is_told_to_put_code_in_the_markdown(srv):
     async with mcp_as(srv, "alice@example.com") as alice:
         r = await start(alice)
@@ -553,6 +567,23 @@ async def test_slide_and_narration_limits_refuse_the_call_and_keep_the_walkthrou
         assert r.is_error and "minutes per walkthrough" in text(r)
         r = await alice.call_tool("add_slides", {"handle": handle, "markdown": "## Big\n\n" + "x " * 1500})
         assert r.is_error and "KB of Markdown" in text(r)
+
+
+async def test_inserted_slides_are_held_to_the_same_limits(tight):
+    async with mcp_as(tight, "alice@example.com") as alice:
+        handle = (await start(alice))["handle"]
+        s = tight.store.get(wid_of(handle))
+        first = s.w.slides[0].id
+        r = await alice.call_tool(
+            "add_slides", {"handle": handle, "after": first, "markdown": "## A\n\nOne.\n\n## B\n\nTwo.\n\n## C\n\nThree.\n"}
+        )
+        assert r.is_error and "limit of 3" in text(r) and len(s.w.slides) == 1
+        long = "## Long\n\n" + " ".join(["word"] * 60) + "\n"
+        r = await alice.call_tool("add_slides", {"handle": handle, "after": first, "markdown": long})
+        assert r.is_error and "minutes per walkthrough" in text(r)
+        r = await alice.call_tool("add_slides", {"handle": handle, "after": first, "markdown": "## Big\n\n" + "x " * 1500})
+        assert r.is_error and "KB of Markdown" in text(r)
+        assert len(s.w.slides) == 1 and "Long" not in s.source
 
 
 async def test_adding_after_a_slide_with_issues_works(tight):

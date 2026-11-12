@@ -33,7 +33,7 @@
   },
   "arrange_slides": {
     "title": "Arrange slides",
-    "description": "Move or remove sent slides. Every kept slide keeps its audio, and the open player follows. The title slide stays first and cannot be removed. Slide ids are in add_slides and finish_walkthrough replies.",
+    "description": "Move or remove sent slides. Every kept slide keeps its audio, and the open player follows. The title slide stays first and cannot be removed. A removed slide's narration and Markdown go with it; source lines for citations other slides still make stay. Slide ids are in add_slides and finish_walkthrough replies.",
     "args": {
       "handle": "Handle from start_walkthrough or list_walkthroughs.",
       "order": "Optional: every slide you keep, by id, in the new order; omit to keep the order.",

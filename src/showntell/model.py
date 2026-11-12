@@ -64,6 +64,7 @@ class Walkthrough:
     notes: dict = field(default_factory=dict)
     cited: dict = field(default_factory=dict)  # note id -> {file, start, code}: lines a `[^id]: file=...` source quotes
     slides: list = field(default_factory=list)
+    retired: dict = field(default_factory=dict)  # removed slide id -> its last revision, so a new slide by that id voices afresh
     link_shared: bool = False
     guide_sent: bool = False
     # Hosted mode only (docs/hosted-design.md): who made it, who else may view it, when it was last seen.

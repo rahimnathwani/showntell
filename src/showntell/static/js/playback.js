@@ -195,13 +195,24 @@ export function toggle() { S.playing ? pause() : play(); }
 // ------------------------------------------------------------------- playing a range of slides
 
 export function setRange(fromId, toId) {
-  const { W, TL } = S;
+  const { W } = S;
   const idx = (id, d) => { const i = id ? W.slides.findIndex((s) => s.id === id) : -1; return i >= 0 ? i : d; };
   const a = idx(fromId, 0), b = Math.max(a, idx(toId, W.slides.length - 1));
-  const start = slideStart(TL, a);
-  if (start === null) return;
-  S.range = { start, end: rangeEnd(TL, b), from: a, to: b };
-  seek(start);
+  S.range = { fromId: W.slides[a]?.id, toId: W.slides[b]?.id };
+  if (!placeRange()) return;
+  seek(S.range.start);
+}
+
+// The range's times and slide indices, from its slide ids: slides inserted, moved or removed
+// since it was set move it with them. Drops a range one of whose ends is gone. True if it is set.
+export function placeRange() {
+  const r = S.range;
+  if (!r) return false;
+  const a = S.W.slides.findIndex((s) => s.id === r.fromId), b = S.W.slides.findIndex((s) => s.id === r.toId);
+  const start = a < 0 || b < a ? null : slideStart(S.TL, a);
+  if (start === null) { S.range = null; return false; }
+  Object.assign(r, { from: a, to: b, start, end: rangeEnd(S.TL, b) });
+  return true;
 }
 
 function endRange() {

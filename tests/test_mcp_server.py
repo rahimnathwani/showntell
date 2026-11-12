@@ -216,8 +216,10 @@ async def test_insert_and_arrange_slides(mcp):
         )
         assert not r.is_error and r.structured_content["status"] == "inserted" and r.structured_content["slide_ids"] == ["after"]
         assert "Inserted 1 slide(s) after `lookup`" in text(r) and "from=after&to=after" in text(r)
+        r = await client.call_tool("add_slides", {"handle": h["handle"], "after": "lookup", "markdown": "## After {#after}\n\nAgain.\n"})
+        assert "`after` was taken, so that slide is `after-2`" in text(r)
         r = await client.call_tool("arrange_slides", {"handle": h["handle"], "remove": ["lookup"]})
-        assert not r.is_error and r.structured_content["order"][-1] == "after" and "Removed `lookup`." in text(r)
+        assert not r.is_error and r.structured_content["order"][1:] == ["after-2", "after"] and "Removed `lookup`." in text(r)
         r = await client.call_tool("arrange_slides", {"handle": h["handle"], "remove": ["how-caching-works"]})
         assert r.is_error and "cannot be removed" in text(r)
 
@@ -302,6 +304,8 @@ async def test_a_described_voice_is_named_in_the_reply(mcp):
         assert not r.is_error and 'Voice: bf_emma (British female), the closest to "British female".' in text(r)
         r = await client.call_tool("start_walkthrough", {"title": "T", "voice": "bm_lewis"})
         assert "Voice:" not in text(r)
+        r = await client.call_tool("start_walkthrough", {"title": "T", "voice": "deep British male"})
+        assert "bm_george" in text(r) and "is deep" in text(r)
 
 
 async def test_bad_project_dir_is_a_tool_error(mcp, tmp_path):

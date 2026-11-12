@@ -21,7 +21,7 @@ On a miss it [calls the loader](#L18) and stores the result.
 
 | Part | Rule |
 |---|---|
-| **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice` (an id such as `bm_george`, or a description such as `British male` or `American female, soft`, which picks the closest voice), `speed`. Tools pass these as arguments instead. |
+| **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice` (an id such as `bm_george`, `default`, or a description such as `British male` or `American female, soft`, which picks the first voice of that accent and sex with the most of the traits asked for), `speed`. Tools pass these as arguments instead. |
 | **Slide** | every heading (`#`, `##` or `###`) starts a slide. The level does not matter. |
 | **Title slide** | the first slide renders as a title slide when it has no visual. A `>` quote under it is the subtitle. |
 | **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`) or a draw.io diagram |
@@ -180,7 +180,7 @@ A `$$ ... $$` block works too. The content is LaTeX rendered with KaTeX.
 
 ### Table
 
-A GitHub-style pipe table. Cells may hold inline code and emphasis. Rows are `#row-1`, `#row-2` and so on for cues; a row with a cell ending in `{#id}` (normally the last) also answers to that id. Columns are `#col-1`, `#col-2` and so on, or `#col-` and the heading's slug (`#col-p99` for a `p99` heading); a cue at a column lights its heading and the cells on screen. One cell is its row, a slash and its column: `#row-2/col-3`, `#mem/col-p99`, or `#mem/p99` with the bare heading slug. On a `.build` slide a cell cue reveals the rows down to its own, as a row cue does; `{.decode}` works on a cell.
+A GitHub-style pipe table. Cells may hold inline code and emphasis. Rows are `#row-1`, `#row-2` and so on for cues; a row with a cell ending in `{#id}` (normally the last) also answers to that id. Columns are `#col-1`, `#col-2` and so on, or `#col-` and the heading's slug (`#col-p99` for a `p99` heading, `#col-2023` for `2023`; a heading wins over a position, so `#col-2` is the column headed `2` when there is one); a cue at a column lights its heading and the cells on screen. One cell is its row, a slash and its column: `#row-2/col-3`, `#mem/col-p99`, or `#mem/p99` with the bare heading slug. On a `.build` slide a cell cue reveals the rows down to its own, as a row cue does; `{.decode}` works on a cell.
 
 ### List
 

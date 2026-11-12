@@ -171,6 +171,22 @@ def test_table_cell_cue_by_row_and_column(cues):
     assert not issues
 
 
+def test_numbered_headings_are_named_before_positions(cues):
+    years = "## Y {#y}\n\n| Metric | 2023 | 2024 |\n|---|---|---|\n| Cost | 1 | 2 |\n\n"
+    (a, b, c), issues = cues(years, "See [last year](#col-2023), [this cost](#row-1/col-2024) and [it again](#row-1/2024).")
+    assert [strip(x) for x in (a, b, c)] == [
+        {"kind": "col", "col": 1},
+        {"kind": "cell", "id": "row-1", "col": 2},
+        {"kind": "cell", "id": "row-1", "col": 2},
+    ]
+    assert not issues
+    quarters = "## Q {#q}\n\n| Quarter | 2 | 1 |\n|---|---|---|\n| Sales | a | b |\n\n"
+    (a, b), _ = cues(quarters, "The [first](#row-1/col-1) and the [same](#row-1/1).")
+    assert strip(a) == strip(b) == {"kind": "cell", "id": "row-1", "col": 2}  # one spelling, one cell
+    _, issues = cues(quarters, "No [column](#col-9).")
+    assert any("names that heading's column" in i for i in issues)
+
+
 def test_table_cell_outside_the_table_is_an_issue(cues):
     found, issues = cues(TABLE, "The [x](#row-9/col-1), the [y](#row-1/col-3) and the [z](#col-0).")
     assert found == []

@@ -305,20 +305,27 @@ def _table_row(t: str, ids: list[str]) -> str | None:
 
 
 def _table_col(t: str, cols: list[str], bare: bool = False) -> int | None:
-    """A column's index, by position (`col-3`) or by its heading's slug (`col-latency`; inside a
-    cell target the slug alone, `latency`, works too)."""
-    n = re.fullmatch(r"col-(\d+)", t)
-    if n:
-        return int(n.group(1)) - 1 if 1 <= int(n.group(1)) <= len(cols) else None
+    """A column's index, by its heading's slug (`col-latency`, `col-2023`; inside a cell target the
+    slug alone, `latency`, works too) or by position (`col-3`). A heading wins over a position, so
+    `col-2` is the column headed `2` when there is one."""
     name = t[4:] if t.startswith("col-") else t if bare else None
-    return cols.index(name) if name and name in cols else None
+    if name and name in cols:
+        return cols.index(name)
+    n = re.fullmatch(r"col-(\d+)", t)
+    return int(n.group(1)) - 1 if n and 1 <= int(n.group(1)) <= len(cols) else None
 
 
 def _table_names(ids: list[str], cols: list[str]) -> str:
     own = [r for r in ids if not re.fullmatch(r"row-\d+", r)]
     rows = f"Rows: row-1 to row-{len(ids)}" + (f" or {', '.join(own[:8])}" if own else "")
     named = [f"col-{k}" for k in cols if k]
-    return f"{rows}. Columns: col-1 to col-{len(cols)}" + (f" or {', '.join(named[:8])}" if named else "") + ". A cell is `#row/column`."
+    clash = any(k.isdigit() and 1 <= int(k) <= len(cols) and cols.index(k) != int(k) - 1 for k in cols if k)
+    return (
+        f"{rows}. Columns: col-1 to col-{len(cols)}"
+        + (f" or {', '.join(named[:8])}" if named else "")
+        + (" (a number that is also a heading names that heading's column)" if clash else "")
+        + ". A cell is `#row/column`."
+    )
 
 
 def _region(spec: str) -> list[float] | None:

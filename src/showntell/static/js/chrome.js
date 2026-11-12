@@ -59,14 +59,16 @@ function captionHtml(say) {
 
 // Sources numbered in the order the narration first cites them, then any never cited; and for each,
 // the slides that cite it.
+// Ids are the author's, so they are kept in Maps: `constructor` or `__proto__` is just a name.
 export function noteOrder(W) {
-  const order = [], by = {};
+  const by = new Map();
   W.slides.forEach((s, i) => s.says.forEach((x) => (x.notes || []).forEach((n) => {
-    if (!(n in by)) { by[n] = []; order.push(n); }
-    if (!by[n].includes(i)) by[n].push(i);
+    if (!by.has(n)) by.set(n, []);
+    if (!by.get(n).includes(i)) by.get(n).push(i);
   })));
-  for (const n of Object.keys(W.notes || {})) if (!(n in by)) { by[n] = []; order.push(n); }
-  return { order, number: Object.fromEntries(order.map((n, k) => [n, k + 1])), slides: by };
+  for (const n of Object.keys(W.notes || {})) if (!by.has(n)) by.set(n, []);
+  const order = [...by.keys()];
+  return { order, number: new Map(order.map((n, k) => [n, k + 1])), slides: by };
 }
 
 function citedHtml(c) {
@@ -77,13 +79,13 @@ function citedHtml(c) {
 function renderTranscript() {
   const box = $("#transcript-body");
   const parts = [];
-  const notes = S.W.notes || {}, cited = S.W.cited || {};
+  const notes = new Map(Object.entries(S.W.notes || {})), cited = new Map(Object.entries(S.W.cited || {}));
   const nums = noteOrder(S.W);
   const mark = (n) => {
-    const k = nums.number[n];
-    const about = notes[n] ? stripMd(notes[n]) : "no source given";
+    const k = nums.number.get(n);
+    const about = notes.has(n) ? stripMd(notes.get(n)) : "no source given";
     // On hover, the source and the first lines it quotes.
-    const lines = cited[n] ? "\n\n" + cited[n].code.split("\n").slice(0, 8).join("\n") : "";
+    const lines = cited.has(n) ? "\n\n" + cited.get(n).code.split("\n").slice(0, 8).join("\n") : "";
     return `<button class="cite" data-note="${esc(n)}" title="${esc(about + lines)}" aria-label="Source ${k}: ${esc(about)}">${k}</button>`;
   };
   S.W.slides.forEach((s, i) => {
@@ -91,11 +93,11 @@ function renderTranscript() {
       `<p data-say="${esc(x.id)}" tabindex="-1">${esc(x.text)}${[...new Set(x.notes || [])].map(mark).join("")}</p>`).join("");
     parts.push(`<section data-slide="${i}"><h3><button data-slide="${i}">${i + 1}. ${esc(stripMd(s.title))}</button></h3>${paras}</section>`);
   });
-  const listed = nums.order.filter((n) => n in notes);
+  const listed = nums.order.filter((n) => notes.has(n));
   if (listed.length) {
     const items = listed.map((n) => {
-      const back = nums.slides[n].map((i) => `<button class="back" data-slide="${i}">slide ${i + 1}</button>`).join(" ");
-      return `<li id="source-${esc(n)}" value="${nums.number[n]}" tabindex="-1"><span>${linkify(notes[n])}</span>${cited[n] ? citedHtml(cited[n]) : ""}${back ? `<span class="backs">${back}</span>` : ""}</li>`;
+      const back = nums.slides.get(n).map((i) => `<button class="back" data-slide="${i}">slide ${i + 1}</button>`).join(" ");
+      return `<li id="source-${esc(n)}" value="${nums.number.get(n)}" tabindex="-1"><span>${linkify(notes.get(n))}</span>${cited.has(n) ? citedHtml(cited.get(n)) : ""}${back ? `<span class="backs">${back}</span>` : ""}</li>`;
     }).join("");
     parts.push(`<section class="notes"><h3>Sources</h3><ol>${items}</ol></section>`);
   }

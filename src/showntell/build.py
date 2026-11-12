@@ -32,6 +32,7 @@ IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"}
 
 
 NOTE_LINES = 30  # lines of a cited file the transcript shows
+NOTE_WIDTH = 200  # characters of each
 
 
 def slugify(text: str) -> str:
@@ -111,7 +112,7 @@ class Builder(CueResolver, Checks):
         sid = attrs.pop("id", "") or slugify(b.text)
         sid = self._unique_id(sid)
         icon = attrs.pop("icon", "")
-        s = Slide(id=sid, title=inline_plain(b.text), classes=classes, attrs=attrs, line=b.line)
+        s = Slide(id=sid, title=inline_plain(b.text), classes=classes, attrs=attrs, line=b.line, rev=self.w.retired.get(sid, 0) + 1)
         s.kind = "title" if not self.w.slides else "text"
         if "chapter" in classes and self.w.slides:
             s.kind = "chapter"
@@ -470,6 +471,14 @@ class Builder(CueResolver, Checks):
                 line=b.line,
             )
             lines = lines[:NOTE_LINES]
+        if any(len(ln) > NOTE_WIDTH for ln in lines):
+            self._issue(
+                "note_long",
+                f"Line {b.line}: source [^{nid}] quotes lines over {NOTE_WIDTH} characters; they are cut there.",
+                "Cite readable source, not minified or generated files.",
+                line=b.line,
+            )
+            lines = [ln if len(ln) <= NOTE_WIDTH else ln[:NOTE_WIDTH] + "…" for ln in lines]
         self.w.cited[nid] = {"file": rel, "start": ex.start, "code": "\n".join(lines)}
 
     def _code_excerpt(self, b: Block) -> sources.Excerpt | None:

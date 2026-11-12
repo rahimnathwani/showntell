@@ -21,7 +21,7 @@ from pathlib import Path
 from . import access, themes
 from .build import SPEED_RANGE, Builder
 from .checks import cues_bunched
-from .format import Parser
+from .format import FOOTNOTE_DEF_RE, Parser
 from .issues import Issue, player_issue
 from .model import FRAMES, STATE_VERSION, Say, Slide, Walkthrough, public_slide, slide_from_state
 from .speech.base import resolve_voice
@@ -32,6 +32,16 @@ log = logging.getLogger("showntell.store")
 
 MAX_SOURCE_BYTES = 1_000_000
 MAX_SLIDES = 80
+
+
+HEADING_LINE = re.compile(r"^ {0,3}#{1,6}\s")
+
+
+def _heading_for(s: Slide) -> str:
+    """A heading line that builds slide `s` again: its title, id, classes and attributes."""
+    attrs = [f"#{s.id}"] + [f".{c}" for c in s.classes]
+    attrs += [f'{k}="{v}"' for k, v in s.attrs.items() if isinstance(v, str)]
+    return f"## {s.title} {{{' '.join(attrs)}}}"
 
 
 def _heading_with_id(line: str, sid: str) -> str:
@@ -69,7 +79,6 @@ class Session:
         self.source = ""
         # Revised slides waiting for their audio, shown to viewers only once voiced (by slide id).
         self.staged: dict[str, Slide] = {}
-        self.retired: dict[str, int] = {}  # removed slide id -> its last revision, so a new slide by that id voices afresh
         self._playable: asyncio.Event = asyncio.Event()
         self._save_handle: asyncio.TimerHandle | None = None
         # Set once deleted: speech callbacks, event streams and tool calls may still hold this
@@ -92,6 +101,7 @@ class Session:
         self.source += markdown if markdown.endswith("\n") else markdown + "\n"
         b = self.builder
         b.issues, b.new_says, b.changed = [], [], set()
+        cited = dict(self.w.cited)
         b.add(markdown)
         if len(self.w.slides) > MAX_SLIDES:
             b._issue(
@@ -114,7 +124,7 @@ class Session:
             )
         for slide, say in b.new_says:
             self._voice(slide, say)
-        self._changed(b.changed)
+        self._changed(b.changed, meta=self.w.cited != cited)
         return {"slides": len(self.w.slides) - before, "says": len(b.new_says), "issues": list(b.issues)}
 
     def _check_size(self, markdown: str, lim) -> None:
@@ -173,7 +183,6 @@ class Session:
         )
         b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
         b.add(text + "\n", check_last=False)
-        self._take_notes(scratch)
         issues = list(b.issues)
         if not scratch.slides:
             raise ValueError("the Markdown has no slide in it")
@@ -188,6 +197,9 @@ class Session:
             )
             text = "\n".join(text.split("\n")[: max(1, scratch.slides[1].line) - 1]).rstrip()
         new = scratch.slides[0]
+        if new.id != old.id:  # the slide keeps its id; write it into the heading so the source builds it too
+            first, _, rest = text.partition("\n")
+            text = _heading_with_id(first, old.id) + ("\n" + rest if rest else "")
         # Past any revision still staged too, so two revisions never share say ids and one's
         # audio can't fill in the other's.
         waiting = self.staged.get(old.id)
@@ -204,6 +216,7 @@ class Session:
             if over:
                 raise ValueError(over)
         issues = list(dict.fromkeys(issues + [x for x in b.issues if x not in issues]))
+        self._take_notes(scratch)  # every check has passed: from here on the walkthrough changes
         # Someone may be watching: keep showing the voiced old version until the new one has
         # its audio, so a revision never makes the viewer wait.
         stage = bool(self.subscribers) and all(x.status == "ready" for x in old.says if x.text)
@@ -219,7 +232,7 @@ class Session:
                 voiced += self._voice(new, say, order=order + i)
         new.line = self._rewrite_source(old, text)
         if not stage:
-            self._changed({new.id})
+            self._changed({new.id} | self._renumber_chapters(), meta=True)
         self._promote(new.id)
         return {
             "slide": new.id,
@@ -232,14 +245,18 @@ class Session:
 
     def _rewrite_source(self, old: Slide, text: str) -> int:
         """Put a revised slide's Markdown where the old slide's was, so the source reads as the
-        walkthrough now is. Returns the line the slide starts on."""
+        walkthrough now is. Source lines the old Markdown held for citations that other slides
+        still make stay, after it. Returns the line the slide starts on."""
         lines = self.source.split("\n")
         blocks = Parser().feed(self.source)
         start = old.line if old.line > 0 else next((x.line for x in blocks if x.kind != "front"), len(lines))
         after = [x.line for x in blocks if x.kind == "heading" and x.line > start]
         after += [sl.line for sl in self.w.slides if sl.line > start]
         end = min(after, default=len(lines))  # the next slide or section, or the end
-        new = text.rstrip("\n").split("\n") + [""]
+        new = text.rstrip("\n").split("\n")
+        new += [""] + self._still_cited(lines[start - 1 : end - 1], new, [*lines[: start - 1], *lines[end - 1 :]])
+        if new[-1] != "":
+            new.append("")
         lines[start - 1 : end - 1] = new
         delta = len(new) - (end - start)
         for sl in [*self.w.slides, *self.staged.values()]:
@@ -247,6 +264,7 @@ class Session:
                 sl.line += delta
         self.builder.parser.lines_seen += delta
         self.source = "\n".join(lines)
+        self._sync_notes()
         return start
 
     # -- inserting, removing and moving slides -------------------------------------------
@@ -259,36 +277,79 @@ class Session:
 
     def _pieces(self) -> list[tuple[str | None, list[str]]]:
         """The source cut into pieces, in source order: (slide id, its lines) for each slide, and
-        (None, lines) for anything between or around them (front matter, a questions section)."""
+        (None, lines) for anything between or around them (front matter, a questions section).
+        A slide that spilled from the one before (its second visual) has no heading of its own;
+        it gets one here, so its piece stays its own wherever it moves."""
         lines = self.source.split("\n")
         blocks = Parser().feed(self.source)
         first = next((x.line for x in blocks if x.kind != "front"), len(lines))
-        starts = sorted((sl.line if sl.line > 0 else first, sl.id) for sl in self.w.slides)
+        starts = [(sl.line if sl.line > 0 else first, sl) for sl in self.w.slides]
+        if any(b[0] <= a[0] for a, b in zip(starts, starts[1:], strict=False)) or any(not 1 <= a <= len(lines) for a, _ in starts):
+            raise ValueError("the saved Markdown no longer lines up with the slides, so slides cannot be moved; start a new walkthrough")
         bounds = sorted({x.line for x in blocks if x.kind == "heading"} | {a for a, _ in starts} | {len(lines)})
         out: list[tuple[str | None, list[str]]] = []
         at = 1
-        for a, sid in starts:
+        for k, (a, sl) in enumerate(starts):
             if a > at:
                 out.append((None, lines[at - 1 : a - 1]))
             end = next((b for b in bounds if b > a), len(lines) + 1)  # the next slide or section, or the end
-            out.append((sid, lines[a - 1 : end - 1]))
+            piece = lines[a - 1 : end - 1]
+            if k > 0 and not (piece and HEADING_LINE.match(piece[0])):
+                piece = [_heading_for(sl), "", *piece]
+            out.append((sl.id, piece))
             at = end
         out.append((None, lines[at - 1 :]))
         return out
 
     def _set_source(self, pieces: list[tuple[str | None, list[str]]]) -> None:
-        """Write the pieces back as the source and move every slide's line to where it now starts."""
+        """Write the pieces back as the source, each slide's ending in a blank line, and move every
+        slide's line to where it now starts."""
         before = self.source.count("\n")
-        at, line_of = 1, {}
+        at, line_of, kept = 1, {}, []
         for sid, ls in pieces:
             if sid is not None:
                 line_of[sid] = at
+                if ls and ls[-1] != "":
+                    ls = [*ls, ""]
+            kept.append(ls)
             at += len(ls)
-        self.source = "\n".join(ln for _, ls in pieces for ln in ls)
+        self.source = "\n".join(ln for ls in kept for ln in ls)
         for sl in [*self.w.slides, *self.staged.values()]:
             if sl.id in line_of:
                 sl.line = line_of[sl.id]
         self.builder.parser.lines_seen += self.source.count("\n") - before
+        self._sync_notes()
+
+    def _cited(self) -> set[str]:
+        return {n for sl in [*self.w.slides, *self.staged.values()] for x in sl.says for n in x.notes}
+
+    def _still_cited(self, lost: list[str], *kept: list[str]) -> list[str]:
+        """Of the citation source lines in `lost`, those for citations a slide still makes and
+        that the `kept` lines do not define again."""
+        defined = {m.group(1) for ls in kept for ln in ls if (m := FOOTNOTE_DEF_RE.match(ln))}
+        cited = self._cited()
+        return [ln for ln in lost if (m := FOOTNOTE_DEF_RE.match(ln)) and m.group(1) in cited and m.group(1) not in defined]
+
+    def _sync_notes(self) -> None:
+        """Keep only the sources the source Markdown still defines, so state and Markdown agree."""
+        defined = {b.attrs["id"] for b in Parser().feed(self.source) if b.kind == "footnote"}
+        for nid in [n for n in self.w.notes if n not in defined]:
+            del self.w.notes[nid]
+        for nid in [n for n in self.w.cited if n not in defined]:
+            del self.w.cited[nid]
+
+    def _renumber_chapters(self) -> set[str]:
+        """Chapters by their `.chapter` class and numbered in order, after slides moved, came or went.
+        Returns the ids of slides whose kind or number changed."""
+        changed, n = set(), 0
+        for i, s in enumerate(self.w.slides):
+            if i == 0 or "chapter" not in s.classes:
+                continue
+            n += 1
+            if s.kind != "chapter" or s.visual.get("n") != n:
+                s.kind, s.visual = "chapter", {**s.visual, "n": n}
+                changed.add(s.id)
+        return changed
 
     def insert(self, after: str, markdown: str) -> dict:
         """Put new slides right after slide `after`: built, checked and voiced as revise_slide
@@ -318,18 +379,24 @@ class Session:
         )
         b = Builder(scratch, self.store.walk_dir(self.w.id) / "assets", hosted=self.store.hosted is not None)
         b.add(text + "\n", check_last=False)
-        self._take_notes(scratch)
         if b.parser.pending.strip():
             raise ValueError("a code block in the inserted Markdown is never closed; send whole slides")
+        if scratch.questions:
+            raise ValueError("inserted Markdown holds slides only; give end questions to finish_walkthrough")
         new = list(scratch.slides)
         if not new:
             raise ValueError("the Markdown has no slide in it")
         if len(self.w.slides) + len(new) > MAX_SLIDES:
             raise ValueError(f"that would make {len(self.w.slides) + len(new)} slides; keep it under {MAX_SLIDES}")
+        if lim:
+            spoken = sum(x.duration or len(x.text.split()) / 2.7 for sl in [*self.w.slides, *new] for x in sl.says if x.text)
+            over = self._over_limits(lim, len(self.w.slides) + len(new), spoken)
+            if over:
+                raise ValueError(over)
         taken = {s.id for s in self.w.slides} | set(self.staged)
         sources = text.split("\n")
         heads = [s.line for s in new] + [len(sources) + 1]
-        chunks = []
+        chunks, renamed = [], {}
         for k, s in enumerate(new):
             chunk = sources[s.line - 1 : heads[k + 1] - 1]
             sid = s.id
@@ -337,20 +404,21 @@ class Session:
             while sid in taken:  # an id in use: the next free `-2`, `-3`, written into the heading
                 sid, n = f"{s.id}-{n}", n + 1
             if sid != s.id:
-                chunk[0] = _heading_with_id(chunk[0], sid)
+                renamed[s.id] = sid
             taken.add(sid)
-            s.id, s.rev = sid, self.retired.get(sid, 0) + 1
+            s.id, s.rev = sid, self.w.retired.get(sid, 0) + 1
+            if not (chunk and HEADING_LINE.match(chunk[0])):  # spilled from the slide before: give it a heading
+                chunk = [_heading_for(s), "", *chunk]
+            elif sid in renamed.values():
+                chunk[0] = _heading_with_id(chunk[0], sid)
             if s.kind == "title":
                 s.kind = "text"
             for i, say in enumerate(s.says):
                 say.id = f"{s.id}.{i + 1}.{s.rev}"
             b._check_finished_slide(s)
-            chunks.append(chunk if chunk and chunk[-1] == "" else [*chunk, ""])
-        if lim:
-            spoken = sum(x.duration or len(x.text.split()) / 2.7 for sl in [*self.w.slides, *new] for x in sl.says if x.text)
-            over = self._over_limits(lim, len(self.w.slides) + len(new), spoken)
-            if over:
-                raise ValueError(over)
+            chunks.append(chunk)
+        # Every check has passed: from here on the walkthrough changes.
+        self._take_notes(scratch)
         pieces = self._pieces()
         at = next(i for i, (sid, _) in enumerate(pieces) if sid == after) + 1
         pieces[at:at] = [(s.id, c) for s, c in zip(new, chunks, strict=True)]
@@ -363,9 +431,15 @@ class Session:
                 if not say.pause:
                     voiced += self._voice(s, say, order=order + i)
             order += len(s.says)
-        self._changed({s.id for s in new})
+        self._changed({s.id for s in new} | self._renumber_chapters(), meta=True)
         issues = list(dict.fromkeys(b.issues))
-        return {"slide_ids": [s.id for s in new], "says": sum(len(s.says) for s in new), "revoiced": voiced, "issues": issues}
+        return {
+            "slide_ids": [s.id for s in new],
+            "renamed": renamed,
+            "says": sum(len(s.says) for s in new),
+            "revoiced": voiced,
+            "issues": issues,
+        }
 
     def arrange(self, order: list[str] | None, remove: list[str] | None) -> dict:
         """Remove slides and put the rest in a new order. The title slide stays first, and every
@@ -407,14 +481,21 @@ class Session:
                 out.append((None, ls))
             elif sid not in remove:
                 nxt = next(slots)
-                out.append((nxt, text[nxt]))
+                out.append((nxt, list(text[nxt])))
         for sid in remove:
-            self.staged.pop(sid, None)
-            self.retired[sid] = max(self.retired.get(sid, 0), by_id[sid].rev)
+            staged = self.staged.pop(sid, None)
+            self.w.retired[sid] = max(self.w.retired.get(sid, 0), by_id[sid].rev, staged.rev if staged else 0)
         self.w.slides = [by_id[x] for x in kept]
+        # Source lines of removed slides for citations kept slides still make go on with the last slide.
+        lost = [ln for sid in remove for ln in text[sid]]
+        keep = self._still_cited(lost, *(ls for _, ls in out))
+        if keep:
+            last = max(i for i, (sid, _) in enumerate(out) if sid is not None)
+            sid, ls = out[last]
+            out[last] = (sid, [*ls, *([""] if ls and ls[-1] != "" else []), *keep, ""])
         self._set_source(out)
         self.builder.issues = []
-        self._changed(set(), meta=True)  # the player takes the new order from the delta
+        self._changed(self._renumber_chapters(), meta=True)  # the player takes the new order from the delta
         return {"removed": remove, "moved": [x for x in ids if x in kept] != kept, "order": kept}
 
     def _take_notes(self, scratch: Walkthrough) -> None:
@@ -672,7 +753,7 @@ class Session:
             "title": self.w.title,
             "questions": self.w.questions,
             "notes": self.w.notes,
-            "cited": self.w.cited,
+            **({"cited": self.w.cited} if meta else {}),  # quoted lines can be long: only when they may have changed
             "order": [s.id for s in self.w.slides],
             "slides": [public_slide(s) for s in self.w.slides if s.id in slide_ids],
         }

@@ -31,8 +31,11 @@ class ShowntellPlayer extends HTMLElement {
     window.removeEventListener("message", this._onMessage);
   }
 
-  attributeChangedCallback() {
-    if (this.isConnected) this._render();
+  attributeChangedCallback(name, before, value) {
+    if (!this.isConnected || before === value) return;
+    // A loaded player changes speed in place; anything else draws the element afresh.
+    if (name === "speed" && this.frameEl) return this._send({ type: "speed", rate: parseFloat(value) });
+    this._render();
   }
 
   get currentTime() { return this.state.currentTime; }
@@ -53,6 +56,7 @@ class ShowntellPlayer extends HTMLElement {
   }
 
   _render() {
+    this.frameEl = null; // the iframe goes with the old contents
     const ratio = RATIOS[this.getAttribute("frame")] || RATIOS.landscape;
     const poster = this.getAttribute("poster");
     this.shadowRoot.innerHTML = `

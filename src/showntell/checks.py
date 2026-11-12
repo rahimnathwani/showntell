@@ -638,7 +638,7 @@ class Checks:
             self._issue(
                 "note_unused",
                 f"Source {', '.join(f'[^{n}]' for n in unused[:6])} is never cited in the narration, so it is listed apart from what it backs.",
-                "Put `[^id]` after the words it backs, or drop the source line.",
+                "Cite it with `[^id]` after the words it backs, or revise the slide whose Markdown holds its source line without that line.",
             )
 
 
