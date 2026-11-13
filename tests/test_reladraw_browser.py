@@ -163,6 +163,7 @@ def test_the_sanitiser_keeps_only_drawing(daemon, browser):  # noqa: F811
     assert 'fill="url(#g)"' in out["html"] and 'href="#g"' in out["html"] and "safe text" in out["html"]
     assert not out["pwned"] and out["at"].startswith(url) and out["page"] is None
     assert 'fill="rgb(200, 0, 0)"' in out["html"] and "hsl(" in out["html"]  # plain color functions stay
+    assert "#123456" not in out["html"]  # the full-page background goes, so the slide shows through
     assert not outside, outside
     page.close()
 
@@ -173,6 +174,28 @@ def test_pasted_icons_are_refused_by_the_builder(daemon):  # noqa: F811
     md = '# Icons\n\nOpening.\n\n## I {#i}\n\n```reladraw\nicon p """<svg viewBox="0 0 1 1"><path d="M0 0h1v1z"/></svg>"""\nnode a "A"  badge: p\n```\n\nA box.\n'
     a = call("add", handle=r["handle"], markdown=md)
     assert any(i["code"] == "block_error" and "pastes a picture" in i["message"] for i in a["issues"]), a["issues"]
+
+
+def test_a_refused_block_draws_nothing_and_loads_nothing(daemon, browser):  # noqa: F811
+    call = _rpc(daemon)
+    r = call("start", title="Refused", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    md = '# Refused\n\nOpening.\n\n## R {#r}\n\n```reladraw\ndiagram background: white\nnode a "A"\n```\n\nA box.\n'
+    call("add", handle=r["handle"], markdown=md)
+    call("playable", handle=r["handle"], timeout=10)
+    page = browser.new_page()
+    errors, fetched = [], []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("request", lambda q: "reladraw.min.js" in q.url and fetched.append(q.url))
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page.goto(url)
+    page.wait_for_function("window.__showntell !== undefined")
+    page.goto(f"{url}?at=999")  # the last slide; it has no cues to seek to
+    page.wait_for_selector(".reladraw", state="attached")
+    page.wait_for_timeout(800)
+    assert page.evaluate("document.querySelector('.reladraw svg') === null")
+    assert not errors and not fetched, (errors, fetched)
+    page.close()
 
 
 @pytest.mark.parametrize("theme", ["light", "paper", "studio"])

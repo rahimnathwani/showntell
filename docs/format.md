@@ -352,7 +352,7 @@ Boxes and lines in the [reladraw](https://github.com/reladraw/reladraw) language
 
 Cues point at a node by its name (`#web.api`), or by its text or the text's slug when that is unique; at a region with `#@left,top,width,height`; or at text with `[label](# "text")`. With `.build`, top-level nodes appear in source order, a node inside another with it, and a line once both its ends are shown.
 
-**Checked.** reladraw never moves a box or reroutes a line to make room. What it finds, a line through a box or texts on top of each other, comes back as `drawing_overlap` naming the line of the block, and a syntax error as `render_error` with its line. A block over 80 boxes, 160 lines or 100 KB is refused, as is a picture pasted with `icon name """<svg>…"""` (its markup would reach the page as written); built-in icons (`icon: database`) and letter icons stay. The drawing the player shows is rebuilt from an allowlist of SVG elements and attributes, so nothing in it can load, link or run.
+**Checked.** reladraw never moves a box or reroutes a line to make room. What it finds, a line through a box or texts on top of each other, comes back as `drawing_overlap` naming the line of the block, and a syntax error as `render_error` with its line. A block over 80 boxes, 160 lines or 100 KB is refused; lines are counted by their ends, so `edge a, b and c -> d` is three and `each child of x` is one per child. Any `icon` statement but a letter icon is refused too, since a pasted picture (`icon name """<svg>…"""`) would reach the page as written; built-in icons (`icon: database`) and letter icons (`icon gh  letters: "GH"`) stay. The drawing the player shows is rebuilt from an allowlist of SVG elements and attributes, so nothing in it can load, link or run.
 
 ## Narration
 

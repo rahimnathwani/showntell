@@ -9,9 +9,10 @@ step reveal shows in order; a node inside another (`server.db`) shows with it, a
 the later of its two ends. Syntax errors and the library's own findings (a line through a box,
 texts on top of each other) come back from the player as problems when the slide is drawn.
 
-Pasted pictures (`icon name \"\"\"<svg>…\"\"\"`) are refused: their markup would reach the page as
+Pasted pictures (`icon name \"\"\"<svg>…\"\"\"`, or any `icon` statement but a letter icon) are refused: their markup would reach the page as
 written. Built-in icons and letter icons are drawn by the library and stay. Over MAX_NODES boxes
-or MAX_EDGES lines the block is refused, since the library lays out on the page's main thread.
+or MAX_EDGES lines (counted by their ends: `a, b and c -> d` is three, `each child of x`
+one per child) the block is refused, since the library lays out on the page's main thread.
 """
 
 from __future__ import annotations
@@ -44,7 +45,8 @@ def _statements(body: str) -> tuple[list[tuple[int, str]], list[int]]:
         start = n  # this line's number, before a string's lines are skipped
         line, at = _scan(raw)
         if at >= 0:
-            pasted.append(out[-1][0] if line[:1].isspace() and out else start)
+            # An indented line, or one that opens with the marks, continues the statement above.
+            pasted.append(out[-1][0] if (line[:1].isspace() or not line.strip()) and out else start)
             rest = raw[at + 3 :]
             # Skip to the closing marks, on this line or a later one.
             while '"""' not in rest and n < len(lines):
@@ -94,9 +96,54 @@ def _text(rest: str) -> str | None:
     return " ".join(t.split())
 
 
+QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+# A mark written as its own word beside the shaft: `a -- [arrow] b`, `a (dot)-- (bar) b`.
+LONE_MARK = re.compile(r"^(?:\[(?:o?arrow|o?dot|o?diamond|bar|none)\]|\((?:o?arrow|o?dot|o?diamond|bar|none)\))$")
+LETTER_KEYS = re.compile(r"^(?:(?:letters|fill|text):\s*(?:\S+)\s*)+$")
+
+
+def _unquoted(st: str) -> str:
+    """The statement with each quoted text emptied, so words inside texts are not read."""
+    return QUOTED.sub('""', st)
+
+
+def _letter_icon(st: str) -> bool:
+    """`icon gh  letters: "GH"  fill: red`: a letter icon, the only `icon` statement slides draw."""
+    words = _unquoted(st).split(None, 2)
+    return len(words) == 3 and "letters:" in words[2] and bool(LETTER_KEYS.match(words[2]))
+
+
+def _ends(words: list[str]) -> list[str]:
+    """The ends on one side of a line's arrow: `a, b and c` is three; `each child of x` is one."""
+    return [e for e in re.split(r",|\band\b", " ".join(words)) if e.strip()]
+
+
+def _line_count(st: str, children: dict[str, int]) -> int:
+    """How many lines an `edge` statement draws: ends before the arrow times ends after it, with
+    `each child of x` as one per child of x. Texts and attributes (`line: (…)`, `via: a, b`) are not
+    read."""
+    words = []
+    for w in _unquoted(st).split()[1:]:
+        if w.startswith('"') or w.startswith("(") or re.match(r"^[A-Za-z][\w-]*:", w):
+            if not (ARROW.match(w) or LONE_MARK.match(w)):
+                break
+        words.append(w)
+    at = next((i for i, w in enumerate(words) if ARROW.match(w) and not LONE_MARK.match(w)), None)
+    if at is None:
+        return 1
+    count = 1
+    for side in (words[:at], words[at + 1 :]):
+        n = 0
+        for end in _ends([w for w in side if not LONE_MARK.match(w)]):
+            m = re.match(r"\s*(?:\S+\s+)?each\s+child\s+of\s+(\S+)", end)
+            n += max(1, children.get(m.group(1), 0)) if m else 1
+        count *= max(1, n)
+    return count
+
+
 def _edge(st: str) -> tuple[str, str, str] | None:
     """(name, from, to) of a named line between two nodes: `edge req a -> b`. None otherwise."""
-    words = st.split()
+    words = [w for w in st.split() if not LONE_MARK.match(w)]
     if len(words) >= 5 and words[0] == "edge" and ARROW.match(words[3]) and not ARROW.match(words[2]):
         name, a, b = words[1], words[2], words[4]
         if all(NAME.fullmatch(x) for x in (name, a, b)):
@@ -111,20 +158,20 @@ def parse_reladraw(body: str, attrs: dict) -> tuple[dict, list[str]]:
         return {}, ["the block is empty"]
     statements, pasted = _statements(body)
     problems = []
-    if any(st.startswith("icon") and ln in pasted for ln, st in statements):
+    if any(re.match(r"icon\b", st) and (ln in pasted or not _letter_icon(st)) for ln, st in statements):
         problems.append(
-            'it pastes a picture with `icon name """…"""`, which slides do not draw: '
+            'it pastes a picture with an `icon` statement (`icon name """<svg>…"""`), which slides do not draw: '
             'use a built-in icon (`icon: database`) or a letter icon (`icon gh  letters: "GH"`)'
         )
     items: list[dict] = []
     edges: dict[str, list[str]] = {}
     seen: set[str] = set()
-    lines = 0
+    line_statements = []
     for _, st in statements:
-        if re.match(r"diagram\b.*\bbackground:", st):
+        if re.match(r"diagram\b.*\bbackground:", _unquoted(st)):
             problems.append("it sets `diagram background:`; the slide's theme sets the background, so leave it out")
         if st.startswith("edge"):
-            lines += 1 + st.split('"', 1)[0].count(",")  # `edge a -> b, c` is two lines; commas in texts are not
+            line_statements.append(st)
             named = _edge(st)
             if named:
                 edges[named[0]] = [named[1], named[2]]
@@ -141,6 +188,12 @@ def parse_reladraw(body: str, attrs: dict) -> tuple[dict, list[str]]:
         if text is None:  # no text: the library shows the name's last part, unless it is a picture
             text = "" if re.search(r"(^|\s)icon:", m.group(2)) else nid.rsplit(".", 1)[-1]
         items.append({"id": nid, "label": text})
+    children: dict[str, int] = {}
+    for nid in seen:
+        if "." in nid:
+            parent = nid.rsplit(".", 1)[0]
+            children[parent] = children.get(parent, 0) + 1
+    lines = sum(_line_count(st, children) for st in line_statements)
     if not items:
         problems.append('it has no `node` statement, so there is nothing to draw: start with `node a "First"`')
     if len(items) > MAX_NODES or lines > MAX_EDGES:

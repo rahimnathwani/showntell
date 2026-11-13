@@ -112,3 +112,25 @@ def test_texts_before_strings_hyphenated_names_commas_and_backgrounds():
     lines = "node a\nnode b  right of a\n" + "\n".join('edge a -> b "x, y, z, w"' for _ in range(41))
     assert parse_reladraw(lines, {})[1] == []
     assert "diagram background:" in parse_reladraw("diagram  background: white\nnode a\n", {})[1][0]
+
+
+def test_every_route_to_a_pasted_icon_and_every_list_of_ends_is_counted():
+    nodes = "\n".join(f"node n{i}" for i in range(80))
+    for icon in ('icon p\n"""<svg></svg>"""', 'icon p "<svg></svg>"', "icon p  file: x.svg"):
+        assert "pastes a picture" in parse_reladraw(f"node a\n{icon}\n", {})[1][0], icon
+    assert parse_reladraw('node a  icon: gh\nicon gh  letters: "GH"  fill: red\n', {})[1] == []
+    joined = "\n".join("edge " + " and ".join(f"n{j}" for j in range(79)) + " -> n79" for _ in range(3))
+    assert "237 lines" in parse_reladraw(nodes + "\n" + joined, {})[1][0]
+    kids = "node box\n" + "\n".join(f"node box.c{i}" for i in range(10)) + "\nnode t\n"
+    assert "170 lines" in parse_reladraw(kids + "edge each child of box -> t\n" * 17, {})[1][0]
+    crossed = "\n".join("edge n0, n1 -> n2, n3" for _ in range(41))
+    assert "164 lines" in parse_reladraw(nodes + "\n" + crossed, {})[1][0]
+    # commas inside attributes are not ends; a text that says "background:" is not one
+    square = "node a\nnode b\n" + "edge a -> b  line: (path: square, corners: sharp)  via: a, b\n" * 81
+    assert parse_reladraw(square, {})[1] == []
+    assert parse_reladraw('diagram title: "On background: a story"\nnode a\n', {})[1] == []
+
+
+def test_marks_written_as_their_own_words_keep_a_named_line():
+    vis, _ = parse_reladraw("node a\nnode b\nedge nm a -- [arrow] b\nedge x a (dot)-- (bar) b\n", {})
+    assert vis["edges"] == {"nm": ["a", "b"], "x": ["a", "b"]}
