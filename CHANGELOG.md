@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.7 (2026-11-14)
 
 - **reladraw diagrams:** a ```` ```reladraw ```` block (or `reladraw file=`) draws boxes placed relative to each other (`right of web (gap: wide)`, `even with a`) and lines between them, exactly as written, in the slide's colors and face. Cues point at nodes by name or text, `.build` reveals top-level nodes in order and lines with their ends, and the library's findings (a line through a box, texts on top of each other) and syntax errors come back with the line of the block. The library (reladraw 0.29.0, Apache-2.0) is bundled and loads only when a slide needs it. The drawing is rebuilt from an allowlist of SVG elements and attributes, so links, HTML and outside references never reach the page; `icon` statements other than letter icons and `diagram background:` are refused, and a block over 80 boxes or 160 lines (counted by their ends) is refused rather than drawn.
 - **Charts beside takeaways keep their text size:** a chart is drawn at its slide body's own size instead of shrunk from a whole-slide drawing, so labels in a `.side` or `.pair` layout no longer fall to about 10 px. A line chart's series names no longer overlap, and pointing at one bar or line fades the others' bars but not their names and values.

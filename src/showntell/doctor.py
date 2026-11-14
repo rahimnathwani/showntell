@@ -12,10 +12,10 @@ from . import __version__, browser, daemon
 from .config import Config
 
 # Until showntell is on PyPI, where this becomes `uvx showntell mcp`.
-INSTALL = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.6 showntell mcp"
+INSTALL = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.7 showntell mcp"
 # The browser that draws slides, fetched now rather than by the daemon in the background:
 # Playwright's Chromium headless shell, about 100 MB, once.
-INSTALL_BROWSER = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.6 playwright install --only-shell chromium"
+INSTALL_BROWSER = "uvx --from git+https://github.com/rahimnathwani/showntell@v0.2.7 playwright install --only-shell chromium"
 # Shown by finish (where the daemon runs `mcp`) and by MP4 export from the command line alike.
 BROWSER_HINT = f"the daemon fetches it in the background once the voice model is ready; to fetch it now, run\n    {INSTALL_BROWSER}"
 
