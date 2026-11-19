@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.8 (2026-11-20)
 
 - **Memory pictures:** a ```` ```memory ```` block draws variables, call frames, objects, arrays and the pointers between them (`head -> n1`, `n1: Node {val: 1, next -> n2}`, `arr: [1, 3, 7]`, `lo -> arr.0` as a marker under the cell). The builder lays it out (columns by distance from the variables, or `memory TB` rows for a tree) and arrows go around boxes in their way. `memory step` versions keep every object where the first version put it, so reversing a list moves arrows, not nodes; changed values glow and objects nothing points at dim. Cues point at variables, objects, fields (`#n1.next`), cells (`#arr[2]`) and frame variables (`#fact-2.n`). `next: b` (text where a pointer was meant), unknown targets and other slips come back as `block_error` with the fix.
 - **Traced code:** a ```` ```trace ```` block after a code block shows a panel of variables beside it that follows the code as it runs: one line per moment (`L4  t = 3`, the line that just ran and what it changed), `print:` and `return:`. `#trace-N` moves the panel and marks the line in the gutter; quoted text checks the moment and moves a miscounted cue to the right one; a forward jump plays the moments it skips. Copying the code (`t += x`), setting a name the line does not mention, or numbering lines outside the gutter comes back as `trace_error`; a trace no cue moves, as `trace_unused`.

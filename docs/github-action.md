@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # `diff ... rev=` blocks read commits
-      - uses: rahimnathwani/showntell@v0.2.7
+      - uses: rahimnathwani/showntell@v0.2.8
         with:
           markdown: .showntell/pr.md
 ```

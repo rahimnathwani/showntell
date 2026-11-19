@@ -308,7 +308,7 @@ Needs [FFmpeg](https://ffmpeg.org/) on PATH and the `video` extra (Playwright). 
 The repository is also a GitHub Action: it voices a walkthrough's Markdown on the runner, with no API key, and posts the outline, the transcript and a download link on the pull request. See [docs/github-action.md](https://github.com/rahimnathwani/showntell/blob/main/docs/github-action.md).
 
 ```yaml
-- uses: rahimnathwani/showntell@v0.2.7
+- uses: rahimnathwani/showntell@v0.2.8
   with:
     markdown: .showntell/pr.md
 ```
