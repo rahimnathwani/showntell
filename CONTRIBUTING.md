@@ -63,11 +63,11 @@ A kind made from a fenced block (```` ```name ````) touches these files:
 
 ## Releasing
 
-- **One version:** `pyproject.toml` holds it. After changing it, run `uv run scripts/sync_version.py`; it stamps `src/showntell/__init__.py`, the plugin and marketplace manifests and `gemini-extension.json`, pins the install commands in the plugin, README and `doctor` to `@vX.Y.Z`, and regenerates `GEMINI.md` from the plugin skill. Change the version only when releasing: the pins name a tag that must exist. `tests/test_versions.py` fails while anything disagrees.
+- **One version:** `pyproject.toml` holds it. After changing it, run `uv run scripts/sync_version.py`; it stamps `src/showntell/__init__.py`, the plugin and marketplace manifests and `gemini-extension.json` and regenerates `GEMINI.md` from the plugin skill. Install commands in the plugin, README and `doctor` say `showntell@latest` (PyPI) and carry no version; `--check` fails if one installs from GitHub. `tests/test_versions.py` fails while anything disagrees.
 - **Generated files:** edit `claude-plugin/skills/showntell/SKILL.md` and `claude-plugin/.mcp.json`, never `GEMINI.md` or `gemini-extension.json`, then re-run the script.
 - **Changelog:** rename `## X.Y.Z (unreleased)` to `## X.Y.Z (YYYY-MM-DD)` with at least one entry under it.
-- **Tag:** push `vX.Y.Z`. That alone publishes nothing; installs from GitHub pinned to the tag start working.
-- **Publish:** publish a GitHub release for the tag (or run `release.yml` on it). The workflow runs lint, format and tests, stops unless the tag equals the pyproject version, the manifests agree and the changelog section is dated and non-empty, then builds, smoke-tests the wheel with `scripts/wheel_smoke.sh` and publishes to PyPI through trusted publishing.
+- **Tag:** push `vX.Y.Z`. That alone publishes nothing.
+- **Publish:** publish a GitHub release for the tag (or run `release.yml` on it). The workflow runs lint, format and tests, stops unless the tag equals the pyproject version, the manifests agree and the changelog section is dated and non-empty, then builds, smoke-tests the wheel with `scripts/wheel_smoke.sh` and publishes to PyPI through trusted publishing. Installs that say `showntell@latest` get it on their next start; `uv tool upgrade showntell` updates a tool install.
 - **Check first:** `uv run scripts/sync_version.py --check --tag vX.Y.Z` runs the same gate locally.
 - **Seccomp profile:** `uv run scripts/seccomp_profile.py --check` says whether Docker's default seccomp profile has changed since `deploy/chromium-seccomp.json` was built from it. If it has, rebuild with `--commit latest` and run `scripts/container_check.sh` before tagging.
 - **Through Claude Code:** `SHOWNTELL_TEST_CLAUDE=1 uv run pytest -m claude` checks what the model really receives from the tools (the guide, the share-the-link instruction, preview pictures). CI cannot run it; it needs a logged-in `claude` and costs a few cents.

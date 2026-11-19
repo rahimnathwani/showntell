@@ -5,9 +5,9 @@
 """Keep one version everywhere, and the agent manifests in step with the plugin.
 
 pyproject.toml holds the version. This script stamps it into the package, the Claude Code
-plugin and marketplace manifests, and the Gemini CLI extension, pins the install commands in
-the plugin, README and doctor to the version's tag, and regenerates the Gemini extension
-(manifest and context file) from the plugin's .mcp.json and skill.
+plugin and marketplace manifests, and the Gemini CLI extension, and regenerates the Gemini
+extension (manifest and context file) from the plugin's .mcp.json and skill. Install commands
+name `showntell@latest` from PyPI, so they carry no version; --check fails if one pins a tag.
 
     uv run scripts/sync_version.py                # write
     uv run scripts/sync_version.py --check        # exit 1 if anything is out of date
@@ -29,9 +29,9 @@ PLUGIN = ROOT / "claude-plugin"
 SKILL = PLUGIN / "skills" / "showntell" / "SKILL.md"
 VERSION_KEY = re.compile(r'("version"\s*:\s*")[^"]*(")')
 DUNDER = re.compile(r'(__version__\s*=\s*")[^"]*(")')
-# Installs from GitHub are pinned to the version's tag until showntell is on PyPI.
-REPO = "git+https://github.com/rahimnathwani/showntell"
-PINNED = re.compile(re.escape(REPO) + r"(?:@v\d[\w.]*)?")
+# Install commands come from PyPI and follow the latest release; none installs from GitHub.
+FROM_GITHUB = "git+https://github.com/rahimnathwani/showntell"
+INSTALLS = (PLUGIN / ".mcp.json", ROOT / "README.md", ROOT / "src" / "showntell" / "doctor.py")
 
 
 def pyproject_version() -> str:
@@ -45,11 +45,9 @@ def _stamp(text: str, pattern: re.Pattern, version: str, path: Path) -> str:
     return out
 
 
-def _pin(text: str, version: str, path: Path) -> str:
-    out, n = PINNED.subn(f"{REPO}@v{version}", text)
-    if not n:
-        raise SystemExit(f"{path.relative_to(ROOT)}: expected an install from {REPO}")
-    return out
+def pinned() -> list[str]:
+    """Files whose install commands still install from GitHub, not `showntell@latest`."""
+    return [str(p.relative_to(ROOT)) for p in INSTALLS if FROM_GITHUB in p.read_text() or "showntell@latest" not in p.read_text()]
 
 
 def gemini_context() -> str:
@@ -85,8 +83,6 @@ def expected() -> dict[Path, str]:
         (ROOT / ".claude-plugin" / "marketplace.json", VERSION_KEY),
     ]:
         files[path] = _stamp(path.read_text(), pattern, v, path)
-    for path in (PLUGIN / ".mcp.json", ROOT / "README.md", ROOT / "src" / "showntell" / "doctor.py"):
-        files[path] = _pin(path.read_text(), v, path)
     files[ROOT / "gemini-extension.json"] = gemini_manifest(v)
     files[ROOT / "GEMINI.md"] = gemini_context()
     return files
@@ -118,7 +114,7 @@ def main() -> None:
     ap.add_argument("--tag", help="release tag, such as v0.2.0, to check against pyproject.toml and CHANGELOG.md")
     args = ap.parse_args()
     version = pyproject_version()
-    problems: list[str] = []
+    problems = [f"{p} installs from GitHub; use `showntell@latest`" for p in pinned()]
     if args.check:
         problems += [f"{p} is out of date; run `uv run scripts/sync_version.py`" for p in drift()]
     else:

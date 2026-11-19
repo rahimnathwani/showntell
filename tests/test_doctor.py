@@ -2,7 +2,7 @@
 
 import pytest
 
-from showntell import __version__, browser, doctor
+from showntell import browser, doctor
 
 
 @pytest.fixture
@@ -19,8 +19,8 @@ def test_browser_row_says_the_daemon_fetches_it_and_what_is_off_until_then(no_br
     for part in ("not draw the slides", "layout findings", "pictures of alike slides", "poster", "MP4"):
         assert part in detail
     assert doctor.INSTALL_BROWSER in detail and "--only-shell" in doctor.INSTALL_BROWSER
-    # the install commands are pinned to this release, like the plain one
-    assert f"@v{__version__}" in doctor.INSTALL_BROWSER and f"@v{__version__}" in doctor.INSTALL
+    # the install commands follow the latest release on PyPI, like the plain one
+    assert "showntell@latest" in doctor.INSTALL_BROWSER and "showntell@latest" in doctor.INSTALL
 
 
 def test_browser_row_reports_the_daemons_download(no_browser):

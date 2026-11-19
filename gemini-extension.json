@@ -7,9 +7,7 @@
     "showntell": {
       "command": "uvx",
       "args": [
-        "--from",
-        "git+https://github.com/rahimnathwani/showntell@v0.2.7",
-        "showntell",
+        "showntell@latest",
         "mcp"
       ]
     }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **On PyPI:** showntell is published to PyPI from 0.2.7. Install commands in the README, the Claude Code plugin, the Gemini extension and `doctor` are now `uvx showntell@latest mcp`, which picks up new releases; `uv tool install showntell` starts faster and works offline.
+
 ## 0.2.7 (2026-11-14)
 
 - **reladraw diagrams:** a ```` ```reladraw ```` block (or `reladraw file=`) draws boxes placed relative to each other (`right of web (gap: wide)`, `even with a`) and lines between them, exactly as written, in the slide's colors and face. Cues point at nodes by name or text, `.build` reveals top-level nodes in order and lines with their ends, and the library's findings (a line through a box, texts on top of each other) and syntax errors come back with the line of the block. The library (reladraw 0.29.0, Apache-2.0) is bundled and loads only when a slide needs it. The drawing is rebuilt from an allowlist of SVG elements and attributes, so links, HTML and outside references never reach the page; `icon` statements other than letter icons and `diagram background:` are refused, and a block over 80 boxes or 160 lines (counted by their ends) is refused rather than drawn.

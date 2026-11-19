@@ -109,5 +109,5 @@ Without a provider, `SHOWNTELL_DEV_USERS` gives a stand-in login for a few named
 
 ```sh
 SHOWNTELL_MODE=hosted SHOWNTELL_PUBLIC_URL=http://localhost:4747 SHOWNTELL_DEV_USERS=you@example.com \
-  uvx --from 'showntell[video,hosted] @ git+https://github.com/rahimnathwani/showntell' showntell serve
+  uvx --from 'showntell[hosted]@latest' showntell serve
 ```
