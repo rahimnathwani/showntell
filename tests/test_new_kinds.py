@@ -387,3 +387,37 @@ def test_more_memory_slips_are_reported(body, says):
 def test_a_tiny_fitted_range_keeps_its_height():
     v, _ = parse_plot("f(x) = 0.0000001 x", {"x": "-3..3"})
     assert v["y"][1] - v["y"][0] > 5e-7
+
+
+def test_one_budget_covers_constants_and_every_block_in_a_call():
+    lines = ["f0(x) = x"] + [f"f{i}(x) = " + "+".join(f"f{i - 1}({k}x+1)" for k in range(3, 33)) for i in range(1, 5)]
+    lines += [f"k{j} = f4(1.{j})" for j in range(12)]
+    token = expr.start_call()
+    try:
+        t = time.monotonic()
+        for _ in range(5):
+            parse_plot("\n".join(lines), {"x": "0..1"})
+        assert time.monotonic() - t < 3
+    finally:
+        expr.end_call(token)
+
+
+def test_objects_nested_in_objects_are_read_without_recursing():
+    from showntell.paths import key_lines
+
+    for code, lang in (
+        ("{" * 1200 + "1" + "}" * 1200, "json"),
+        ("[" + "{" * 1200, "json"),
+        ("a = " + "{b = " * 3000 + "1" + "}" * 3000, "toml"),
+    ):
+        t = time.monotonic()
+        key_lines(code, lang)
+        assert time.monotonic() - t < 0.5
+
+
+def test_plain_records_stand_in_a_column_and_flat_curves_keep_a_range():
+    v, _ = parse_memory("x = 1\n" + "\n".join(f"o{i}: {{v: {i}}}" for i in range(8)), {"flags": []})
+    assert len({o["x"] for o in v["objects"]}) == 1
+    for f in ("f(x) = 100000000", "f(x) = 3", "f(x) = 0.0000001 x"):
+        y = parse_plot(f, {"x": "0..10"})[0]["y"]
+        assert y[1] > y[0], (f, y)

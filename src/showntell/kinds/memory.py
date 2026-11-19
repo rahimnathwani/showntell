@@ -381,10 +381,12 @@ def _children(o: dict, objs: dict, tb: bool = True) -> list[str | None]:
 def _place_tree(v: dict, x0: float, placed: dict[str, tuple[float, float]]) -> None:
     """First version: a forest from what the variables point at, in order, then anything left."""
     objs = {o["id"]: o for o in v["objects"]}
-    roots = [var["ptr"] for var in v["vars"] if var.get("ptr") in objs] + [
-        var["cell"][0] for var in v["vars"] if var.get("cell") and var["cell"][0] in objs
-    ]
-    roots += [o["id"] for o in v["objects"]]
+    # What the variables point at starts the picture, in the order the objects are written (a root
+    # or head comes first, whichever variable is listed first); then anything left.
+    order_of = {o["id"]: i for i, o in enumerate(v["objects"])}
+    pointed = {var["ptr"] for var in v["vars"] if var.get("ptr") in objs}
+    pointed |= {var["cell"][0] for var in v["vars"] if var.get("cell") and var["cell"][0] in objs}
+    roots = sorted(pointed, key=order_of.get) + [o["id"] for o in v["objects"]]
     seen: set[str] = set()
     tb = v["dir"] == "TB"
     hole = 3 * CH + 2 * PAD

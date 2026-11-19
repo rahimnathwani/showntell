@@ -248,6 +248,21 @@ export function arrows(v, geo) {
         cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 30, sy, x1 + 30, yb, x1, yb], ["L", tx, yb], ["L", tx, dt]] });
       }
     }
+    if (holder && own) {
+      // Out of the cell's own bottom or top (a row of cells has no free side), then on to the target.
+      for (const [edge, dir] of [[own.b, 1], [own.t, -1]]) {
+        const y0 = edge + dir * (14 + 10 * lane);
+        for (const ty of tys) {
+          if (d.x > sx + 20) cands.push({ lane: true, segs: [["M", sx, sy], ["L", sx, y0], ["C", sx, y0 + dir * 20, d.x - 40, ty, d.x, ty]] });
+          // along under (or over) the whole holder, then into the target's left side
+          if (d.x > x1 + 40) cands.push({ lane: true, segs: [["M", sx, sy], ["L", sx, y0], ["L", x1 + 10, y0], ["C", x1 + 40, y0, d.x - 40, ty, d.x, ty]] });
+        }
+        for (const tx of txs) {
+          if (dir > 0 && dt > y0 + 10) cands.push({ lane: true, segs: [["M", sx, sy], ["L", sx, y0], ["C", sx, y0 + 30, tx, dt - 30, tx, dt]] });
+          if (dir < 0 && db < y0 - 10) cands.push({ lane: true, segs: [["M", sx, sy], ["L", sx, y0], ["C", sx, y0 - 30, tx, db + 30, tx, db]] });
+        }
+      }
+    }
     if (d.x > x1 + 10) {
       for (const ty of tys) { // under what is in the way, up into the left side
         const lo = Math.max(sy, ty, ...others.filter((b) => near(b, sx, d.x, -1e9, 1e9)).map((b) => b.b)) + gap;
@@ -273,8 +288,9 @@ export function arrows(v, geo) {
     let best = null;
     for (const c of cands) {
       const pts = sample(c.segs);
-      const hit = others.filter((b) => pts.some((q) => inside(q, b))).length + (pts.slice(0, -4).some((q) => inside(q, target_)) ? 1 : 0)
-        + (own && pts.some((q) => inside(q, own) && !inside(q, cell, -3)) ? 1 : 0);
+      const [ex, ey] = pts[pts.length - 1];
+      const hit = others.filter((b) => pts.some((q) => inside(q, b, -4))).length + (pts.some((q) => Math.hypot(q[0] - ex, q[1] - ey) > 10 && inside(q, target_)) ? 1 : 0)
+        + (own && pts.some((q) => inside(q, own, -2) && !inside(q, cell, -4)) ? 1 : 0);
       if (!best || hit < best.hit) best = { ...c, hit, pts };
       if (!hit) break;
     }
@@ -294,7 +310,10 @@ function sample(segs) {
   let cx = 0, cy = 0;
   for (const [op, ...a] of segs) {
     if (op === "M") { cx = a[0]; cy = a[1]; pts.push([cx, cy]); continue; }
-    const n = op === "L" ? 8 : 20;
+    // About every 4 units, so a route cannot slip past the corner of a box.
+    const span = op === "L" ? Math.hypot(a[0] - cx, a[1] - cy)
+      : Math.hypot(a[0] - cx, a[1] - cy) + Math.hypot(a[2] - a[0], a[3] - a[1]) + Math.hypot(a[4] - a[2], a[5] - a[3]);
+    const n = Math.max(4, Math.ceil(span / 4));
     for (let i = 1; i <= n; i++) {
       const t = i / n, u = 1 - t;
       pts.push(op === "L" ? [cx + (a[0] - cx) * t, cy + (a[1] - cy) * t]

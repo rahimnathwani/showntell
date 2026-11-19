@@ -288,12 +288,13 @@ def fit_y(items: list[dict]) -> list[float]:
     if p95 > p5 and hi - lo > 3 * (p95 - p5):
         lo, hi = max(lo, p5 - 0.5 * (p95 - p5)), min(hi, p95 + 0.5 * (p95 - p5))
     lo, hi = min([lo, *pts]), max([hi, *pts])
-    if hi - lo < 1e-9:
-        lo, hi = lo - 1, hi + 1
-    if hi - lo <= 1e-12 * max(1.0, abs(lo), abs(hi)):
-        lo, hi = lo - max(1.0, abs(lo)), hi + max(1.0, abs(hi))
     pad = 0.08 * (hi - lo)
-    return [float(f"{lo - pad:.7g}"), float(f"{hi + pad:.7g}")]
+    lo, hi = float(f"{lo - pad:.7g}"), float(f"{hi + pad:.7g}")
+    # A flat curve, or one too narrow for seven digits to tell apart: give it room around its value.
+    if hi - lo <= 1e-6 * max(1.0, abs(lo), abs(hi)):
+        mid, half = (lo + hi) / 2, max(1.0, abs(lo + hi) / 2) * 0.1
+        lo, hi = float(f"{mid - half:.7g}"), float(f"{mid + half:.7g}")
+    return [lo, hi]
 
 
 def join_steps(vis: dict) -> list[str]:

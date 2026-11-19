@@ -215,3 +215,15 @@ def test_arrows_cross_no_box_and_stay_in_the_picture(daemon, browser):  # noqa: 
           }
           return out; }""")
         assert not bad, (k, bad)
+
+
+ROUTES.update(
+    {
+        "cells": ("memory", "xs: [-> n1, 1, _, 1]\nn1: Node {v: 1, next -> null}"),
+        "tbcur": (
+            "memory TB",
+            "cur -> b\nroot -> r\nr: {v: 5, left -> a, right -> b, parent -> null}\na: {v: 3, left -> null, right -> null, parent -> r}\nb: {v: 8, left -> null, right -> null, parent -> r}",
+        ),
+        "rev3": ("memory", "prev -> c\ncur -> null\na: Node {v: 1, next -> null}\nb: Node {v: 2, next -> a}\nc: Node {v: 3, next -> b}"),
+    }
+)
