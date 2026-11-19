@@ -1,8 +1,13 @@
-// Code with real line numbers; `scroll` for long code, `step` blocks for code that evolves.
+// Code with real line numbers; `scroll` for long code, `step` blocks for code that evolves, and
+// a ```trace beside it: a panel of variables that follows the code as it runs, one moment per
+// #trace-N cue, with the line that just ran marked in the gutter.
 
 import { diffLines, lcs, tokenize } from "../diff.js";
-import { el, fit, highlight, textRange } from "../draw.js";
+import { el, fit, highlight, reducedMotion, textRange } from "../draw.js";
 import { esc, splitLines } from "../util.js";
+
+const SKIP_S = 0.3; // a jump forward plays the moments it skips, this long each
+const OUT_LINES = 4; // output lines the panel keeps
 
 // A code panel with real line numbers. marks: {removed:[bool], added:[bool]} for diffs.
 export function codeBox(code, lang, start, title, tag, side, marks) {
@@ -44,6 +49,47 @@ export default {
       parts.setStep = (n, animate) => morphCode(parts, box, v, n, animate);
     }
     body.append(box);
+    if (v.trace?.length) {
+      const panel = el("aside", "trace-panel");
+      panel.setAttribute("aria-live", "polite");
+      body.parentElement?.append(panel);
+      parts.trace = { panel, moments: v.trace, shown: -1 };
+      showMoment(parts, 0);
+    }
+  },
+
+  // The trace's moment: the last #trace cue's, reached through the ones it skips.
+  frame(st, slide, parts, t) {
+    if (!parts.trace) return "";
+    const fired = st.cues.filter((c) => c.kind === "trace");
+    const last = fired[fired.length - 1];
+    let n = last?.n || 0;
+    const from = fired.length > 1 ? fired[fired.length - 2].n : 0;
+    if (last && n > from + 1 && !reducedMotion() && !st.revealAll) n = Math.min(n, from + 1 + Math.floor(Math.max(0, t - last._at) / SKIP_S));
+    showMoment(parts, n);
+    return `t${n}`;
+  },
+
+  // A trace panel too full to show its last moment whole; the code itself is measured as usual.
+  measure(slide, body, parts, report) {
+    const tr = parts.trace;
+    if (!tr) return false;
+    const was = tr.shown;
+    showMoment(parts, tr.moments.length);
+    const over = tr.panel.scrollHeight > tr.panel.clientHeight + 2;
+    showMoment(parts, was);
+    if (over) {
+      report(`Slide ${slide.id}: the trace's panel cannot show all its variables and output at once; some are cut off.`
+        + " Trace fewer variables, or print less.", "block_too_big", slide.id);
+    }
+    return false;
+  },
+
+  // A #trace cue points at the line that just ran.
+  target(cue, parts) {
+    if (cue.kind !== "trace") return undefined;
+    const ln = parts.lines.new.get(cue.line);
+    return ln ? { rects: [ln.querySelector(".tx").getBoundingClientRect()] } : null;
   },
 
   // Code that evolves is sized for its biggest version, so the scale holds still between steps.
@@ -67,6 +113,23 @@ export default {
     fit(body);
   },
 };
+
+// The panel and gutter mark at moment n (0: before the code runs).
+function showMoment(parts, n) {
+  const tr = parts.trace;
+  if (tr.shown === n) return;
+  tr.shown = n;
+  if (n < 0) return;
+  const m = n > 0 ? tr.moments[n - 1] : null;
+  parts.lines.new.forEach((ln, no) => ln.classList.toggle("run", !!m && m.line === no));
+  const changed = new Set(m?.changed || []);
+  const rows = (m?.vars || []).map(([name, value]) => `<div class="tp-row${changed.has(name) ? " changed" : ""}"><span class="tp-name">${esc(name)}</span><span class="tp-val">${esc(value)}</span></div>`).join("");
+  const ret = m?.ret != null ? `<div class="tp-ret"><span class="tp-name">returns</span><span class="tp-val">${esc(m.ret)}</span></div>` : "";
+  // The last few lines of output, as a terminal shows them.
+  const lines = (m?.out || []).slice(-OUT_LINES);
+  const out = lines.length ? `<div class="tp-head">Output</div><div class="tp-out${m.printed ? " changed" : ""}">${lines.map((x) => `<div>${esc(x)}</div>`).join("")}</div>` : "";
+  tr.panel.innerHTML = `<div class="tp-head">Variables</div><div class="tp-vars">${rows || '<div class="tp-none">Not run yet</div>'}</div>${ret}${out}`;
+}
 
 // Switch a code box to step n. Lines that stay glide to their new place; in lines edited in
 // place, words that stay glide too; everything else fades in. Without `animate` (seeking,

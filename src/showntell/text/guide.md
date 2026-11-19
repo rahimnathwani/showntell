@@ -65,6 +65,9 @@ Every slide but the title and brief transitions gets the visual that carries its
 | **One long function** | add `scroll`: reading size, scrolls to each cued range |
 | **Flow, structure, states** | Mermaid: short ids (`api`, `db`), labels of one to four words without parentheses or quotes, `alt="..."` on the heading |
 | **Boxes and arrows in an arrangement you choose** | ```` ```reladraw ````: `node web "Web app"`, `node db "Database"  right of web (gap: wide)`, `edge web -> db "queries"`; drawn exactly as placed, in the slide's colors. Prefer it to hand-placed SVG for boxes and lines. Syntax: showntell://slide-kinds |
+| **Data structures in memory** | ```` ```memory ````: `head -> n1`, `n1: Node {val: 1, next -> n2}`, `arr: [1, 3, 7]`, `lo -> arr.0`, `frame fact` with indented variables; `memory step` versions keep objects still while arrows change. Never draw these in SVG |
+| **Values as code runs** | ```` ```trace ```` right after the code: `L4  t = 3` per moment (the line that just ran, then what changed), `print:`, `return:`; cue `#trace-4` |
+| **Curve of a formula** | ```` ```plot x=-3..3 ````: `f(x) = x^2 "label"`, `point a = (1, f(1))`, `shade f from 0 to 2`; `plot step` versions glide. Measured numbers are a chart |
 | **Physical, spatial or visual idea** | drawing: ```` ```svg ```` holding one `<svg viewBox="{{DRAWING}}">`, or `svg file=` an SVG export |
 | **An existing draw.io diagram** | ```` ```drawio file=docs/arch.drawio ```` (or `.drawio.svg`), empty body, `page="Name"` or `page=2`; a new picture is SVG |
 | **Comparison in words** | table: a few rows, short cells |
@@ -126,10 +129,14 @@ Targets by visual; a slug is lowercase with hyphens:
 | **Diff** | `#-L5` old side, `#+L7` or `#L7` new; a `diff` block counts from its `@@` header |
 | **List, cards** | `#id` from `{#id}`, else the bold title's slug: `**Disk cache**` is `#disk-cache` |
 | **Table** | `#row-2`, or the `{#id}` ending a row's last cell; column `#col-3` or `#col-p99`; cell `#row-2/col-3` or `#mem/p99` |
+| **JSON, YAML, TOML** | a key by its path: `#scripts.test`, `#steps[1].run`, or a unique last key `#test` |
+| **Trace** | `#trace-3` moment 3; `[t is 8](#trace-6 "t = 8")` checks it by text |
 | **Diagram** | node, participant or state by its Mermaid id: `#db` |
 | **Flowchart path** | `#web->api->db`: a dot travels those edges, about 0.9 s a hop |
 | **Sequence message** | `#Sender->>Receiver`: the first message between them; add quoted text to pick another |
 | **Chart** | bar or line series by its name's slug (`#cold-start`), callouts `#note-1`, `#note-2` |
+| **Plot** | function or point by name: `#f`, `#p`; `#shade-f` |
+| **Memory** | variable `#head`, object `#n1`, field `#n1.next`, cell `#arr.2`, frame variable `#fact-2.n` |
 | **Numbers** | label slug: `#p95-latency` |
 | **Chat** | `#m1`, `#m2` in order |
 | **Tree** | path (`#src/cache/lru.py`) or unique name (`#lru.py`) |

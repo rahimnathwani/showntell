@@ -2,6 +2,7 @@
  "format": 1,
  "id": "every-kind",
  "title": "every-kind",
+ "description": "",
  "frame": "landscape",
  "theme": "dark",
  "tokens": {},
@@ -714,6 +715,10 @@
     "ids": [
      "row-1",
      "row-2"
+    ],
+    "cols": [
+     "check",
+     "when"
     ]
    },
    "says": [

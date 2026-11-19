@@ -226,6 +226,15 @@ class Checks:
         self._check_layout(s)
         self._check_quiz(s)
         self._check_camera(s)
+        if s.kind == "code" and s.visual.get("trace") and not any(c.get("kind") == "trace" for x in s.says for c in x.cues):
+            n = len(s.visual["trace"])
+            self._issue(
+                "trace_unused",
+                f"Slide `{s.id}` has a trace of {n} moments, but no cue moves its panel, so the variables never show.",
+                'Step through it in the narration: [t starts at zero](#trace-1), [then becomes 8](#trace-5 "t = 8").',
+                slide=s.id,
+                line=s.line,
+            )
         shown = " ".join([s.shown] + [it.get("body", "") for it in s.visual.get("items", [])])
         spoken = " " + " ".join(re.findall(r"[\w'-]+", " ".join(x.text for x in s.says).lower())) + " "
         for chunk in _phrases(shown, 7):

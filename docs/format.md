@@ -24,7 +24,7 @@ On a miss it [calls the loader](#L18) and stores the result.
 | **Front matter** | optional, only at the very start, between `---` lines. Keys: `title`, `description`, `frame`, `theme`, `voice` (an id such as `bm_george`, `default`, or a description such as `British male` or `American female, soft`, which picks the first voice of that accent and sex with the most of the traits asked for), `speed`. Tools pass these as arguments instead. |
 | **Slide** | every heading (`#`, `##` or `###`) starts a slide. The level does not matter. |
 | **Title slide** | the first slide renders as a title slide when it has no visual. A `>` quote under it is the subtitle. |
-| **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`), a draw.io diagram or a reladraw diagram |
+| **Visual** | one per slide (two on a `.pair` slide): a code block, a diff, a diagram, a formula, a table, a list, an image, a chart, headline numbers (`stat`), an exchange (`chat`), a terminal session, a file tree, a drawing (`svg`), a draw.io diagram, a reladraw diagram, a function plot (`plot`) or a memory picture (`memory`) |
 | **Shown text** | `>` quote lines are shown on the slide, never spoken: under a heading with a visual, a takeaway line; on a `.side` slide, takeaways beside the visual; on a slide with no visual, one large statement |
 | **Narration** | every other paragraph is spoken. Each paragraph is voiced separately, with a short pause after it. A paragraph that starts with `1. ` or `- ` right after the slide's visual is spoken too, since a list there would be a second visual. |
 | **Questions** | a slide whose heading has the `.questions` class is not shown; its list items become the questions offered at the end. Questions passed to `finish_walkthrough` replace them. |
@@ -62,7 +62,7 @@ A heading may end with attributes in braces: `## The lookup {#lookup .build}`.
 | **`.full`** | the visual over the whole slide, the title and takeaway in a small panel in the top corner |
 | **statement** | a slide with no visual: its first `>` line as one large sentence, the heading as a kicker above it (the heading alone when there is no `>` line), and further `>` lines smaller below |
 
-On a `.pair` slide a cue points into the first visual when it has the target, else into the second; give the two visuals different ids. Quoted text (`[label](# "text")`) is looked for in both. `.build` does not apply to a pair, and only the first visual may have `step` versions.
+On a `.pair` slide a cue points into the first visual when it has the target, else into the second; give the two visuals different ids. Quoted text (`[label](# "text")`) is looked for in both. `.build` does not apply to a pair. Either visual may have `step` versions (code beside a `memory step` picture); `#step-N` moves the one that has them.
 
 Every content slide has a kicker above its title: its number among the content slides and the part it belongs to. Slides come in by the narration's clock, so seeking and MP4 export show the same motion. A slide starts coming in about half a second before its first word, so the change has landed as the word is heard: it rises in, a slide that shows the same kind of visual in the same layout as the one before slides across like a page, title and chapter slides zoom in, and cards, numbers, rows, messages and takeaways arrive one after another, a tenth of a second apart (except on `.build` slides). A still drawing breathes, about 1% in and out (in the player; MP4 export holds it still unless `--motion` is given).
 
@@ -124,6 +124,40 @@ def total(xs):
 The loop [adds each value](#L4). It then [collapses into one call](#step-2), where [sum](#L2 "sum") does the work.
 ````
 
+**Keys by path:** in a `json`, `yaml` (or `yml`) or `toml` block, a cue may name a key by its path from the top instead of a line: `#scripts.test`, `#jobs.build.steps[1]` (or `.steps.1`), `#$.params.name`, `#deps["socket.io"]` for a key holding a dot (`#deps.socket.io` works too). A unique last key alone is enough (`#test`). The cue points at the key's line through the end of its value, and at just the key and value when they share a line with others (one-line JSON, `[a, b]` in YAML). A YAML file with several documents names them `#doc-1.kind`, `#doc-2.kind`. The readers forgive what an excerpt has: comments, trailing commas, unquoted keys, `...`, and a JSON fragment without its outer braces. An unknown key is `cue_no_target`, listing the keys under the deepest part of the path that exists; `#L3` still names a line.
+
+**Traced code:** a ```` ```trace ```` block right after the code, on the same slide, shows a panel of variables beside it (under it in portrait) that follows the code as it runs. One line per moment: the line that has just run, by its gutter number (`L4`, `4:` or `4`), then what that line changed.
+
+````markdown
+```python
+def total(xs):
+    t = 0
+    for x in xs:
+        t += x
+    return t
+```
+```trace
+L1  xs = [3, 5]
+L2  t = 0
+L3  x = 3
+L4  t = 3
+L3  x = 5
+L4  t = 8
+L5  return: 8
+```
+
+It starts [at zero](#trace-2), then [t becomes 8](#trace-6 "t = 8") and [the call returns it](#trace-7).
+````
+
+| Part | Rule |
+|---|---|
+| **Changes** | `name = value`, several separated by `;` or by `,` before another `name =`; values show as written, up to 40 characters. Write the new value, not the code: `t += x` is refused (`trace_error`), and each name set must appear on that line of code. |
+| **Output and result** | `print: text` adds a line of output under the panel (the rest of the line; the last four show); `return: value` shows what the call returns. |
+| **Cues** | `#trace-3` moves to moment 3, counting trace lines from 1; the line that just ran is marked in the gutter and the names it changed glow. With quoted text (`[…](#trace-6 "t = 8")`) the moment is checked and moved to the one holding that text (`cue_moved`); `#trace "t = 8"` alone finds the next such moment. A forward jump plays the moments it skips, 0.3 s each. Line cues still point as usual. A traced slide without a `#trace` cue gets `trace_unused`. |
+| **Limits** | one call's variables: at most 8 variables and 40 moments. Not with `step` code or `.pair`; on a `.side` slide the panel takes the side and the takeaways go under the title (`trace_layout`); the code gets about two thirds of the width (`code_too_wide`). For recursion, use a `memory step` picture with frames. |
+
+Nothing is run: the values are what the block says, so paste them from a real run.
+
 ### Diff
 
 Three ways to show a change side by side:
@@ -167,6 +201,8 @@ flowchart LR
 ````
 
 Any Mermaid diagram type works. Give each node a short id so narration can point at it.
+
+**ELK layout:** ```` ```mermaid elk ```` lays a flowchart or state diagram out with ELK (`static/vendor/elk`, MIT, with elkjs under EPL-2.0, about 1.6 MB, loaded only then) instead of Mermaid's own layout: right-angled lines, often fewer crossings on a dense graph. On most flowcharts Mermaid's own layout reads as well or better, so it stays the default. Mermaid's own settings do the same (`layout: elk` in the block's `---` config or an `%%{init}%%` line, or `flowchart-elk`). On another kind of diagram, `elk` is ignored with `diagram_option`.
 
 ### Formula
 
@@ -242,6 +278,35 @@ write: 610, 390
 Options: `title=`, `unit=` (shown after values), `x=` and `y=` (axis labels). Values may carry a unit suffix such as `ms` or `%`. At most 12 bars or series read well. The player draws the chart in the theme's colours: bars grow from the axis one after another and lines draw left to right as the slide arrives, then values and callouts appear.
 
 A `note` line adds a callout: `note 400: tail grows here` at that x value (every series), `note p99/400: …` on one series, or `note write: …` above a bar. Cue notes as `#note-1`, `#note-2` in the order written.
+
+### Plot
+
+````markdown
+```plot step x=-3..3 title="Loss"
+f(x) = x^2  "loss"
+point p = (2.5, f(2.5))  "start"
+```
+```plot step x=-3..3 title="Loss"
+f(x) = x^2  "loss"
+point p = (0.5, f(0.5))  "after one step"
+t(x) = x - 0.25  dashed "tangent"
+```
+````
+
+Curves of formulas, drawn on axes in the theme's colours. The builder evaluates every expression itself (no code is run) and sends sampled values; where a function is undefined (`1/x` at 0, `ln` of a negative) the curve has a gap, and a jump from far above the view to far below (`tan`) is not joined. Numbers someone measured belong in a chart.
+
+| Line | Meaning |
+|---|---|
+| **`f(x) = x^2 - 1 "label"`** | a function; the parameter may be any name (`h(t) = 20t - 4.9t^2`), and `f'(x)` is allowed. The label sits at the curve's right end; without one it reads `f(x)`. |
+| **`k = 0.5`** | a constant the lines after it can use |
+| **`point a = (1, f(1)) "label"`** | a point; `point` may be left out. A point written `(a, f(a))` stays on f's curve when it moves between versions. |
+| **`shade f from 0 to 2`** | the area between f and the x axis; `#shade-f`, then `#shade-f-2` for f's second |
+| **`vline 2 "label"`** | a vertical line (an asymptote, a boundary), `#vline-1` in order |
+| **`dashed`** | before a label, draws a function or vertical line dashed |
+
+Options: `x=-3..3` (required; no spaces; bounds may be expressions such as `-pi` or `2pi`), `y=0..10` (otherwise fitted to the curves, ignoring spikes), `title=`, `xlabel=`, `ylabel=`. Expressions use `+ - * / ^` (or `**`), parentheses, implicit multiplication (`2x`, `3(x+1)`, `2 sin(x)`), `pi`, `e`, the functions sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp ln log10 log2 floor ceil round sign min max (in radians), and functions defined above. Where implicit multiplication reads two ways it is refused (`1/2x`: write `1/(2x)` or `(1/2)x`; `e^2x`: write `e^(2x)`), as are `log` (write `ln`, `log10` or `log2`) and `|x|` (write `abs(x)`). At most 8 functions and 16 points, areas and lines.
+
+Cues point at a function by its name (`#f`, `#f-prime` or `#f'`), a point (`#p`), an area or a line, or a label's text. Curves draw left to right as the slide arrives; with `.build`, the parts appear in source order. Consecutive `plot step` blocks are versions sharing one x range and one y range fitted over all of them, so the axes hold still: `#step-2` glides each curve by its samples and each point to its new place, new parts fade in and gone ones fade out.
 
 ### Numbers
 
@@ -353,6 +418,37 @@ Boxes and lines in the [reladraw](https://github.com/reladraw/reladraw) language
 Cues point at a node by its name (`#web.api`), or by its text or the text's slug when that is unique; at a region with `#@left,top,width,height`; or at text with `[label](# "text")`. With `.build`, top-level nodes appear in source order, a node inside another with it, and a line once both its ends are shown.
 
 **Checked.** reladraw never moves a box or reroutes a line to make room. What it finds, a line through a box or texts on top of each other, comes back as `drawing_overlap` naming the line of the block, and a syntax error as `render_error` with its line. A block over 80 boxes, 160 lines or 100 KB is refused; lines are counted by their ends, so `edge a, b and c -> d` is three and `each child of x` is one per child. Any `icon` statement but a letter icon is refused too, since a pasted picture (`icon name """<svg>…"""`) would reach the page as written; built-in icons (`icon: database`) and letter icons (`icon gh  letters: "GH"`) stay. The drawing the player shows is rebuilt from an allowlist of SVG elements and attributes, so nothing in it can load, link or run.
+
+### Memory picture
+
+````markdown
+```memory
+head -> n1
+size = 2
+n1: Node {val: 1, next -> n2}
+n2: Node {val: 2, next -> null}
+```
+````
+
+Variables and the objects they point at, as a data-structure diagram: variables (in call frames) at the left, objects and arrays to the right, an arrow for each pointer. The builder lays it out, so every version of it shares one picture.
+
+| Line | Meaning |
+|---|---|
+| **`size = 3`** or **`size: 3`** | a variable and its value, shown as written |
+| **`head -> a`** | a variable pointing at object `a` (`head = -> a` is the same) |
+| **`lo -> arr.2`** or **`lo -> arr[2]`** | a variable pointing at a cell, drawn as a marker under that cell: binary search, two pointers, a sliding window |
+| **`p -> null`** | a null pointer (`None`, `nil`, `nullptr` too), shown as written |
+| **`frame fact`** | a call's variables, indented on the lines below; frames stack in the order written, outermost first; a repeated name becomes `fact-2` |
+| **`a: Node {val: 1, next -> b}`** | an object: an optional type, then fields; `next: -> b` is the same pointer |
+| **`arr: [10, 20, -> c, _]`** | an array, its indexes under it; `_` is an empty cell. An array that mostly holds pointers (hash buckets) stands as a column. `t: (1, 2)` is a tuple. |
+
+`-> id` is a pointer wherever a value goes; any other value is text, so `next: b` (a word that names an object) is refused: write `next -> b`. Text with a comma goes in quotes; a bracketed value inside an object is text. Names are letters, digits and `_`; `//` starts a comment. Objects are placed in columns by their distance from the variables, so a linked list reads left to right and arrows go around boxes in their way; ```` ```memory TB ```` stacks rows instead, root on top, for a tree, where a null child keeps its place so a lone right child stays right. An object nothing points at is dimmed.
+
+Cues point at a variable (`#head`), an object (`#n1`), a field (`#n1.next`), a cell (`#arr.2` or `#arr[2]`), a frame (`#fact`) or a frame's variable (`#fact-2.n`, or `#n` when only one frame has it). With `.build`, variables and frames appear first, then objects, in source order, each field or cell with its object and each arrow once both ends show.
+
+**Versions:** consecutive `memory step` blocks are versions of one picture, and `#step-N` moves between them. Objects keep the places the first version gave them (a new one goes beside the first thing that points at it), so reversing a list moves the arrows, not the nodes: arrows that change fade across, new objects fade in, and values that changed since the version before glow. Beside the code it describes: `.pair` on the heading, the code block, then the `memory` blocks.
+
+At most 16 objects and 40 fields and cells, values up to 24 characters (`block_error` otherwise).
 
 ## Narration
 

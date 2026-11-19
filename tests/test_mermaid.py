@@ -101,3 +101,13 @@ def test_diagram_visual_records_type_nodes_and_alt(build):
     v = w.slides[1].visual
     assert w.slides[1].kind == "diagram" and v["type"] == "flowchart" and v["alt"] == "Cache flow"
     assert v["order"] == ["req", "hit", "ret", "load"] and v["source"].startswith("flowchart LR")
+
+
+def test_frontmatter_and_flowchart_elk_keep_nodes_and_ask_for_elk():
+    from showntell.mermaid import asks_elk, diagram_type
+
+    src = "---\ntitle: Flow\nconfig:\n  layout: elk\n---\nflowchart LR\n  a[A] --> b[B]\n"
+    assert parse_mermaid(src)[0] == {"a": "A", "b": "B"} and diagram_type(src) == "flowchart" and asks_elk(src)
+    assert parse_mermaid("flowchart-elk TB\n  a --> b")[0] == {"a": "a", "b": "b"} and asks_elk("flowchart-elk TB\n  a --> b")
+    assert not asks_elk('flowchart LR\n  a["layout: elk"] --> b')  # a label is not config
+    assert asks_elk('%%{init: {"layout": "elk"}}%%\nflowchart LR\n  a --> b')

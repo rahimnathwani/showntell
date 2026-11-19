@@ -131,10 +131,14 @@ Findings from the server, found while parsing, building and voicing:
 | `diff_too_wide` | warning | diff lines are wider than the frame shows comfortably |
 | `diff_hunks` | warning | a pasted diff has several hunks |
 | `diagram_too_big` | warning | a diagram has more nodes than the frame shows comfortably |
+| `diagram_option` | warning | an option on a Mermaid block does not apply to its kind of diagram and was ignored |
 | `generated_file` | info | a diff shows a lockfile or generated file |
-| `block_error` | error | a line in a chart, stat or chat block could not be read and was left out |
+| `block_error` | error | a line in a chart, stat, chat, plot or memory block could not be read and was left out |
 | `block_too_big` | warning | a chart, stat or chat block has more parts than the frame shows comfortably |
 | `tree_error` | warning | a file tree's nesting is inconsistent |
+| `trace_error` | error | a trace line could not be read, or the trace is not beside the code it traces |
+| `trace_layout` | warning | a traced slide asked for `.side`, whose place the trace's panel took |
+| `trace_unused` | warning | a traced code slide has no #trace cue, so its panel never moves |
 | `icon_unknown` | warning | an icon name is not in the bundled set and was left out |
 | `svg_removed` | warning | a drawing had elements or attributes the player does not allow, which were removed |
 | `cue_off_code` | error | a cue points at lines the slide does not show |

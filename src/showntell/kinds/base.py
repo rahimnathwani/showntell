@@ -45,6 +45,9 @@ class Kind:
     # Consecutive blocks marked `step` are versions of one visual, each kept as these keys of its
     # visual; #step-N moves between them. Empty: the kind has no steps.
     steps: tuple[str, ...] = ()
+    # After a version joins the slide: problems with the versions together, and any adjustment
+    # they share (a plot's axes).
+    join_steps: Callable[[dict], list[str]] | None = None
 
     def fix(self) -> str:
         """The fix for a problem with the block: the hint, then the format from the catalogue."""

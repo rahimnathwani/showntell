@@ -322,6 +322,19 @@ body.portrait .slide.k-chapter .big-n { font-size: 320px; right: 30px; }
 .image .device { max-height: 100%; }
 
 /* chart notes */
+.plot .frame { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.plot .curve { fill: none; stroke: var(--c); stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; }
+.plot .flabel { fill: var(--c); font-size: 22px; font-weight: 700; paint-order: stroke; stroke: var(--stage); stroke-width: 6px; }
+.plot .plabel { fill: var(--fg); font-size: 22px; font-weight: 600; paint-order: stroke; stroke: var(--stage); stroke-width: 6px; }
+.plot .pt { fill: var(--accent); stroke: var(--stage); stroke-width: 4; }
+.plot .curve.dashed { stroke-width: 3.5; stroke-dasharray: 12 9; }
+.plot .vline { stroke: var(--muted); stroke-width: 2.5; }
+.plot .vline.dashed { stroke-dasharray: 10 8; }
+.plot .shade { fill: var(--c); fill-opacity: 0.22; stroke: none; }
+.plot g.entry.active .curve { stroke-width: 7; filter: drop-shadow(0 0 10px var(--accent-glow)); }
+.plot g.entry.active .pt { r: 13; filter: drop-shadow(0 0 10px var(--accent-glow)); }
+.plot g.entry.active .shade { fill-opacity: 0.4; }
+.plot :is(.has-active) > g.entry:not(.active) :is(.curve, .pt, .shade) { opacity: 0.35; }
 .chart .note .leader { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 5 6; }
 .chart .note .ring { fill: none; stroke: var(--accent); stroke-width: 3; }
 .chart .note .ntext { fill: var(--accent); font-size: 22px; font-weight: 700; }
@@ -633,3 +646,49 @@ body.capture.burn-captions #caption {
   display: flex !important; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
   min-height: 0; padding: 10px 40px 14px; font-size: 24px; background: var(--scrim);
 }
+
+/* A trace: the code's variables beside it, the line that just ran marked in the gutter. */
+.trace-panel { flex: 0 0 30%; min-width: 0; align-self: center; display: flex; flex-direction: column; gap: 10px; padding: 22px 24px;
+  border-radius: 18px; background: var(--panel); font-family: var(--mono); font-size: 24px; max-height: 100%; overflow: hidden; }
+body.portrait .slide-row:has(> .trace-panel) { flex-direction: column; }
+body.portrait .trace-panel { flex: none; align-self: stretch; }
+.trace-panel .tp-head { font-family: var(--sans); font-size: 17px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.trace-panel .tp-vars { display: flex; flex-direction: column; gap: 6px; }
+.trace-panel .tp-row, .trace-panel .tp-ret { display: flex; gap: 18px; align-items: baseline; padding: 4px 12px; border-radius: 10px;
+  transition: background 0.3s, box-shadow 0.3s; }
+.trace-panel .tp-name { color: var(--muted); min-width: 3ch; }
+.trace-panel .tp-val { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.trace-panel .changed { background: var(--accent-soft, color-mix(in srgb, var(--accent) 18%, transparent)); box-shadow: inset 3px 0 0 var(--accent); }
+.trace-panel .changed .tp-val { color: var(--accent); }
+.trace-panel .tp-ret { border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
+.trace-panel .tp-out { padding: 8px 12px; border-radius: 10px; background: var(--stage); white-space: pre-wrap; }
+.trace-panel .tp-none { color: var(--muted); font-family: var(--sans); font-size: 20px; padding: 6px 12px; }
+.codebox .ln.run { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 4px 0 0 var(--accent); }
+.codebox .ln.run .no { color: var(--accent); }
+
+/* Memory pictures: variables and frames, objects and arrays, arrows for pointers. */
+.memory { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.memory svg { display: block; overflow: visible; font-family: var(--mono); font-size: 22px; }
+.memory .frame rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.memory .fname { fill: var(--muted); font-family: var(--sans); font-size: 18px; font-weight: 700; }
+.memory .vname { fill: var(--fg); }
+.memory .vbox { fill: var(--node); stroke: var(--node-line); stroke-width: 1.5; transition: fill 0.3s; }
+.memory .slot .vbox { stroke: none; fill: transparent; }
+.memory .vbox.changed { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; }
+.memory .slot .vbox.changed { fill: var(--accent-soft); }
+.memory .vtext { fill: var(--fg); font-weight: 600; }
+.memory .vnull { fill: var(--muted); font-style: italic; }
+.memory .dot { fill: var(--accent); }
+.memory .obox { fill: var(--node); stroke: var(--node-line); stroke-width: 2; }
+.memory .sep { stroke: var(--node-line); stroke-width: 1.5; }
+.memory .otype { fill: var(--muted); font-family: var(--sans); font-size: 16px; }
+.memory .flabel { fill: var(--muted); font-size: 19px; }
+.memory .idx { fill: var(--muted); font-size: 15px; }
+.memory .arrow path { fill: none; stroke: var(--muted); stroke-width: 2.5; }
+.memory .head { fill: var(--muted); }
+.memory .tri { fill: var(--accent); }
+.memory .mname { fill: var(--accent); font-weight: 700; font-size: 19px; }
+.memory .obj.dim { opacity: 0.4; }
+.memory g[data-id], .memory g.arrow, .memory g.marker { transition: opacity 0.4s; }
+.memory g.veiled { opacity: 0; }
+.memory g[data-id].active > .obox, .memory g[data-id].active > .vbox, .memory g.slot.active .vbox { stroke: var(--accent); stroke-width: 3; filter: drop-shadow(0 0 8px var(--accent-glow)); }

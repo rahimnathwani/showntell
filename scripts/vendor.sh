@@ -17,7 +17,7 @@ fetch_url() { # url sha256 destination
   curl -fsSL "$1" -o "$3"
   echo "$2  $3" | shasum -a 256 -c --quiet
 }
-rm -rf "$V/hljs" "$V/katex" "$V/mermaid.min.js" "$V/drawio" "$V/rough" "$V/fonts" "$V/reladraw"
+rm -rf "$V/hljs" "$V/katex" "$V/mermaid.min.js" "$V/drawio" "$V/rough" "$V/fonts" "$V/reladraw" "$V/elk"
 mkdir -p "$V/katex/fonts" "$V/hljs" "$V/drawio" "$V/LICENSES" "$V/rough" "$V/fonts"
 fetch mermaid 11.4.1 ec7b61b391aaa24bf666fd20e48d0a626eeb4a95b95bc6b3016a122d7f0bc2af
 cp "$TMP/mermaid/package/dist/mermaid.min.js" "$V/"
@@ -75,4 +75,15 @@ npx --yes esbuild@0.25.12 "$TMP/reladraw/entry.js" --bundle --format=iife --glob
   --outfile="$V/reladraw/reladraw.min.js" --log-level=warning
 cp "$TMP/reladraw/package/LICENSE" "$V/LICENSES/reladraw.txt"
 cp "$TMP/reladraw/package/NOTICE" "$V/LICENSES/reladraw-NOTICE.txt"
+# Mermaid's ELK layout (MIT, with elkjs, EPL-2.0, inside), the release made with mermaid 11.4.1:
+# its ES modules bundled into one script that sets window.mermaidElk, loaded only when a
+# flowchart is laid out with ELK.
+fetch @mermaid-js/layout-elk 0.1.7 d07b5f182458a47d105e910d268c52a513a3c0228f6a40223cfff0e74f32abcc
+mkdir -p "$V/elk"
+cp scripts/vendor/elk-entry.js "$TMP/@mermaid-js/layout-elk/entry.js"
+npx --yes esbuild@0.25.12 "$TMP/@mermaid-js/layout-elk/entry.js" --bundle --format=iife --global-name=mermaidElk --minify --legal-comments=none \
+  --outfile="$V/elk/mermaid-elk.min.js" --log-level=error
+cp "$TMP/@mermaid-js/layout-elk/package/LICENSE" "$V/LICENSES/mermaid-layout-elk.txt"
+fetch elkjs 0.9.3 b95b224bd1ab71fd40f6d9a6365c28d989745dff6b0d514407bc1eb68f2f561e
+cp "$TMP/elkjs/package/LICENSE.md" "$V/LICENSES/elkjs.txt"
 du -sh "$V"

@@ -11,6 +11,7 @@ showntell bundles these libraries in `src/showntell/static/vendor/`, unmodified:
 | **Virgil** (font) | 3d4c829 | OFL-1.1 | https://github.com/excalidraw/virgil |
 | **draw.io viewer** (`viewer-static.min.js`) | 31.7.0 | Apache-2.0 | https://github.com/jgraph/drawio |
 | **reladraw** (`reladraw/reladraw.min.js`, its browser entry bundled with esbuild) | 0.29.0 | Apache-2.0 (NOTICE in `LICENSES/reladraw-NOTICE.txt`) | https://github.com/reladraw/reladraw |
+| **@mermaid-js/layout-elk** (`elk/mermaid-elk.min.js`, bundled with esbuild; contains elkjs 0.9.3, EPL-2.0, https://github.com/kieler/elkjs, and parts of d3, ISC) | 0.1.7 | MIT; elkjs EPL-2.0 (`LICENSES/elkjs.txt`) | https://github.com/mermaid-js/mermaid/tree/develop/packages/mermaid-layout-elk |
 | **Inter** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/rsms/inter |
 | **Bricolage Grotesque** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/ateliertriay/bricolage |
 | **JetBrains Mono** (font, Latin subset via Fontsource) | 5.3.0 | OFL-1.1 | https://github.com/JetBrains/JetBrainsMono |
@@ -24,7 +25,7 @@ showntell downloads these models on first run; they are not part of the package:
 | **Kokoro-82M** (weights and voices) | Apache-2.0 | https://huggingface.co/hexgrad/Kokoro-82M, via mlx-community/Kokoro-82M-bf16 and onnx-community/Kokoro-82M-v1.0-ONNX-timestamped |
 | **spaCy en_core_web_sm** 3.8.0 | MIT | https://github.com/explosion/spacy-models |
 
-`deploy/chromium-seccomp.json` is Docker's default seccomp profile (moby/profiles `seccomp/default.json`, commit 6fe7deb, Apache-2.0, https://github.com/moby/profiles) with one rule added for Chromium's sandbox.
+`deploy/chromium-seccomp.json` is Docker's default seccomp profile (moby/profiles `seccomp/default.json`, commit 9ee3204, Apache-2.0, https://github.com/moby/profiles) with one rule added for Chromium's sandbox.
 
 Runtime dependencies are installed from PyPI under their own licences. The optional `espeak` extra installs espeak-ng (GPL-3.0); it is not installed by default.
 

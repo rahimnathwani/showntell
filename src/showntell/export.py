@@ -220,6 +220,14 @@ GZIP_OVER = 100_000  # characters; smaller libraries are not worth unpacking
 _IMPORT_RE = re.compile(r"""(\bfrom\s*|\bimport\s*)(["'])(\.{1,2}/[^"']+)\2""")
 
 
+def _visuals(slide: dict) -> list[tuple[str, dict]]:
+    """(kind, visual) of what a slide shows: its visual, and a `.pair` slide's second one."""
+    out = [(slide["kind"], slide.get("visual") or {})]
+    if slide.get("pair"):
+        out.append((slide["pair"].get("kind", ""), slide["pair"].get("visual") or {}))
+    return out
+
+
 def _data_uri(path: Path) -> str:
     import base64
 
@@ -317,15 +325,18 @@ def export_html(data_dir: Path, wid: str, out: Path) -> Path:
             for say in slide["says"]:
                 if say.get("audio"):
                     say["audio"] = _data_uri(folder / say["audio"])
-            v = slide.get("visual") or {}
-            if slide["kind"] == "image" and str(v.get("src", "")).startswith("assets/"):
-                v["src"] = _data_uri(folder / v["src"])
+            for kind, v in _visuals(slide):
+                if kind == "image" and str(v.get("src", "")).startswith("assets/"):
+                    v["src"] = _data_uri(folder / v["src"])
     w = Walkthrough.from_state(json.loads((data_dir / "walkthroughs" / wid / "state.json").read_text(encoding="utf-8")))
     files: dict[str, str | dict] = {}
-    for kind in sorted({s["kind"] for s in data["slides"]}):
+    shown = [kv for s in data["slides"] for kv in _visuals(s)]  # a `.pair` slide's second visual too
+    for kind in sorted({k for k, _ in shown}):
         for rel in LIBRARIES.get(kind, []):
             files[rel] = _katex_css() if rel.endswith("katex.min.css") else _library(rel)
-    if any((s.get("visual") or {}).get("sketch") for s in data["slides"]):  # hand-drawn drawings
+    if any(k == "diagram" and v.get("layout") == "elk" for k, v in shown):  # ```mermaid elk
+        files["vendor/elk/mermaid-elk.min.js"] = _library("vendor/elk/mermaid-elk.min.js")
+    if any(v.get("sketch") for _, v in shown):  # hand-drawn drawings
         files["vendor/rough/rough.js"] = _library("vendor/rough/rough.js")
         files["vendor/fonts/Virgil.woff2"] = _data_uri(STATIC / "vendor/fonts/Virgil.woff2")
 

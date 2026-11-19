@@ -301,3 +301,87 @@ def test_a_row_id_in_any_cell_names_the_row(cues):
     table = "## T {#t}\n\n| Month | North | South |\n|---|---|---|\n| June | Summer {#june} | Winter |\n| December | Winter | Summer |\n\n"
     (c,), issues = cues(table, "In [June](#june) the north has summer.")
     assert (c["kind"], c["id"]) == ("row", "june") and not issues
+
+
+# -- keys of JSON and YAML, by path -----------------------------------------------------------
+
+JSON = (
+    '## J {#j}\n\n```json\n{\n  "name": "demo",\n  "params": {\n    "items": [\n      {"id": 1},\n'
+    '      {"id": 2,\n       "tags": ["a", "b"]}\n    ]\n  }\n}\n```\n\n'
+)
+YAML = "## Y {#y}\n\n```yaml\njobs:\n  test:\n    steps:\n    - uses: checkout\n    - name: Run\n      run: |\n        pytest\n```\n\n"
+
+
+@pytest.mark.parametrize(
+    ("target", "lines"),
+    [("name", (2, 2)), ("params", (3, 9)), ("params.items[1]", (6, 7)), ("$.params.items.1.tags", (7, 7)), ("tags", (7, 7))],
+)
+def test_a_json_key_by_its_path_points_at_its_lines(cues, target, lines):
+    (c,), issues = cues(JSON, f"The [key](#{target}) matters.")
+    assert strip(c) == {"kind": "lines", "side": "new", "l0": lines[0], "l1": lines[1]} and not issues
+
+
+def test_a_yaml_key_by_its_path_points_at_its_lines(cues):
+    (c, d), issues = cues(YAML, "The [test step](#jobs.test.steps[1].run) runs pytest, after [checkout](#steps[0]).")
+    assert (c["l0"], c["l1"], d["l0"], d["l1"]) == (6, 7, 4, 4) and not issues
+
+
+def test_an_unknown_or_ambiguous_key_names_what_there_is(cues):
+    cs, issues = cues(JSON, "The [key](#params.nope) and [an id](#id).")
+    assert cs == [] or all(c.get("kind") != "lines" for c in cs)
+    msgs = [i for i in issues if "no key" in i]
+    assert any("`params` has: items" in m for m in msgs), msgs
+    assert any("params.items[0].id" in m and "params.items[1].id" in m for m in msgs), msgs
+
+
+def test_a_line_cue_on_json_still_counts_lines(cues):
+    (c,), issues = cues(JSON, "The [name](#L2 '\"demo\"').")
+    assert strip(c) == {"kind": "lines", "side": "new", "l0": 2, "l1": 2} and not issues
+
+
+def test_one_line_json_narrows_to_the_keys_own_text(cues):
+    (c,), issues = cues('## J {#j}\n\n```json\n{"a": 1, "b": {"c": 2}}\n```\n\n', "The [inner key](#b.c) is two.")
+    assert (c["l0"], c["l1"], c["text"]) == (1, 1, '"c": 2') and not issues
+
+
+def test_keys_with_dots_documents_fragments_and_toml(cues):
+    (c,), issues = cues('## J {#j}\n\n```json\n{\n  "deps": {\n    "socket.io": "^4"\n  }\n}\n```\n\n', "[It](#deps.socket.io).")
+    assert (c["l0"], c["l1"]) == (3, 3) and not issues
+    multi = "## K {#k}\n\n```yaml\nkind: Service\n---\nkind: Deployment\n```\n\n"
+    (c,), issues = cues(multi, "The [second](#doc-2.kind) one.")
+    assert (c["l0"], c["l1"]) == (3, 3) and not issues
+    _, issues = cues(multi, "The [kind](#kind) is ambiguous.")
+    assert any("doc-1.kind, doc-2.kind" in i for i in issues), issues
+    frag = '## F {#f}\n\n```json\n"scripts": {\n  "build": "vite",\n  "test": "vitest"\n},\n```\n\n'
+    (c,), issues = cues(frag, "[Tests](#scripts.test) run.")
+    assert (c["l0"], c["l1"]) == (3, 3) and not issues
+    toml = '## T {#t}\n\n```toml\n[project]\nname = "x"\n\n[tool.ruff]\nline-length = 100\n```\n\n'
+    (c, d), issues = cues(toml, "The [ruff settings](#tool.ruff) and [width](#line-length).")
+    assert (c["l0"], c["l1"], d["l0"], d["l1"]) == (4, 5, 5, 5) and not issues
+
+
+def test_a_slides_own_parts_come_before_reserved_cue_shapes(cues):
+    rd = '## Merge {#merge}\n\n```reladraw\nnode l1 "List one"\nnode step1 "First"  right of l1\nnode merge "Merged"  below l1\n```\n\n'
+    found, issues = cues(rd, "Take [the first list](#l1), [the first step](#step1) and [the result](#merge).")
+    assert [(c["kind"], c.get("id")) for c in found] == [("item", "l1"), ("item", "step1"), ("item", "merge")] and not issues
+    js = '## Scripts {#scripts}\n\n```json\n{\n  "name": "x",\n  "scripts": {"test": "vitest"}\n}\n```\n\n'
+    (c,), issues = cues(js, "The [scripts](#scripts) key.")
+    assert (c["kind"], c["l0"]) == ("lines", 3) and not issues
+
+
+def test_a_sequence_message_by_participant_aliases(cues):
+    seq = "## S {#s}\n\n```mermaid\nsequenceDiagram\n  participant C as Client\n  participant S as Server\n  C->>S: SYN\n  S->>C: SYN-ACK\n```\n\n"
+    (a, b), issues = cues(seq, "A [SYN](#Client->>Server) and [the reply](#Server->>C).")
+    assert (a["kind"], a["text"], b["text"]) == ("text", "SYN", "SYN-ACK") and not issues
+
+
+def test_flowchart_nodes_named_like_lines_or_steps_and_loose_matches_after_the_slide_id(cues):
+    flow = "## F {#f}\n\n```mermaid\nflowchart LR\n  l1[First] --> step2[Second]\n```\n\n"
+    found, issues = cues(flow, "From [one](#l1) to [two](#step2).")
+    assert [(c["kind"], c["id"]) for c in found] == [("node", "l1"), ("node", "step2")] and not issues
+    chart = "## Speed {#latency}\n\n```chart line\nx: 1, 2, 3\nP95 Latency: 3, 4, 5\n```\n\n"
+    (c,), _ = cues(chart, "The [chart](#latency) rises.")
+    assert c["kind"] == "visual"  # `latency` is the slide's id; the series is `p95-latency`
+    js = '## Name {#name}\n\n```json\n{"user": {"name": "x"}}\n```\n\n'
+    (c,), _ = cues(js, "The [file](#name).")
+    assert c["kind"] in ("visual", "text")

@@ -11,13 +11,15 @@ import re
 import shutil
 from pathlib import Path
 
-from . import icons, kinds, sources
+from . import expr, icons, kinds, sources
 from .checks import Checks, generated
 from .cues import CueResolver
 from .format import Block, Parser, inline_plain, parse_item, parse_narration, parse_table
 from .issues import Issue
-from .mermaid import parse_mermaid
+from .kinds.base import catalogue_format
+from .mermaid import asks_elk, diagram_type, parse_mermaid
 from .model import Say, Slide, Walkthrough
+from .trace import parse_trace
 
 # Comfortable sizes, measured on the player at each frame (scripts/measure_limits.py).
 # "drawing" is a viewBox the shape of the slide body, so a drawing made to it fills the slide.
@@ -84,6 +86,14 @@ class Builder(CueResolver, Checks):
     # -- appending ----------------------------------------------------------------------
 
     def add(self, markdown: str, check_last: bool = True) -> None:
+        # One budget for every expression in this call, so many small blocks cannot add up.
+        token = expr.start_call()
+        try:
+            self._add(markdown, check_last)
+        finally:
+            expr.end_call(token)
+
+    def _add(self, markdown: str, check_last: bool) -> None:
         for block in self.parser.feed(markdown):
             self._apply(block)
         if self.parser.pending.strip():
@@ -275,6 +285,8 @@ class Builder(CueResolver, Checks):
             return self._add_kind(k, b)
         if b.kind == "code":
             flags = b.attrs.get("flags", [])
+            if b.lang == "trace":
+                return self._add_trace(b)
             if b.lang == "mermaid":
                 return self._set(self._slide_for_visual("diagram"), "diagram", self._diagram(b))
             if b.lang in ("math", "latex", "tex"):
@@ -377,6 +389,65 @@ class Builder(CueResolver, Checks):
         if b.kind == "image":
             return self._image(b)
 
+    def _add_trace(self, b: Block) -> None:
+        """A ```trace joins the code on its slide: the panel of variables beside it."""
+        s = self._current()
+        fix = "Put the ```trace block right after the ```lang block it traces, under the same heading."
+        if s.kind != "code" or not s.visual:
+            what = f"shows a {s.kind}" if s.visual else "has no code"
+            self._issue("trace_error", f"Line {b.line}: a trace goes with the code it traces, and slide `{s.id}` {what}.", fix, line=b.line)
+            return
+        if s.visual.get("steps"):
+            self._issue(
+                "trace_error",
+                f"Line {b.line}: a trace goes with one piece of code, not `step` versions.",
+                "Trace the last version only.",
+                line=b.line,
+            )
+            return
+        if "trace" in s.visual:
+            self._issue(
+                "trace_error",
+                f"Line {b.line}: slide `{s.id}` already has a trace.",
+                "Give the second trace its own slide, with its code.",
+                line=b.line,
+            )
+            return
+        if "pair" in s.classes:
+            self._issue(
+                "trace_error",
+                f"Line {b.line}: the trace's panel takes the place of a `.pair` visual; slide `{s.id}` has `.pair`.",
+                "Drop `.pair` from the heading, or give the other visual its own slide.",
+                line=b.line,
+            )
+            return
+        if "side" in s.classes:
+            # The panel takes the side; the takeaways show under the title instead.
+            s.classes = [c for c in s.classes if c != "side"]
+            self._issue(
+                "trace_layout",
+                f"Line {b.line}: slide `{s.id}` has `.side`, whose place the trace's panel takes; its takeaways show under the title.",
+                "Drop `.side` from a traced slide.",
+                line=b.line,
+            )
+        moments, problems = parse_trace(b.text, s.visual["code"], s.visual.get("start", 1))
+        for i, p in enumerate(problems):
+            fmt = catalogue_format("trace")
+            self._issue("trace_error", f"Line {b.line}: {p}.", f"Format: {fmt}" if i == 0 and fmt else "", line=b.line)
+        if not moments:
+            return
+        width = max((len(ln.expandtabs(4)) for ln in s.visual["code"].split("\n")), default=0)
+        room = int(self.limits["width"] * 0.62)
+        if width > room:
+            self._issue(
+                "code_too_wide",
+                f"The traced code on slide `{s.id}` has lines of {width} characters; beside its panel it reads well up to {room}.",
+                "Show a shorter excerpt, or shorten the longest lines in inline code.",
+                slide=s.id,
+            )
+        s.visual["trace"] = moments
+        self._set(s, "code", s.visual)
+
     def _add_kind(self, k: kinds.Kind, b: Block) -> None:
         body = b.text
         lead: dict[str, str] = {}
@@ -417,9 +488,28 @@ class Builder(CueResolver, Checks):
             # Versions of one visual: each step block after the first joins the slide's list.
             version = {key: vis[key] for key in k.steps if key in vis}
             cur = self.w.slides[-1] if self.w.slides else None
-            if cur is not None and cur.kind == k.name and cur.visual.get("steps"):
+            if cur is not None and cur.kind == k.name and cur.visual.get("steps") and not cur.pair:
                 cur.visual["steps"].append(version)
+                for p in k.join_steps(cur.visual) if k.join_steps else []:
+                    self._issue(k.error_code, f"Line {b.line}: {p}.", line=b.line)
                 return self._set(cur, k.name, cur.visual)
+            if cur is not None and cur.pair.get("kind") == k.name and cur.pair["visual"].get("steps"):
+                if cur.visual.get("steps") and len(cur.pair["visual"]["steps"]) == 1:
+                    self._issue(
+                        k.error_code,
+                        f"Line {b.line}: both visuals of `.pair` slide `{cur.id}` have `step` versions, and `#step-N` moves only the first.",
+                        "Give one of them its own slide.",
+                        line=b.line,
+                    )
+                # The second visual of a `.pair` changing in steps: code beside a memory picture.
+                pv = cur.pair["visual"]
+                pv["steps"].append(version)
+                for p in k.join_steps(pv) if k.join_steps else []:
+                    self._issue(k.error_code, f"Line {b.line}: {p}.", line=b.line)
+                self.changed.add(cur.id)
+                for say in cur.says:
+                    self._resolve_cues(cur, say, reresolve=True)
+                return
             vis["steps"] = [version]
         self._set(self._slide_for_visual(k.name), k.name, vis)
 
@@ -567,10 +657,20 @@ class Builder(CueResolver, Checks):
 
     def _diagram(self, b: Block) -> dict:
         src = b.text.strip("\n")
-        first = next((ln.strip() for ln in src.split("\n") if ln.strip() and not ln.strip().startswith("%%")), "")
-        kind = first.split()[0].lower() if first else ""
+        kind = diagram_type(src)
         nodes, labels, order = parse_mermaid(src)
         vis = {"source": src, "type": kind, "nodes": nodes, "labels": labels, "order": order}
+        # ```mermaid elk, or Mermaid's own `layout: elk`: the player loads ELK and lays it out with it.
+        if "elk" in b.attrs.get("flags", []) or asks_elk(src):
+            if kind in ("flowchart", "graph") or kind.startswith("statediagram"):
+                vis["layout"] = "elk"
+            else:
+                self._issue(
+                    "diagram_option",
+                    f"Line {b.line}: `elk` lays out flowcharts and state diagrams; this {kind or 'diagram'} is drawn as usual.",
+                    "Drop `elk` from the block.",
+                    line=b.line,
+                )
         alt = self.w.slides[-1].attrs.get("alt") if self.w.slides else None
         if alt:
             vis["alt"] = alt
