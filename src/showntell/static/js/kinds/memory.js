@@ -23,6 +23,7 @@ export default {
     parts.visual = host;
     parts.memory = v;
     parts.drawn = { key: "" };
+    parts.reach = reach(v.steps?.length ? v.steps : [v]);
     body.append(host);
     draw(parts, v.steps?.[0] || v, null, 1);
   },
@@ -88,8 +89,8 @@ function draw(parts, v, was, p) {
   const host = parts.visual;
   const keep = new Map([...host.querySelectorAll("[data-id]")].map((g) => [g.dataset.id, g.classList]));
   const arrowsVeiled = new Set([...host.querySelectorAll("g.arrow.veiled, g.marker.veiled")].map((g) => g.dataset.key));
-  parts.box = v.box;
-  host.innerHTML = svgOf(v, was, p);
+  parts.box = parts.reach || v.box;
+  host.innerHTML = svgOf(v, was, p, parts.box);
   const svg = host.querySelector("svg");
   parts.svg = svg;
   parts.items.clear();
@@ -107,7 +108,7 @@ function draw(parts, v, was, p) {
   svg.querySelector("[data-id].active")?.parentElement.classList.add("has-active");
   const body = host.closest(".slide-body");
   if (body && parts.scale) {
-    const [, , w, h] = v.box;
+    const [, , w, h] = parts.box;
     svg.setAttribute("width", `${Math.round(w * parts.scale)}`);
     svg.setAttribute("height", `${Math.round(h * parts.scale)}`);
   }
@@ -128,8 +129,8 @@ function geometry(v) {
 const lerp = (a, b, p) => a + (b - a) * p;
 const mix = (a, b, p) => (a && b ? { x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), w: lerp(a.w, b.w, p), h: lerp(a.h, b.h, p) } : b || a);
 
-function svgOf(v, was, p) {
-  const [bx, by, bw, bh] = v.box;
+function svgOf(v, was, p, box) {
+  const [bx, by, bw, bh] = box;
   const t = (x, y, text, cls, anchor = "start") => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="${cls}" text-anchor="${anchor}">${esc(text)}</text>`;
   const changed = new Set(v.changed || []);
   const old = was ? geometry(was) : null;
@@ -199,70 +200,125 @@ function valueBox(x, g, changed, t, flush = false) {
   return `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}"${r} class="${cls}"/>${inside}`;
 }
 
-// Each pointer: from the middle of the box that holds it to its object's nearest side, around
-// any box in the way.
-function arrows(v, geo) {
+// Each pointer, from the dot in the box that holds it to its object, by the first of several
+// shapes that crosses no box: straight on into the target's side or top, under or over what is
+// in the way, or a loop round the right. Lanes keep detours apart.
+export function arrows(v, geo) {
   const out = [];
   const objs = new Map((v.objects || []).map((o) => [o.id, o]));
-  const tb = v.dir === "TB";
-  const boxes = (v.objects || []).map((o) => ({ id: o.id, ...geo.get(o.id), top: o.type ? 26 : 0, bottom: o.kind === "arr" && !o.column ? 24 : 0 }));
-  // Boxes other than the two ends that a straight run from (x0, y0) to (x1, y1) would cross.
-  const blocking = (x0, y0, x1, y1, skip) => boxes.filter((b) => {
-    if (skip.includes(b.id) || !b.w) return false;
-    for (let i = 1; i < 20; i++) {
-      const x = x0 + ((x1 - x0) * i) / 20, y = y0 + ((y1 - y0) * i) / 20;
-      if (x > b.x - 6 && x < b.x + b.w + 6 && y > b.y - b.top - 6 && y < b.y + b.h + b.bottom + 6) return true;
-    }
-    return false;
-  });
+  const boxes = [
+    ...(v.objects || []).map((o) => ({ id: o.id, ...geo.get(o.id), top: o.type ? 26 : 0, bottom: o.kind === "arr" && !o.column ? 24 : 0 })),
+    ...(v.vars || []).map((x) => ({ id: x.id, ...geo.get(x.id), top: 0, bottom: 0 })),
+  ].filter((b) => b.w);
+  const outer = (b) => ({ l: b.x, t: b.y - b.top, r: b.x + b.w, b: b.y + b.h + b.bottom });
   let lane = 0;
   const add = (fromId, holder, partOf, target) => {
     const s = geo.get(fromId), d = geo.get(target), o = objs.get(target);
     if (!s || !d || !o) return;
-    const sx = s.x + s.w / 2, sy = s.y + s.h / 2;
-    let path;
-    if (!tb && d.x > sx + 20) {
-      const tx = d.x, ty = Math.min(d.y + d.h - 10, Math.max(d.y + 10, sy));
-      const dx = Math.max(40, (tx - sx) / 2);
-      const way = blocking(sx, sy, tx, ty, [holder, target]);
-      if (way.length) {
-        // Under the boxes in the way, then up into the target's left side.
-        const low = Math.max(...way.map((b) => b.y + b.h + b.bottom)) + 26 + 16 * lane++; // each detour its own lane
-        const x1 = Math.min(...way.map((b) => b.x)) - 20, x2 = Math.max(...way.map((b) => b.x + b.w)) + 20;
-        path = `M${sx},${sy} C${sx + 40},${sy} ${x1 - 40},${low} ${x1},${low} L${x2},${low} C${x2 + 30},${low} ${tx - 30},${ty} ${tx},${ty}`;
-      } else path = `M${sx},${sy} C${sx + dx},${sy} ${tx - dx},${ty} ${tx},${ty}`;
-    } else if (tb && d.y > sy + 20) {
-      const tx = Math.min(d.x + d.w - 10, Math.max(d.x + 10, sx)), ty = d.y - (o.type ? 26 : 0);
-      const dy = Math.max(30, (ty - sy) / 2);
-      const way = blocking(sx, sy, tx, ty, [holder, target]);
-      if (way.length) {
-        const side = Math.max(...way.map((b) => b.x + b.w)) + 26 + 16 * lane++;
-        const y1 = Math.min(...way.map((b) => b.y - b.top)) - 20, y2 = Math.max(...way.map((b) => b.y + b.h + b.bottom)) + 20;
-        path = `M${sx},${sy} C${sx},${sy + 40} ${side},${y1 - 40} ${side},${y1} L${side},${y2} C${side},${y2 + 30} ${tx},${ty - 30} ${tx},${ty}`;
-      } else path = `M${sx},${sy} C${sx},${sy + dy} ${tx},${ty - dy} ${tx},${ty}`;
-    } else {
-      // Back or sideways: out of the holder's right edge and around, never through a box.
-      const h = (holder && geo.get(holder)) || s;
-      const x1 = h.x + h.w;
-      const besides = d.x < h.x + h.w && h.x < d.x + d.w; // stacked in one column
-      if (besides || tb) {
-        // A loop on the right, into the target's right side.
-        const ty = d.y + d.h / 2;
-        const lx = Math.max(x1, d.x + d.w) + 36 + 14 * lane++;
-        path = `M${sx},${sy} L${x1},${sy} C${lx},${sy} ${lx},${ty} ${d.x + d.w},${ty}`;
-      } else {
-        // Over the top of everything between, down onto the target's top.
-        const tx = d.x + d.w / 2, tTop = d.y - (o.type ? 26 : 2);
-        const span = boxes.filter((b) => b.w && b.x < x1 + 20 && b.x + b.w > tx - 20);
-        const ytop = Math.min(sy, tTop, ...span.map((b) => b.y - b.top)) - 28 - 14 * lane++;
-        path = `M${sx},${sy} L${x1},${sy} C${x1 + 44},${sy} ${x1 + 44},${ytop} ${x1},${ytop} L${tx + 30},${ytop} C${tx},${ytop} ${tx},${ytop} ${tx},${tTop}`;
+    const h = (holder && geo.get(holder)) || s;
+    const sx = s.x + s.w / 2, sy = s.y + s.h / 2, x1 = h.x + h.w;
+    const dt = d.y - (o.type ? 26 : 0), db = d.y + d.h + (o.kind === "arr" && !o.column ? 24 : 0);
+    const others = boxes.filter((b) => b.id !== target && b.id !== (holder || fromId)).map(outer);
+    // The holder is in the way too, all but the cell the arrow starts in.
+    const own = holder ? outer(boxes.find((b) => b.id === holder) || { ...h, top: 0, bottom: 0 }) : null;
+    const cell = { l: s.x, t: s.y, r: s.x + s.w, b: s.y + s.h };
+    const near = (b, l, r, t, btm) => b.r > l && b.l < r && b.b > t && b.t < btm;
+    const gap = 26 + 14 * lane;
+    const uniq = (xs) => [...new Set(xs.map((n) => Math.round(n)))];
+    const txs = uniq([Math.min(d.x + d.w - 12, Math.max(d.x + 12, sx)), d.x + d.w / 2, d.x + 14, d.x + d.w - 14]);
+    const tys = uniq([Math.min(d.y + d.h - 10, Math.max(d.y + 10, sy)), d.y + d.h / 2]);
+    const hb = Math.max(h.y + h.h, own ? own.b : 0); // the holder's bottom
+    const cands = [];
+    if (d.x > x1 + 10) {
+      for (const ty of tys) { // straight on, into the left side
+        const dx = Math.max(40, (d.x - sx) / 2);
+        cands.push({ segs: [["M", sx, sy], ["C", sx + dx, sy, d.x - dx, ty, d.x, ty]] });
       }
     }
-    out.push({ key: `${fromId}->${target}`, from: partOf, to: target, path });
+    for (const tx of txs) {
+      if (dt > h.y + h.h + 10) { // straight down, onto the top
+        const dy = Math.max(30, (dt - sy) / 2);
+        cands.push({ segs: [["M", sx, sy], ["C", sx, sy + dy, tx, dt - dy, tx, dt]] });
+      }
+      if (dt > sy + 20) { // out of the holder's right edge, then down onto the top
+        cands.push({ segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 50, sy, tx, dt - 50, tx, dt]] });
+      }
+      if (dt > hb + 30) { // out to the right, down past the holder, across, down onto the top
+        const yb = hb + 16 + 14 * lane;
+        cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 30, sy, x1 + 30, yb, x1, yb], ["L", tx, yb], ["L", tx, dt]] });
+      }
+    }
+    if (d.x > x1 + 10) {
+      for (const ty of tys) { // under what is in the way, up into the left side
+        const lo = Math.max(sy, ty, ...others.filter((b) => near(b, sx, d.x, -1e9, 1e9)).map((b) => b.b)) + gap;
+        cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 30, sy, x1 + 30, lo, x1 + 60, lo], ["L", d.x - 60, lo], ["C", d.x - 30, lo, d.x - 30, ty, d.x, ty]] });
+      }
+    }
+    for (const tx of txs) { // over the top, down onto the target's top
+      const l = Math.min(x1, tx) - 20, r = Math.max(x1, tx) + 20;
+      const hi = Math.min(sy, dt, ...others.filter((b) => near(b, l, r, -1e9, 1e9)).map((b) => b.t)) - gap;
+      cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 40, sy, x1 + 40, hi, x1, hi], ["L", tx, hi], ["L", tx, dt]] });
+    }
+    for (const ry of tys) { // a loop round the right, into the target's right side
+      const t0 = Math.min(sy, ry) - 10, t1 = Math.max(sy, ry) + 10;
+      const lx = Math.max(x1, d.x + d.w, ...others.filter((b) => near(b, Math.min(x1, d.x), 1e9, t0, t1)).map((b) => b.r)) + gap;
+      cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", lx, sy, lx, ry, d.x + d.w, ry]] });
+    }
+    for (const tx of txs) { // under everything, up into the target's bottom
+      const l = Math.min(x1, tx) - 20, r = Math.max(x1, tx) + 20;
+      const lo = Math.max(sy, db, ...others.filter((b) => near(b, l, r, -1e9, 1e9)).map((b) => b.b)) + gap;
+      cands.push({ lane: true, segs: [["M", sx, sy], ["L", x1, sy], ["C", x1 + 40, sy, x1 + 40, lo, x1, lo], ["L", tx, lo], ["L", tx, db]] });
+    }
+    const target_ = outer({ ...d, top: o.type ? 26 : 0, bottom: o.kind === "arr" && !o.column ? 24 : 0 });
+    let best = null;
+    for (const c of cands) {
+      const pts = sample(c.segs);
+      const hit = others.filter((b) => pts.some((q) => inside(q, b))).length + (pts.slice(0, -4).some((q) => inside(q, target_)) ? 1 : 0)
+        + (own && pts.some((q) => inside(q, own) && !inside(q, cell, -3)) ? 1 : 0);
+      if (!best || hit < best.hit) best = { ...c, hit, pts };
+      if (!hit) break;
+    }
+    if (best.lane) lane++;
+    out.push({ key: `${fromId}->${target}`, from: partOf, to: target, path: svgPath(best.segs), pts: best.pts });
   };
   for (const x of v.vars || []) if (x.ptr) add(x.id, null, x.frame || x.id, x.ptr);
-  for (const o of v.objects || []) for (const s of o.slots) if (s.ptr) add(s.id, o.id, o.id, s.ptr);
+  for (const o of v.objects || []) for (const sl of o.slots) if (sl.ptr) add(sl.id, o.id, o.id, sl.ptr);
   return out;
+}
+
+const inside = (q, b, m = 3) => q[0] > b.l + m && q[0] < b.r - m && q[1] > b.t + m && q[1] < b.b - m;
+
+// Points along a path of M, L and C segments, to test it against boxes and measure its reach.
+function sample(segs) {
+  const pts = [];
+  let cx = 0, cy = 0;
+  for (const [op, ...a] of segs) {
+    if (op === "M") { cx = a[0]; cy = a[1]; pts.push([cx, cy]); continue; }
+    const n = op === "L" ? 8 : 20;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      pts.push(op === "L" ? [cx + (a[0] - cx) * t, cy + (a[1] - cy) * t]
+        : [u * u * u * cx + 3 * u * u * t * a[0] + 3 * u * t * t * a[2] + t * t * t * a[4], u * u * u * cy + 3 * u * u * t * a[1] + 3 * u * t * t * a[3] + t * t * t * a[5]]);
+    }
+    [cx, cy] = op === "L" ? a : [a[4], a[5]];
+  }
+  return pts;
+}
+
+const svgPath = (segs) => segs.map(([op, ...a]) => `${op}${a.map((n) => n.toFixed(1)).join(",")}`).join(" ");
+
+// The drawing's box widened to hold every version's arrows, so detours are never cut off.
+export function reach(versions) {
+  let [x, y, w, h] = versions[0].box;
+  let r = x + w, b = y + h;
+  for (const v of versions) {
+    [x, y] = [Math.min(x, v.box[0]), Math.min(y, v.box[1])];
+    [r, b] = [Math.max(r, v.box[0] + v.box[2]), Math.max(b, v.box[1] + v.box[3])];
+    for (const a of arrows(v, geometry(v))) {
+      for (const [px, py] of a.pts) { x = Math.min(x, px - 16); y = Math.min(y, py - 16); r = Math.max(r, px + 16); b = Math.max(b, py + 16); }
+    }
+  }
+  return [x, y, r - x, b - y];
 }
 
 function arrowSvg(a, marker, opacity) {

@@ -157,3 +157,61 @@ def test_a_direct_seek_lands_on_the_picture_playing_through_gives(daemon, browse
     st = page.evaluate(look)
     p, s = st["pointer"], st["stage"]
     assert p and p["top"] >= s["top"] - 2 and p["bottom"] <= s["bottom"] + 2, st  # the box stays on the plot
+
+
+ROUTES = {
+    "tree": (
+        "memory TB",
+        "root -> r\nr: {v: 5, left -> a, right -> b, parent -> null}\na: {v: 3, left -> c, right -> d, parent -> r}\nb: {v: 8, left -> null, right -> null, parent -> r}\nc: {v: 1, left -> null, right -> null, parent -> a}\nd: {v: 4, left -> null, right -> null, parent -> a}",
+    ),
+    "under": ("memory", "top -> r\nr: {left -> a, right -> b}\na: {next -> c}\nb: {v: 1}\nc: {back -> b}"),
+    "buckets": (
+        "memory",
+        'owner -> buckets\nbuckets: [-> a, -> null, -> b, -> c]\na: Entry {k: "x", next -> null}\nb: Entry {k: "y", next -> null}\nc: Entry {k: "z", next -> a}',
+    ),
+    "reversed": (
+        "memory",
+        "head -> n6\nn1: Node {v: 1, next -> null}\nn2: Node {v: 2, next -> n1}\nn3: Node {v: 3, next -> n2}\nn4: Node {v: 4, next -> n3}\nn5: Node {v: 5, next -> n4}\nn6: Node {v: 6, next -> n5}",
+    ),
+    "friends": ("memory", 'alice -> a\nbob -> b\na: Person {name: "Alice", age: 30}\nb: Person {name: "Bob", friend -> a}'),
+}
+
+
+def test_arrows_cross_no_box_and_stay_in_the_picture(daemon, browser):  # noqa: F811
+    md = "# Routes\n\nArrows.\n\n" + "".join(
+        f"## {k} {{#{k}}}\n\n```{fence}\n{body}\n```\n\nThe [picture](#) has arrows.\n\n" for k, (fence, body) in ROUTES.items()
+    )
+    call = _rpc(daemon)
+    r = call("start", title="routes", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    a = call("add", handle=r["handle"], markdown=md)
+    assert not [i for i in a["issues"] if i["severity"] == "error"], a["issues"]
+    call("playable", handle=r["handle"], timeout=10)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1280, "height": 720})
+    page.goto(url)
+    page.wait_for_function("window.__showntell !== undefined")
+    for k in ROUTES:
+        page.goto(f"{url}?at={_at(page, k, 0, 0.2):.2f}")
+        page.wait_for_selector(".memory svg g.arrow", state="attached")
+        page.wait_for_timeout(300)
+        bad = page.evaluate("""() => {
+          const svg = document.querySelector('.memory svg'), out = [];
+          const pic = svg.getBoundingClientRect();
+          const boxes = [...svg.querySelectorAll('g.obj')].map((g) => ({ id: g.dataset.id, r: g.querySelector('.obox').getBoundingClientRect() }))
+            .concat([...svg.querySelectorAll('g.var')].map((g) => ({ id: g.dataset.id, r: g.querySelector('.vbox').getBoundingClientRect() })));
+          for (const g of svg.querySelectorAll('g.arrow')) {
+            const p = g.querySelector('path'), len = p.getTotalLength(), m = p.getScreenCTM();
+            const [from] = g.dataset.key.split('->');
+            const ends = new Set([g.dataset.to, from]);
+            const own = svg.querySelector(`g.slot[data-id="${from}"] .vbox`)?.getBoundingClientRect();
+            const holder = from.includes('.') ? from.split('.')[0] : null;
+            for (let s = 0; s <= len; s += 3) {
+              const q = new DOMPoint(p.getPointAtLength(s).x, p.getPointAtLength(s).y).matrixTransform(m);
+              if (q.x < pic.left - 1 || q.x > pic.right + 1 || q.y < pic.top - 1 || q.y > pic.bottom + 1) { out.push(`${g.dataset.key} leaves the picture`); break; }
+              const inCell = own && q.x >= own.left - 1 && q.x <= own.right + 1 && q.y >= own.top - 1 && q.y <= own.bottom + 1;
+              const hit = boxes.find((b) => !ends.has(b.id) && !(b.id === holder && inCell) && q.x > b.r.left + 3 && q.x < b.r.right - 3 && q.y > b.r.top + 3 && q.y < b.r.bottom - 3);
+              if (hit) { out.push(`${g.dataset.key} crosses ${hit.id}`); break; }
+            }
+          }
+          return out; }""")
+        assert not bad, (k, bad)

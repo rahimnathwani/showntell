@@ -35,7 +35,10 @@ def data_lang(lang: str | None) -> str | None:
 
 def key_lines(code: str, lang: str) -> dict[Path, Span]:
     kind = data_lang(lang)
-    return _json(code) if kind == "json" else _toml(code) if kind == "toml" else _yaml(code)
+    try:
+        return _json(code) if kind == "json" else _toml(code) if kind == "toml" else _yaml(code)
+    except RecursionError:  # the readers bound their depth; this is the last guard
+        return {}
 
 
 def parse_path(target: str) -> Path | None:
@@ -173,37 +176,46 @@ def _json(code: str, line0: int = 0) -> dict[Path, Span]:
         if i >= len(toks):
             return toks[-1]
         tok = toks[i]
-        if tok.text in ("{", "[") and len(path) >= MAX_NEST:
+        if tok.text in ("{", "[") and nest[0] >= MAX_NEST:
             return skip()
         if tok.text in ("{", "["):
-            close = "}" if tok.text == "{" else "]"
-            i += 1
-            n = 0
-            while i < len(toks) and toks[i].text != close:
-                t = toks[i]
-                if t.text in (",", "}", "]", "...", "…"):
-                    i += 1
-                    continue
-                if close == "}":
-                    if t.text in ("{", "["):  # out of place: read it as a value and go on
-                        value(path)
-                        continue
-                    k = key_text(t)
-                    i += 1
-                    if i < len(toks) and toks[i].text == ":":
-                        i += 1
-                        put((*path, k), t, value((*path, k)))
-                    else:
-                        put((*path, k), t, t)
-                else:
-                    put((*path, str(n)), t, value((*path, str(n))))
-                    n += 1
-            end = toks[i] if i < len(toks) else toks[-1]
-            i += 1
-            return end
+            nest[0] += 1
+            try:
+                return container(path, tok)
+            finally:
+                nest[0] -= 1
         i += 1
         return tok
 
+    def container(path: Path, tok: _Tok) -> _Tok:
+        nonlocal i
+        close = "}" if tok.text == "{" else "]"
+        i += 1
+        n = 0
+        while i < len(toks) and toks[i].text != close:
+            t = toks[i]
+            if t.text in (",", "}", "]", "...", "…"):
+                i += 1
+                continue
+            if close == "}":
+                if t.text in ("{", "["):  # out of place: read it as a value and go on
+                    value(path)
+                    continue
+                k = key_text(t)
+                i += 1
+                if i < len(toks) and toks[i].text == ":":
+                    i += 1
+                    put((*path, k), t, value((*path, k)))
+                else:
+                    put((*path, k), t, t)
+            else:
+                put((*path, str(n)), t, value((*path, str(n))))
+                n += 1
+        end = toks[i] if i < len(toks) else toks[-1]
+        i += 1
+        return end
+
+    nest = [0]  # containers open now, however they are reached
     while i < len(toks):
         before = i
         value(())

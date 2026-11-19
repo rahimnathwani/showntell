@@ -1171,3 +1171,27 @@ async def test_speech_jobs_follow_position_in_the_walkthrough(tmp_path, idle_nar
         queued.append((priority, job.spoken.text))
     assert [p for p, _ in queued][:2] == [0, 0]
     assert any("new one" in t for _, t in queued[:2])
+
+
+async def test_a_call_that_fails_part_way_leaves_the_walkthrough_as_it_was(service, store, monkeypatch):
+    r = await started(service)
+    await service.add(r["handle"], OPENING)
+    s = store.by_handle(r["handle"])
+    before = (len(s.w.slides), s.source)
+    from showntell import build
+
+    real = build.Builder._apply
+
+    def boom(self, b):
+        if b.kind == "code":
+            raise RuntimeError("broke part way")
+        return real(self, b)
+
+    monkeypatch.setattr(build.Builder, "_apply", boom)
+    with pytest.raises(RuntimeError):
+        await service.add(r["handle"], BODY)
+    s = store.by_handle(r["handle"])
+    assert (len(s.w.slides), s.source) == before
+    monkeypatch.setattr(build.Builder, "_apply", real)
+    out = await service.add(r["handle"], BODY)
+    assert out["slides"] == 1 and not [i for i in out["issues"] if i["severity"] == "error"]

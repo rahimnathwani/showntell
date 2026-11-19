@@ -9,6 +9,7 @@ someone measured belong in ```chart; this kind is for formulas.
 
 from __future__ import annotations
 
+import contextvars
 import math
 import re
 
@@ -29,15 +30,19 @@ SHADE = re.compile(rf"^shade\s+({NAME})\s+from\s+(.+?)\s+to\s+(.+)$")
 VLINE = re.compile(r"^vline\s+(?:x\s*=\s*)?(.+)$")
 RANGE = re.compile(r"^\s*(\S+?)\s*\.\.\s*(\S+?)\s*$")
 RESERVED = {"x", "visual", "slide"}
+_MEMO: contextvars.ContextVar[dict | None] = contextvars.ContextVar("plot_memo", default=None)
 FORMAT_HINT = "the range is `x=-3..3` in the info string, no spaces: ```plot x=-3..3 y=0..10"
 
 
 def _const(src: str, funcs: dict, consts: dict, what: str, problems: list[str]) -> float | None:
-    """A number written as an expression (`-pi`, `2^10`, `f(1)`, `k/2`)."""
+    """A number written as an expression (`-pi`, `2^10`, `f(1)`, `k/2`), on the call's budget."""
     try:
-        v = expr.evaluate(expr.parse(src, set(funcs), params=tuple(consts)), dict(consts), funcs)
+        v = expr.evaluate(expr.parse(src, set(funcs), params=tuple(consts)), dict(consts), funcs, expr.call_budget(), _MEMO.get())
     except expr.ExprError as e:
         problems.append(f"{what} `{src}`: {e}")
+        return None
+    except expr.TooCostly:
+        problems.append(f"{what} `{src}` takes too long to work out; write it more directly")
         return None
     if not math.isfinite(v):
         problems.append(f"{what} `{src}` has no value")
@@ -95,6 +100,14 @@ def _id(name: str) -> str:
 
 
 def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
+    token = _MEMO.set({})  # calls remembered by argument across this block's lines
+    try:
+        return _parse_plot(body, attrs)
+    finally:
+        _MEMO.reset(token)
+
+
+def _parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
     problems: list[str] = []
     funcs: dict[str, tuple[str, expr.Node]] = {}
     consts: dict[str, float] = {}
@@ -188,7 +201,7 @@ def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
     if xr is None and not attrs.get("x"):
         problems.append(f"it has no x range: {FORMAT_HINT}")
     xr = xr or [-5.0, 5.0]
-    budget, memo = expr.Budget(), {}
+    budget, memo = expr.call_budget(), _MEMO.get()
     try:
         for it in items:
             if it["kind"] == "fn":
@@ -277,8 +290,10 @@ def fit_y(items: list[dict]) -> list[float]:
     lo, hi = min([lo, *pts]), max([hi, *pts])
     if hi - lo < 1e-9:
         lo, hi = lo - 1, hi + 1
+    if hi - lo <= 1e-12 * max(1.0, abs(lo), abs(hi)):
+        lo, hi = lo - max(1.0, abs(lo)), hi + max(1.0, abs(hi))
     pad = 0.08 * (hi - lo)
-    return [round(lo - pad, 6), round(hi + pad, 6)]
+    return [float(f"{lo - pad:.7g}"), float(f"{hi + pad:.7g}")]
 
 
 def join_steps(vis: dict) -> list[str]:

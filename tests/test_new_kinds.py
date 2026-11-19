@@ -359,3 +359,31 @@ def test_trace_quoted_text_matches_whole_values():
 def test_cell_pointers_go_only_into_a_row_of_cells():
     _, problems = parse_memory("cur -> a.val\na: {key: 7, val: 1}", {"flags": []})
     assert any("point at the object instead" in p for p in problems)
+
+
+def test_steps_on_both_sides_of_a_pair_are_reported(build):
+    md = (
+        "## P {#p .pair}\n\n```python step\na = 1\n```\n```python step\na = 2\n```\n\n"
+        "```memory step\na = 1\n```\n```memory step\na = 2\n```\n\nIt [changes](#step-2).\n"
+    )
+    _, b = build(f"# T\n\nOpening.\n\n{md}")
+    assert any("both visuals" in i for i in b.issues)
+
+
+def test_elk_asked_for_by_the_older_renderer_setting():
+    from showntell.mermaid import asks_elk
+
+    assert asks_elk('%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%\nflowchart LR\n  a --> b')
+
+
+@pytest.mark.parametrize(
+    ("body", "says"),
+    [("a: [->, 1]", "points at nothing"), ("frame f\n  o: {v: 1}", "inside frame"), ("visual = 2", "reserved")],
+)
+def test_more_memory_slips_are_reported(body, says):
+    assert any(says in p for p in parse_memory(body, {"flags": []})[1])
+
+
+def test_a_tiny_fitted_range_keeps_its_height():
+    v, _ = parse_plot("f(x) = 0.0000001 x", {"x": "-3..3"})
+    assert v["y"][1] - v["y"][0] > 5e-7

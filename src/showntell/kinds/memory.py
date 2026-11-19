@@ -218,7 +218,10 @@ def _object(oid: str, caption: str, bracket: str, inside: str, problems: list[st
         kind = "obj"
     else:
         for i, p in enumerate(pieces):
-            slots.append({"id": f"{oid}.{i}", "label": str(i), **_value(p)})
+            val = _value(p)
+            if val.pop("empty_ptr", None):
+                problems.append(f"`{oid}.{i}` points at nothing; write `-> null` or name the object")
+            slots.append({"id": f"{oid}.{i}", "label": str(i), **val})
         kind = "arr"
         if bracket == "(" and not caption:
             caption = "tuple"
@@ -468,7 +471,12 @@ def _place_tree(v: dict, x0: float, placed: dict[str, tuple[float, float]]) -> N
 def _listlike(v: dict) -> bool:
     """Two or more objects, each with at most one pointer field, none an array: a linked list."""
     objs = v["objects"]
-    return len(objs) > 1 and all(o["kind"] == "obj" and sum(1 for s in o["slots"] if s.get("ptr") or s.get("null")) <= 1 for o in objs)
+    links = sum(1 for o in objs for s in o["slots"] if s.get("ptr"))
+    return (
+        len(objs) > 1
+        and links > 0
+        and all(o["kind"] == "obj" and sum(1 for s in o["slots"] if s.get("ptr") or s.get("null")) <= 1 for o in objs)
+    )
 
 
 def _marks(v: dict, oid: str) -> int:

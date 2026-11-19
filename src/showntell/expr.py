@@ -9,6 +9,7 @@ of a negative, an overflow) is NaN, which the plot leaves as a gap.
 
 from __future__ import annotations
 
+import contextvars
 import math
 import re
 from collections.abc import Callable
@@ -228,10 +229,27 @@ class TooCostly(Exception):
 
 
 class Budget:
-    """Steps left for one block's evaluation; functions calling each other can multiply the work."""
+    """Steps left for evaluation; functions calling each other can multiply the work."""
 
     def __init__(self, steps: int = 1_500_000) -> None:
         self.left = steps
+
+
+_CALL: contextvars.ContextVar[Budget | None] = contextvars.ContextVar("expr_budget", default=None)
+
+
+def call_budget() -> Budget:
+    """The budget of the builder call under way (one for every block in it), or a new one."""
+    return _CALL.get() or Budget()
+
+
+def start_call(steps: int = 3_000_000) -> contextvars.Token:
+    """Give a builder call one budget for all its expressions; `end_call` with the token after."""
+    return _CALL.set(Budget(steps))
+
+
+def end_call(token: contextvars.Token) -> None:
+    _CALL.reset(token)
 
 
 def evaluate(

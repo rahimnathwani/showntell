@@ -11,7 +11,7 @@ import re
 import shutil
 from pathlib import Path
 
-from . import icons, kinds, sources
+from . import expr, icons, kinds, sources
 from .checks import Checks, generated
 from .cues import CueResolver
 from .format import Block, Parser, inline_plain, parse_item, parse_narration, parse_table
@@ -86,6 +86,14 @@ class Builder(CueResolver, Checks):
     # -- appending ----------------------------------------------------------------------
 
     def add(self, markdown: str, check_last: bool = True) -> None:
+        # One budget for every expression in this call, so many small blocks cannot add up.
+        token = expr.start_call()
+        try:
+            self._add(markdown, check_last)
+        finally:
+            expr.end_call(token)
+
+    def _add(self, markdown: str, check_last: bool) -> None:
         for block in self.parser.feed(markdown):
             self._apply(block)
         if self.parser.pending.strip():
