@@ -31,18 +31,45 @@ def sequence_messages(src: str) -> list[tuple[str, str, str]]:
     return out
 
 
+FRONT_RE = re.compile(r"^\s*---[ \t]*\n(.*?\n)---[ \t]*(?:\n|$)", re.S)
+INIT_RE = re.compile(r"^\s*%%\{.*?\}%%", re.S | re.M)
+
+
+def split_front(src: str) -> tuple[str, str]:
+    """(frontmatter, diagram) of a block that opens with a `---` config block; ("", src) if not."""
+    m = FRONT_RE.match(src)
+    return (m.group(1), src[m.end() :]) if m else ("", src)
+
+
+def diagram_type(src: str) -> str:
+    """The diagram's type keyword, lowercased (`flowchart-elk` is a flowchart)."""
+    _, body = split_front(src)
+    first = next((ln.strip() for ln in body.split("\n") if ln.strip() and not ln.strip().startswith("%%")), "")
+    kind = first.split()[0].lower() if first else ""
+    return "flowchart" if kind == "flowchart-elk" else kind
+
+
+def asks_elk(src: str) -> bool:
+    """Whether the block's own config (frontmatter, an init directive, `flowchart-elk`) sets ELK."""
+    front, body = split_front(src)
+    config = front + "\n".join(m.group(0) for m in INIT_RE.finditer(body))
+    first = next((ln.strip() for ln in body.split("\n") if ln.strip() and not ln.strip().startswith("%%")), "")
+    return bool(re.search(r"""\blayout["']?\s*:\s*["']?elk""", config)) or first.lower().startswith("flowchart-elk")
+
+
 def parse_mermaid(src: str) -> tuple[dict, list, list]:
     """Node ids with labels (in source order), plus edge and message labels. Best effort."""
     nodes: dict[str, str] = {}
     order: list[str] = []
     labels: list[str] = []
     first = ""
-    for raw in src.split("\n"):
+    for raw in split_front(src)[1].split("\n"):
         line = raw.split("%%", 1)[0].strip()
         if not line:
             continue
         if not first:
             first = line.split()[0].lower()
+            first = "flowchart" if first == "flowchart-elk" else first
             continue
         if first in ("flowchart", "graph"):
             if line.startswith(("subgraph", "end", "classDef", "class ", "style ", "linkStyle", "click ", "direction")):

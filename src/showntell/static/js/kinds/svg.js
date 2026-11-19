@@ -78,8 +78,11 @@ export default {
     const last = fired[fired.length - 1];
     const n = last?.n || 1, from = fired.length > 1 ? fired[fired.length - 2].n : 1;
     const p = !last || reducedMotion() ? 1 : Math.max(0, Math.min(1, (t - last._at) / MORPH_S));
+    const key = `${n}:${p.toFixed(2)}`;
     if (parts.shown !== n || parts.morph?.cross || (parts.morph?.done && p < 1)) startMorph(parts, v.steps[from - 1].svg, v.steps[n - 1], n);
     applyMorph(parts.morph, ease(p));
+    parts.moving = key !== parts.movedKey; // the pointer follows what moved
+    parts.movedKey = key;
     return `${n}:${p.toFixed(2)}`;
   },
 

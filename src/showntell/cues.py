@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import re
 
-from . import kinds
+from . import kinds, paths
 from .format import Cue, inline_plain
 from .mermaid import has_edge, sequence_messages
 from .model import Say, Slide
+from .trace import find_moment
 
 # Words too common to take for an identifier when inferring cues from narration.
 STOPWORDS = set(
@@ -28,6 +29,7 @@ class CueResolver:
     """Builder methods that resolve a paragraph's cues; expects `_issue` from the builder."""
 
     _step = 1  # the code step shown when the cue being resolved fires
+    _moment = 0  # the trace moment shown when the cue being resolved fires
 
     def _resolve_cues(self, s: Slide, say: Say, reresolve: bool = False) -> None:
         raw: list[Cue] = getattr(say, "_cues", None) or [
@@ -38,13 +40,15 @@ class CueResolver:
         say._cues = raw
         out = []
         # Code that evolves: line cues refer to the step shown when they fire.
-        self._step = 1
+        self._step, self._moment = 1, 0
         for x in s.says:
             if x is say:
                 break
             for c in x.cues:
                 if c.get("kind") == "step":
                     self._step = c["n"]
+                elif c.get("kind") == "trace":
+                    self._moment = c["n"]
         for c in raw:
             r = self._resolve_pair(s, c, quiet=not s.visual and not reresolve)
             if r:
@@ -52,6 +56,8 @@ class CueResolver:
                     r["style"] = c.style
                 if r.get("kind") == "step":
                     self._step = r["n"]
+                elif r.get("kind") == "trace":
+                    self._moment = r["n"]
                 elif s.visual.get("steps") and r.get("kind") == "lines":
                     r["step"] = self._step
                 out.append(r)
@@ -66,7 +72,7 @@ class CueResolver:
     def _resolve_pair(self, s: Slide, c: Cue, quiet: bool = False) -> dict | None:
         """On a `.pair` slide a cue points into the first visual, or else into the second, whose
         cues carry `pane: 1`; problems are reported only when neither has the target."""
-        if not s.pair or c.target.strip() in ("", s.id, "visual", "slide"):
+        if not s.pair or c.target.strip() in ("", "visual", "slide"):
             return self._resolve(s, c, quiet=quiet)
         mark = len(self.issues)
         r = self._resolve(s, c, quiet=quiet)
@@ -95,12 +101,36 @@ class CueResolver:
             if not quiet:
                 self._issue("cue_no_visual", f"Slide `{s.id}` has no visual for the cue [{c.label}](#{t}).", slide=s.id)
             return {**base, "kind": "visual"}
+        # The slide's own parts and keys come first, so a node `l1`, an object `step1` or a key named
+        # like the slide's id is reached rather than read as a line, a step or the whole visual.
+        own = self._own_part(s, c, t, base) if t not in ("", "visual", "slide") else None
+        if own:
+            return own
         if t in ("", s.id, "visual", "slide"):
             if c.text:
                 return {**base, "kind": "text"}
             return {**base, "kind": "visual"}
         steps = s.visual.get("steps") if s.kind == "code" or (kinds.get(s.kind) and kinds.get(s.kind).steps) else None
+        trace = s.visual.get("trace") if s.kind == "code" else None
+        tm = re.fullmatch(r"trace(?:-?(\d+))?", t, re.I)
+        if tm and trace:
+            return self._resolve_moment(s, c, t, tm.group(1), trace, base)
         sm = re.fullmatch(r"step-?(\d+)", t, re.I)
+        if sm and trace:
+            self._issue(
+                "cue_no_target",
+                f"[{c.label}](#{t}): slide `{s.id}` has a trace; its moments are `#trace-1` to `#trace-{len(trace)}`.",
+                slide=s.id,
+            )
+            return None
+        if tm:
+            self._issue(
+                "cue_no_target",
+                f"[{c.label}](#{t}): slide `{s.id}` has no trace.",
+                "Put a ```trace block after the code: one line per moment, `L3  x = 3`.",
+                slide=s.id,
+            )
+            return None
         if sm:
             n = int(sm.group(1))
             if steps and 1 <= n <= len(steps):
@@ -235,6 +265,8 @@ class CueResolver:
         if m:
             self._issue("cue_wrong_kind", f"[{c.label}](#{t}) points at lines, but slide `{s.id}` shows a {s.kind}, not code.", slide=s.id)
             return {**base, "kind": "visual"}
+        if s.kind == "code" and paths.data_lang(s.visual.get("lang")):
+            return self._resolve_key(s, c, t, steps, base)
         if s.kind == "list":
             ids = {it["id"] for it in s.visual["items"]}
             if t in ids:
@@ -294,6 +326,109 @@ class CueResolver:
             return {**base, "kind": "node", "id": t, "text": c.text}
         self._issue("cue_wrong_kind", f"[{c.label}](#{t}): slide `{s.id}` shows a {s.kind}.", "Point at it with `#`.", slide=s.id)
         return {**base, "kind": "visual"}
+
+    def _resolve_moment(self, s: Slide, c: Cue, t: str, num: str | None, trace: list[dict], base: dict) -> dict | None:
+        """`#trace-N` moves the panel to moment N; with quoted text, checked against that moment's
+        line of the trace and moved to the moment that has it. `#trace "t = 8"` alone finds the
+        next moment with that text."""
+        k = len(trace)
+        names = f"its moments are `#trace-1` to `#trace-{k}`"
+        if num is None:
+            n = find_moment(trace, c.text, self._moment, _norm) if c.text else None
+            if n is None:
+                self._issue(
+                    "cue_no_target",
+                    f"[{c.label}](#{t}"
+                    + (f' "{c.text}"' if c.text else "")
+                    + f"): no moment of the trace on slide `{s.id}` has that text; {names}.",
+                    "Number the moment, `#trace-3`, or quote text from its trace line.",
+                    slide=s.id,
+                )
+                return None
+            return {**base, "kind": "trace", "n": n, "line": trace[n - 1]["line"], "text": ""}
+        n = int(num)
+        if not 1 <= n <= k:
+            self._issue("cue_no_target", f"[{c.label}](#{t}): the trace on slide `{s.id}` has {k} moments; {names}.", slide=s.id)
+            return None
+        if c.text and _norm(c.text) not in _norm(trace[n - 1]["text"]):
+            hit = find_moment(trace, c.text, self._moment, _norm)
+            if hit:
+                self._issue(
+                    "cue_moved",
+                    f'[{c.label}](#{t} "{c.text}"): moment {n} is `{trace[n - 1]["text"]}`; pointed at moment {hit}, which has the quoted text.',
+                    "Count moments from 1, one per line of the trace.",
+                    slide=s.id,
+                )
+                n = hit
+            else:
+                self._issue(
+                    "cue_text_missing",
+                    f'[{c.label}](#{t} "{c.text}"): no moment of the trace has that text; kept moment {n}, `{trace[n - 1]["text"]}`.',
+                    "Quote the trace line as written, such as `t = 8`.",
+                    slide=s.id,
+                )
+        return {**base, "kind": "trace", "n": n, "line": trace[n - 1]["line"], "text": ""}
+
+    def _own_part(self, s: Slide, c: Cue, t: str, base: dict) -> dict | None:
+        """A part, list item or JSON/YAML key of this slide's visual with exactly that name; None
+        (and no problem reported) when there is none."""
+        if kinds.part_kind(s.kind):
+            pid = kinds.get(s.kind).find(s.visual, t)
+            if pid:
+                outer = s.visual.get("part_of", {}).get(pid)
+                return {**base, "kind": "item", "id": pid, **({"part": outer} if outer else {})}
+        elif s.kind == "list" and t in {it["id"] for it in s.visual.get("items", [])}:
+            return {**base, "kind": "item", "id": t}
+        elif s.kind == "code" and paths.data_lang(s.visual.get("lang")) and not re.fullmatch(r"[+-]?L\d+(?:-L?\d+)?", t, re.I):
+            steps = s.visual.get("steps")
+            vis = steps[min(len(steps), max(1, self._step)) - 1] if steps else s.visual
+            want = paths.parse_path(t)
+            if want and paths.find(paths.key_lines(vis["code"], s.visual["lang"]), want):
+                return self._resolve_key(s, c, t, steps, base)
+        return None
+
+    def _resolve_key(self, s: Slide, c: Cue, t: str, steps: list | None, base: dict) -> dict | None:
+        """A key of a JSON, YAML or TOML code slide, by its path (`#params.name`, `#items[0].id`):
+        the lines from the key through the end of its value, as a line cue. A key sharing its line
+        with others (one-line JSON) is narrowed to its own text."""
+        vis = steps[min(len(steps), max(1, self._step)) - 1] if steps else s.visual
+        found = paths.key_lines(vis["code"], s.visual["lang"])
+        want = paths.parse_path(t)
+        hit = paths.find(found, want) if want else None
+        if hit is None:
+            tails = sorted({paths.show(k) for k in found if want and k[-len(want) :] == want})
+            if len(tails) > 1:
+                names = f"Paths ending that way: {', '.join(tails[:8])}."
+            else:
+                have, under = paths.near(found, want or ())
+                keys = ", ".join(paths.show(k[-1:]) for k in under[:12]) or "none"
+                names = f"`{paths.show(have)}` has: {keys}." if have else f"Top-level keys: {keys}."
+                if want and any(p.lstrip("-").isdigit() and int(p) < 0 for p in want):
+                    names += " List positions count from 0."
+            self._issue(
+                "cue_no_target",
+                f"[{c.label}](#{t}): no key `{t}` in the {s.visual['lang']} on slide `{s.id}`. {names}",
+                'Name a key by its path from the top, such as `#params.name` or `#items[0].id` (`#deps["socket.io"]` for a key '
+                'with a dot), a line as `#L3`, or text as [label](# "text").',
+                slide=s.id,
+            )
+            return None
+        span = found[hit]
+        a, b = vis["start"] + span.l0, vis["start"] + span.l1
+        if c.text:
+            lines = vis["code"].split("\n")
+            within = "\n".join(lines[a - vis["start"] : b - vis["start"] + 1])
+            if _norm(c.text) not in _norm(within):
+                self._issue(
+                    "cue_text_missing",
+                    f'[{c.label}](#{t}): "{c.text}" does not occur in `{paths.show(hit)}` on slide `{s.id}`; pointed at the whole key.',
+                    "Quote the code exactly, spaces included.",
+                    slide=s.id,
+                )
+                return {**base, "kind": "lines", "side": "new", "l0": a, "l1": b, "text": ""}
+        elif span.text:
+            return {**base, "kind": "lines", "side": "new", "l0": a, "l1": b, "text": span.text}
+        return {**base, "kind": "lines", "side": "new", "l0": a, "l1": b}
 
 
 def _table_row(t: str, ids: list[str]) -> str | None:

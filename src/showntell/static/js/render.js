@@ -28,6 +28,8 @@ import diff from "./kinds/diff.js";
 import image from "./kinds/image.js";
 import list from "./kinds/list.js";
 import math from "./kinds/math.js";
+import memory from "./kinds/memory.js";
+import plot from "./kinds/plot.js";
 import stat from "./kinds/stat.js";
 import svg from "./kinds/svg.js";
 import drawio from "./kinds/drawio.js";
@@ -37,7 +39,7 @@ import terminal from "./kinds/terminal.js";
 import { chapter, title } from "./kinds/title.js";
 import tree from "./kinds/tree.js";
 
-export const KINDS = { title, chapter, code, diff, list, table, diagram, math, chart, stat, chat, terminal, tree, image, svg, drawio, reladraw };
+export const KINDS = { title, chapter, code, diff, list, table, diagram, math, chart, stat, chat, terminal, tree, image, svg, drawio, reladraw, plot, memory };
 
 // Narration-only slides: a statement. The shown text is the sentence and the heading a kicker
 // above it; without shown text the heading itself is the sentence.

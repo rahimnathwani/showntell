@@ -45,6 +45,10 @@ export function render(force) {
   applyVisual(st, slide, force, landed);
   if (cam.changed && !cam.moving && !landed && st.cue && !pointer.hidden) follow(st, slide);
   liveFrame(st, slide, `${entering}${cam.key ? `|c${cam.key}` : ""}`);
+  // A part gliding between versions (a drawing's or plot's step) carries the pointer with it.
+  const moving = (S.view?.panes || []).some((p) => p.parts.moving);
+  if ((moving || S.partsMoved) && st.cue && !pointer.hidden && !cam.moving) follow(st, slide);
+  S.partsMoved = moving;
   applyCaption(st, slide, force);
   updateTime(st);
 }

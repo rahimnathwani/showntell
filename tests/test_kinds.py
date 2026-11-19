@@ -133,7 +133,10 @@ def test_every_catalogue_example_builds_cleanly(build, project, k):
         )
     w, b = build(f"# T\n\nOpening.\n\n## Example {{#ex}}\n\n{md}\n\nA sentence about it.\n", root=project)
     kind = w.slides[-1].kind
-    assert kind == k["kind"], (kind, k["kind"])
+    if k["kind"] == "trace":  # a trace joins its code slide
+        assert kind == "code" and w.slides[-1].visual.get("trace"), w.slides[-1].visual
+    else:
+        assert kind == k["kind"], (kind, k["kind"])
     assert not [i for i in b.issues if i.severity == "error"], b.issues
 
 

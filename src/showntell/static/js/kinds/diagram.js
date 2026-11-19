@@ -1,5 +1,6 @@
 // Mermaid diagrams: nodes are the parts cues point at, flowcharts reveal node by node, and edge
-// paths send a dot along the edges.
+// paths send a dot along the edges. Flowcharts are laid out by Mermaid's own layout (dagre), or by
+// ELK (vendor/elk, loaded only then) when the block asks for it with ```mermaid elk.
 
 import { el, loadScript, READABLE_PX, reducedMotion, STATIC } from "../draw.js";
 import { norm } from "../util.js";
@@ -155,8 +156,10 @@ async function renderDiagram(container, v, slide, ctx) {
     return null;
   }
   try {
-    const { svg } = await mermaid.render(`mmd-${++seq}`, v.source);
-    container.innerHTML = svg;
+    const elk = v.layout === "elk";
+    if (elk) await elkReady(mermaid);
+    container.innerHTML = await draw(mermaid, elk ? withElk(v.source) : v.source);
+    if (elk) container.dataset.layout = "elk";
     const s = container.querySelector("svg");
     s.removeAttribute("style");
     s.setAttribute("aria-hidden", "true");
@@ -166,6 +169,29 @@ async function renderDiagram(container, v, slide, ctx) {
     ctx.report(`Diagram on slide ${slide.id} failed to render: ${String(e.message || e).split("\n")[0]}`, "render_error", slide.id);
     document.querySelectorAll('[id^="dmmd-"]').forEach((n) => n.remove());
     return null;
+  }
+}
+
+async function draw(mermaid, source) {
+  const { svg } = await mermaid.render(`mmd-${++seq}`, source);
+  return svg;
+}
+
+// Mermaid's layout setting, ahead of the diagram (after its frontmatter, if any).
+export function withElk(source) {
+  const src = source || "";
+  const own = /^\s*---\n[\s\S]*?\blayout["']?\s*:\s*["']?elk[\s\S]*?\n---/.test(src) || /^\s*%%\{[^\n]*layout["']?\s*:\s*["']?elk/m.test(src) || /^\s*flowchart-elk\b/m.test(src);
+  if (own) return src; // the block sets it itself
+  const front = /^\s*---\n[\s\S]*?\n---[ \t]*\n/.exec(src);
+  const at = front ? front[0].length : 0;
+  return `${src.slice(0, at)}%%{init: {"layout": "elk"}}%%\n${src.slice(at)}`;
+}
+
+async function elkReady(mermaid) {
+  await loadScript(`${STATIC}/vendor/elk/mermaid-elk.min.js`);
+  if (!window.__elkRegistered) {
+    window.__elkRegistered = true;
+    mermaid.registerLayoutLoaders(window.mermaidElk.layouts);
   }
 }
 
@@ -219,7 +245,8 @@ export function diagramNodes(svg) {
 }
 
 // Edges with their endpoints, for step reveals: [{el, from, to, label}]. Mermaid names edge
-// paths `L_<from>_<to>_<n>` and draws edge labels in the same order as the edges.
+// paths `L_<from>_<to>_<n>` (ELK's `L_<from>_<to>_<n>_<m>`) and draws edge labels in the same
+// order as the edges.
 export function diagramEdges(svg, nodeIds) {
   const edges = [];
   if (!svg) return edges;
@@ -227,18 +254,26 @@ export function diagramEdges(svg, nodeIds) {
   const labels = [...svg.querySelectorAll("g.edgeLabels > g.edgeLabel, g.edgeLabel")];
   const paths = [...svg.querySelectorAll("path.flowchart-link")];
   paths.forEach((p, i) => {
-    let from = null, to = null;
-    const m = (p.id || "").match(/^L_(.+)_\d+$/);
-    if (m) {
-      const body = m[1];
-      for (let k = body.indexOf("_"); k > 0; k = body.indexOf("_", k + 1)) {
-        const a = body.slice(0, k), b = body.slice(k + 1);
-        if (ids.has(a) && ids.has(b)) { from = a; to = b; break; }
-      }
-    }
+    const [from, to] = edgeEnds(p.id || "", ids);
     edges.push({ el: p, from, to, label: labels.length === paths.length ? labels[i] : null });
   });
   return edges;
+}
+
+// The two node ids in an edge path's id, trying one numeric suffix and then two, since node ids
+// may themselves contain underscores and digits.
+export function edgeEnds(id, ids) {
+  const m = /^L_(.+)$/.exec(id);
+  if (!m) return [null, null];
+  for (const strip of [/_\d+$/, /_\d+_\d+$/]) {
+    const body = m[1].replace(strip, "");
+    if (body === m[1]) continue;
+    for (let k = body.indexOf("_"); k > 0; k = body.indexOf("_", k + 1)) {
+      const a = body.slice(0, k), b = body.slice(k + 1);
+      if (ids.has(a) && ids.has(b)) return [a, b];
+    }
+  }
+  return [null, null];
 }
 
 export function findInDiagram(svg, label) {
