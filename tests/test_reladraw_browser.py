@@ -4,6 +4,9 @@ errors come back from finish with the block's line."""
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 
 pytestmark = [pytest.mark.browser, pytest.mark.slow]
@@ -270,3 +273,21 @@ def test_reveal_covers_every_group_the_library_draws(daemon, browser):  # noqa: 
     assert not second["req"] and second["web -> db"] and second["db"], second  # a named line shows with its ends
     assert not any(v for k, v in third.items() if k != "active"), third  # the last cue reveals the rest
     page.close()
+
+
+def test_the_examples_people_copy_draw_without_findings(daemon):  # noqa: F811
+    """The reladraw examples in docs/format.md and the agent's catalogue draw with no line through
+    a box and no text on another: agents copy them."""
+    docs = re.search(r"```reladraw\n(.*?)```", (ROOT / "docs" / "format.md").read_text(), re.S).group(1)
+    kinds = json.loads((ROOT / "src" / "showntell" / "text" / "kinds.json").read_text())["kinds"]
+    catalogue = next(k for k in kinds if k["kind"] == "reladraw")["example"].strip().removeprefix("```reladraw\n").removesuffix("```")
+    call = _rpc(daemon)
+    r = call("start", title="Examples", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    md = "# Examples\n\nOpening.\n\n"
+    for i, body in enumerate((docs, catalogue)):
+        md += f"## Example {i} {{#ex{i}}}\n\n```reladraw\n{body.strip()}\n```\n\nA drawing.\n\n"
+    a = call("add", handle=r["handle"], markdown=md)
+    assert not [i for i in a["issues"] if i["severity"] == "error"], a["issues"]
+    f = call("finish", handle=r["handle"], questions=None)
+    found = [i for i in f["player_issues"] if i["code"] in ("drawing_overlap", "render_error")]
+    assert not found, found

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **PyPI page:** README links and the demo image use full GitHub URLs, so they work on PyPI; `sync_version.py --check` refuses a relative one, and stamps the GitHub Action's version (`uses: rahimnathwani/showntell@vX.Y.Z`) in the README and its docs, which still said v0.1.7.
+- **reladraw line texts:** the catalogue says a line's text sits at its middle, so keep it short or widen the gap; the docs example no longer puts its line text over a box, and a test keeps the examples free of findings.
+- **Hosted container:** the Chromium seccomp profile is rebuilt from Docker's current default (moby/profiles 9ee3204: `socketpair` limited to local sockets); the locked-down container check passes.
 - **On PyPI:** showntell is published to PyPI from 0.2.7. Install commands in the README, the Claude Code plugin, the Gemini extension and `doctor` are now `uvx showntell@latest mcp`, which picks up new releases; `uv tool install showntell` starts faster and works offline.
 
 ## 0.2.7 (2026-11-14)

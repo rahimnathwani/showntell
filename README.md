@@ -4,7 +4,7 @@ Narrated slide walkthroughs for coding agents, voiced on your machine.
 
 Ask your agent to walk you through a pull request, a module or a concept. It writes slides and narration in Markdown; showntell voices them locally with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) and hands back a link that starts playing in about a second, while the rest is still being written. A pointer follows the narration through code, diagrams and lists, word by word.
 
-![Three moments from gallery walkthroughs: code changing from one version to the next, a dot travelling along a diagram's edges, and the pointer stepping through a bar chart as the narration names each bar](docs/media/demo.gif)
+![Three moments from gallery walkthroughs: code changing from one version to the next, a dot travelling along a diagram's edges, and the pointer stepping through a bar chart as the narration names each bar](https://raw.githubusercontent.com/rahimnathwani/showntell/main/docs/media/demo.gif)
 
 **[Watch the gallery](https://rahimnathwani.github.io/showntell/)**: ten walkthroughs written by Claude (Opus and Sonnet) and voiced on a laptop, unedited: a tour of this repository, one call's path through it, a refactor step by step, a code review, contributor setup, a speed-up told with a chart, the messages of an MCP tool call, the TLS 1.3 handshake, scaled dot-product attention, and git rebase versus merge on a phone-shaped frame.
 
@@ -14,7 +14,7 @@ Ask your agent to walk you through a pull request, a module or a concept. It wri
 - **Checked:** every call returns coded findings to the agent: a cue pointing at a missing line, code too big for the frame, narration that reads the screen aloud, a slide that holds still too long, and, from the player, diagrams that failed to render or text shrunk too small to read; with Playwright installed, `finish_walkthrough` draws every slide to find them. The agent can also look at pictures of its slides with `preview_slides`.
 - **Shareable:** export a walkthrough as one HTML file that plays offline (send it in Slack or by email), a static folder with captions, or an MP4; embed it with `<showntell-player>`, link to a range of slides, or present it yourself with speaker notes. An agent in a sandbox or behind WhatsApp sends you the MP4 itself.
 
-How it compares with a screen recording, a written PR description and a rendered MP4 explainer, including where those win: [docs/comparison.md](docs/comparison.md).
+How it compares with a screen recording, a written PR description and a rendered MP4 explainer, including where those win: [docs/comparison.md](https://github.com/rahimnathwani/showntell/blob/main/docs/comparison.md).
 
 ## Install
 
@@ -263,7 +263,7 @@ After [the final attempt](#L55) the error goes back to the caller.
 | **Layouts** | `{.side}` puts `>` takeaways beside the visual, `{.pair}` shows two visuals, `{.full}` one edge to edge; a slide with only a `>` sentence is a statement |
 | **Icons** | Lucide names: `- :database: **Postgres**`, `> :zap: takeaway`, `{icon=rocket}` on a heading, `<use href="icon:cloud"/>` in a drawing |
 
-`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, `{.zoom}` to move the camera in, or `{.decode}` to keep a label scrambled until its cue. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
+`.build` on a heading reveals parts as the narration reaches them. A cue can send a dot along diagram edges (`#client->api->db`), and a style after it changes the pointer: `{.circle}`, `{.underline}`, `{.arrow}`, `{.highlight}`, `{.zoom}` to move the camera in, or `{.decode}` to keep a label scrambled until its cue. Seven themes (dark, light, paper, night, ocean, studio, high contrast) are chosen with `theme`, in front matter or in the project's `showntell.theme.json`, and viewers can switch. The full reference is [docs/format.md](https://github.com/rahimnathwani/showntell/blob/main/docs/format.md). You can also write a walkthrough by hand and play it with `showntell play talk.md`.
 
 ## Commands
 
@@ -305,10 +305,10 @@ Needs [FFmpeg](https://ffmpeg.org/) on PATH and the `video` extra (Playwright). 
 
 ### In pull requests
 
-The repository is also a GitHub Action: it voices a walkthrough's Markdown on the runner, with no API key, and posts the outline, the transcript and a download link on the pull request. See [docs/github-action.md](docs/github-action.md).
+The repository is also a GitHub Action: it voices a walkthrough's Markdown on the runner, with no API key, and posts the outline, the transcript and a download link on the pull request. See [docs/github-action.md](https://github.com/rahimnathwani/showntell/blob/main/docs/github-action.md).
 
 ```yaml
-- uses: rahimnathwani/showntell@v0.1.7
+- uses: rahimnathwani/showntell@v0.2.7
   with:
     markdown: .showntell/pr.md
 ```
@@ -338,7 +338,7 @@ The element plays an exported folder or a live link in an iframe, forwards `read
 
 ## Settings
 
-Environment variables, also listed in [.env.example](.env.example). Command-line flags override them.
+Environment variables, also listed in [.env.example](https://github.com/rahimnathwani/showntell/blob/main/.env.example). Command-line flags override them.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -363,7 +363,7 @@ Pronunciations: put `word = spoken form` lines in `~/.local/share/showntell/lexi
 - **Files:** code and images are read only from the project folder. When the MCP client shares its folders, the project folder must be inside one of them, so an agent cannot show files from elsewhere on the machine. Git runs only plumbing commands with repository hooks and diff drivers disabled.
 - **Downloads:** the only network traffic is the first-run model download (and the ONNX model, if MLX ever fails on Apple silicon), then the headless browser from Playwright's CDN, once, unless `SHOWNTELL_BROWSER=off`.
 
-See [SECURITY.md](SECURITY.md) to report a problem.
+See [SECURITY.md](https://github.com/rahimnathwani/showntell/blob/main/SECURITY.md) to report a problem.
 
 ## Platforms
 
@@ -373,7 +373,7 @@ See [SECURITY.md](SECURITY.md) to report a problem.
 | **Linux, Intel Mac** | Kokoro on ONNX Runtime (CPU) | supported |
 | **Windows** | Kokoro on ONNX Runtime (CPU) | untested, best effort; reports welcome |
 
-English voices only for now. Kokoro's other languages are on the [roadmap](ROADMAP.md).
+English voices only for now. Kokoro's other languages are on the [roadmap](https://github.com/rahimnathwani/showntell/blob/main/ROADMAP.md).
 
 ## Development
 
@@ -383,12 +383,12 @@ uv run pytest -m "not slow and not browser and not mlx and not onnx"   # fast te
 uv run showntell serve --speech fake                                   # run without a voice model
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/spec.md](docs/spec.md) and [docs/architecture.md](docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](docs/self-hosting.md). Sign-in has been tried with Entra from Claude Code; Google and claude.ai connectors have passed only tests against a fake provider.
+See [CONTRIBUTING.md](https://github.com/rahimnathwani/showntell/blob/main/CONTRIBUTING.md), [docs/spec.md](https://github.com/rahimnathwani/showntell/blob/main/docs/spec.md) and [docs/architecture.md](https://github.com/rahimnathwani/showntell/blob/main/docs/architecture.md). To run one server for a whole company, with sign-in through Google or Entra, see [docs/self-hosting.md](https://github.com/rahimnathwani/showntell/blob/main/docs/self-hosting.md). Sign-in has been tried with Entra from Claude Code; Google and claude.ai connectors have passed only tests against a fake provider.
 
 ## Who uses it
 
-Using showntell on a team or project? Add a line to [ADOPTERS.md](ADOPTERS.md).
+Using showntell on a team or project? Add a line to [ADOPTERS.md](https://github.com/rahimnathwani/showntell/blob/main/ADOPTERS.md).
 
 ## Licence
 
-MIT. Bundled libraries and downloaded models keep their own licences; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. Bundled libraries and downloaded models keep their own licences; see [THIRD_PARTY_NOTICES.md](https://github.com/rahimnathwani/showntell/blob/main/THIRD_PARTY_NOTICES.md).

@@ -344,7 +344,7 @@ node web "Web app"  layout: column
 node web.ui "Interface"
 node web.api "API"
 node store "Database"  right of web (gap: wide)  shape: cylinder
-edge web.api -> store "queries"
+edge web.api -> store "SQL"
 ```
 ````
 

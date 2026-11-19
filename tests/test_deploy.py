@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -27,7 +28,7 @@ def test_the_seccomp_profile_is_dockers_default_plus_what_chromium_needs():
     added = [r for r in profile["syscalls"] if r.get("comment", "").startswith("showntell:")]
     assert len(added) == 1 and sorted(added[0]["names"]) == ["chroot", "clone", "setns", "unshare"]
     assert added[0]["action"] == "SCMP_ACT_ALLOW" and "args" not in added[0]
-    assert "moby/profiles 6fe7deb" in added[0]["comment"]  # the pin scripts/seccomp_profile.py --check compares
+    assert re.search(r"moby/profiles [0-9a-f]{7}$", added[0]["comment"])  # the pin scripts/seccomp_profile.py --check compares
 
 
 def test_the_env_example_names_every_sign_in_setting():

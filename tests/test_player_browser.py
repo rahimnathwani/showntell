@@ -194,7 +194,7 @@ node web "Web app"  layout: column
 node web.ui "Interface"
 node web.api "API"
 node store "Database"  right of web (gap: wide)  shape: cylinder  style: hot
-edge web.api -> store "queries"
+edge web.api -> store "SQL"
 ```
 
 The [web app](#web) asks [the database](#store).

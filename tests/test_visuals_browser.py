@@ -92,3 +92,20 @@ def test_diagram_advice_names_a_direction_only_for_a_flowchart_running_the_wrong
     small = {i["slide"]: i["message"] for i in f["player_issues"] if i["code"] == "text_too_small"}
     assert "left to right (flowchart LR)" in small.get("tall", ""), small
     assert "seq" in small and "flowchart" not in small["seq"], small
+
+
+def test_a_stacked_diff_is_not_wrapped_smaller(daemon, browser):  # noqa: F811
+    """Long lines too wide side by side: the panes stack, and wrapping, which makes the code
+    taller, is kept only if it reads larger than the stacked layout, never smaller."""
+    rows = []
+    for i in range(5):
+        rows += [f"-x{i} = compute(" + "a" * 110 + ")", f"+x{i} = compute(" + "b" * 110 + ")"]
+    block = "```diff\n@@ -1,5 +1,5 @@\n" + "\n".join(rows) + "\n```\n"
+    _, _, url, page = _open(daemon, browser, f"# D\n\nOpening.\n\n## Diff {{#d}}\n\n{block}\nThe change.\n")
+    page.goto(f"{url}?at=999")  # the last slide; it has no cues to seek to
+    page.wait_for_selector(".diff", state="attached")
+    page.wait_for_timeout(500)
+    cls, scale = page.evaluate("() => { const d = document.querySelector('.diff'); return [d.className, +d.dataset.scale] }")
+    assert "stacked" in cls and "wrapped" not in cls, cls
+    assert scale > 0.73, scale  # wrapped, it would read at 0.72
+    page.close()

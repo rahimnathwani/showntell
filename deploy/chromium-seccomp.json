@@ -294,7 +294,6 @@
     "renameat",
     "renameat2",
     "restart_syscall",
-    "riscv_hwprobe",
     "rmdir",
     "rseq",
     "rt_sigaction",
@@ -372,7 +371,6 @@
     "sigprocmask",
     "sigreturn",
     "socketcall",
-    "socketpair",
     "splice",
     "stat",
     "stat64",
@@ -828,6 +826,32 @@
   },
   {
    "names": [
+    "socketpair"
+   ],
+   "action": "SCMP_ACT_ALLOW",
+   "args": [
+    {
+     "index": 0,
+     "value": 1,
+     "op": "SCMP_CMP_EQ"
+    }
+   ]
+  },
+  {
+   "names": [
+    "socketpair"
+   ],
+   "action": "SCMP_ACT_ALLOW",
+   "args": [
+    {
+     "index": 0,
+     "value": 30,
+     "op": "SCMP_CMP_EQ"
+    }
+   ]
+  },
+  {
+   "names": [
     "personality"
    ],
    "action": "SCMP_ACT_ALLOW",
@@ -961,7 +985,8 @@
   },
   {
    "names": [
-    "riscv_flush_icache"
+    "riscv_flush_icache",
+    "riscv_hwprobe"
    ],
    "action": "SCMP_ACT_ALLOW",
    "includes": {
@@ -1223,7 +1248,7 @@
    }
   },
   {
-   "comment": "showntell: Chromium's sandbox makes user namespaces and chroots inside them; the default profile allows clone with namespace flags, unshare, setns and chroot only with CAP_SYS_ADMIN or CAP_SYS_CHROOT, which the container drops (docs/self-hosting.md). Docker default from moby/profiles 6fe7deb",
+   "comment": "showntell: Chromium's sandbox makes user namespaces and chroots inside them; the default profile allows clone with namespace flags, unshare, setns and chroot only with CAP_SYS_ADMIN or CAP_SYS_CHROOT, which the container drops (docs/self-hosting.md). Docker default from moby/profiles 9ee3204",
    "names": [
     "chroot",
     "clone",

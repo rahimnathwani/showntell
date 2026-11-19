@@ -32,6 +32,11 @@ DUNDER = re.compile(r'(__version__\s*=\s*")[^"]*(")')
 # Install commands come from PyPI and follow the latest release; none installs from GitHub.
 FROM_GITHUB = "git+https://github.com/rahimnathwani/showntell"
 INSTALLS = (PLUGIN / ".mcp.json", ROOT / "README.md", ROOT / "src" / "showntell" / "doctor.py")
+# The GitHub Action is used by tag (`uses: rahimnathwani/showntell@vX.Y.Z`), so its docs name this release's.
+ACTION = re.compile(r"(rahimnathwani/showntell@v)\d[\w.]*()")
+ACTION_DOCS = (ROOT / "README.md", ROOT / "docs" / "github-action.md")
+# README.md is also the PyPI page, where a relative link or image leads nowhere.
+RELATIVE = re.compile(r"!?\[[^\]]*\]\((?![a-z]+:|#|path\))[^)\s]+\)")
 
 
 def pyproject_version() -> str:
@@ -43,6 +48,11 @@ def _stamp(text: str, pattern: re.Pattern, version: str, path: Path) -> str:
     if n != 1:
         raise SystemExit(f"{path.relative_to(ROOT)}: expected one version field, found {n}")
     return out
+
+
+def relative_links() -> list[str]:
+    """Links and images in README.md that only work on GitHub, not on PyPI."""
+    return RELATIVE.findall((ROOT / "README.md").read_text())
 
 
 def pinned() -> list[str]:
@@ -83,6 +93,9 @@ def expected() -> dict[Path, str]:
         (ROOT / ".claude-plugin" / "marketplace.json", VERSION_KEY),
     ]:
         files[path] = _stamp(path.read_text(), pattern, v, path)
+    for path in ACTION_DOCS:
+        text = files.get(path, path.read_text())
+        files[path] = ACTION.sub(lambda m: m.group(1) + v + m.group(2), text)
     files[ROOT / "gemini-extension.json"] = gemini_manifest(v)
     files[ROOT / "GEMINI.md"] = gemini_context()
     return files
@@ -115,6 +128,7 @@ def main() -> None:
     args = ap.parse_args()
     version = pyproject_version()
     problems = [f"{p} installs from GitHub; use `showntell@latest`" for p in pinned()]
+    problems += [f"README.md links {link} relatively, which breaks on PyPI; use a full URL" for link in relative_links()]
     if args.check:
         problems += [f"{p} is out of date; run `uv run scripts/sync_version.py`" for p in drift()]
     else:
