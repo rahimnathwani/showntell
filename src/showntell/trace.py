@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 
 MAX_MOMENTS = 40
-MAX_VARS = 10
+MAX_VARS = 8
 MAX_VALUE = 40
 LINE = re.compile(r"^L?(\d+)(?:\s*:\s*|\s+|$)(.*)$", re.I)
 NAME = re.compile(r"^[A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)*$")
@@ -127,7 +127,7 @@ def parse_trace(body: str, code: str, start: int) -> tuple[list[dict], list[str]
                 continue
             for a in _assignments(p) or [p]:
                 c = COMPOUND.match(a)
-                if c or re.search(r"(?<![=!<>])==(?!=)", a):
+                if c or re.search(r"(?<![=!<>])==(?!=)", re.sub(r"\"[^\"]*\"|'[^']*'", "", a)):
                     problems.append(
                         f"moment {k} (`{a}`) copies the code; write the new value instead, such as `{(c.group(1) if c else 'x')} = 3`"
                     )
@@ -182,9 +182,13 @@ def _snapshot(order: list[str], values: dict[str, str], out: list[str], ret: str
     return {"vars": [[name, values[name]] for name in order], "out": list(out), "ret": ret}
 
 
+def has_text(hay: str, text: str, norm) -> bool:
+    """Whether a trace line holds the quoted text as a whole: `t = 3` is not in `t = 30`."""
+    return bool(re.search(rf"(?<![\w.]){re.escape(norm(text))}(?![\w.])", norm(hay)))
+
+
 def find_moment(trace: list[dict], text: str, after: int, norm) -> int | None:
     """The first moment after `after` (1-based) whose line holds `text`, else the first anywhere."""
-    want = norm(text)
-    hits = [i + 1 for i, m in enumerate(trace) if want in norm(m["text"])]
+    hits = [i + 1 for i, m in enumerate(trace) if has_text(m["text"], text, norm)]
     later = [k for k in hits if k > after]
     return (later or hits or [None])[0]

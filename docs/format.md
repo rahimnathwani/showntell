@@ -152,9 +152,9 @@ It starts [at zero](#trace-2), then [t becomes 8](#trace-6 "t = 8") and [the cal
 | Part | Rule |
 |---|---|
 | **Changes** | `name = value`, several separated by `;` or by `,` before another `name =`; values show as written, up to 40 characters. Write the new value, not the code: `t += x` is refused (`trace_error`), and each name set must appear on that line of code. |
-| **Output and result** | `print: text` adds a line under the panel (the rest of the line); `return: value` shows what the call returns. |
+| **Output and result** | `print: text` adds a line of output under the panel (the rest of the line; the last four show); `return: value` shows what the call returns. |
 | **Cues** | `#trace-3` moves to moment 3, counting trace lines from 1; the line that just ran is marked in the gutter and the names it changed glow. With quoted text (`[…](#trace-6 "t = 8")`) the moment is checked and moved to the one holding that text (`cue_moved`); `#trace "t = 8"` alone finds the next such moment. A forward jump plays the moments it skips, 0.3 s each. Line cues still point as usual. A traced slide without a `#trace` cue gets `trace_unused`. |
-| **Limits** | one call's variables: at most 10 variables and 40 moments. Not with `step` code, `.side` or `.pair`, whose places the panel takes; the code gets about two thirds of the width (`code_too_wide`). For recursion, use a `memory step` picture with frames. |
+| **Limits** | one call's variables: at most 8 variables and 40 moments. Not with `step` code or `.pair`; on a `.side` slide the panel takes the side and the takeaways go under the title (`trace_layout`); the code gets about two thirds of the width (`code_too_wide`). For recursion, use a `memory step` picture with frames. |
 
 Nothing is run: the values are what the block says, so paste them from a real run.
 

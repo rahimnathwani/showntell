@@ -367,3 +367,21 @@ def test_a_slides_own_parts_come_before_reserved_cue_shapes(cues):
     js = '## Scripts {#scripts}\n\n```json\n{\n  "name": "x",\n  "scripts": {"test": "vitest"}\n}\n```\n\n'
     (c,), issues = cues(js, "The [scripts](#scripts) key.")
     assert (c["kind"], c["l0"]) == ("lines", 3) and not issues
+
+
+def test_a_sequence_message_by_participant_aliases(cues):
+    seq = "## S {#s}\n\n```mermaid\nsequenceDiagram\n  participant C as Client\n  participant S as Server\n  C->>S: SYN\n  S->>C: SYN-ACK\n```\n\n"
+    (a, b), issues = cues(seq, "A [SYN](#Client->>Server) and [the reply](#Server->>C).")
+    assert (a["kind"], a["text"], b["text"]) == ("text", "SYN", "SYN-ACK") and not issues
+
+
+def test_flowchart_nodes_named_like_lines_or_steps_and_loose_matches_after_the_slide_id(cues):
+    flow = "## F {#f}\n\n```mermaid\nflowchart LR\n  l1[First] --> step2[Second]\n```\n\n"
+    found, issues = cues(flow, "From [one](#l1) to [two](#step2).")
+    assert [(c["kind"], c["id"]) for c in found] == [("node", "l1"), ("node", "step2")] and not issues
+    chart = "## Speed {#latency}\n\n```chart line\nx: 1, 2, 3\nP95 Latency: 3, 4, 5\n```\n\n"
+    (c,), _ = cues(chart, "The [chart](#latency) rises.")
+    assert c["kind"] == "visual"  # `latency` is the slide's id; the series is `p95-latency`
+    js = '## Name {#name}\n\n```json\n{"user": {"name": "x"}}\n```\n\n'
+    (c,), _ = cues(js, "The [file](#name).")
+    assert c["kind"] in ("visual", "text")

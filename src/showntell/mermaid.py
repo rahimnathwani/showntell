@@ -54,7 +54,7 @@ def asks_elk(src: str) -> bool:
     front, body = split_front(src)
     config = front + "\n".join(m.group(0) for m in INIT_RE.finditer(body))
     first = next((ln.strip() for ln in body.split("\n") if ln.strip() and not ln.strip().startswith("%%")), "")
-    return bool(re.search(r"""\blayout["']?\s*:\s*["']?elk""", config)) or first.lower().startswith("flowchart-elk")
+    return bool(re.search(r"""\b(?:layout|defaultRenderer)["']?\s*:\s*["']?elk""", config)) or first.lower().startswith("flowchart-elk")
 
 
 def parse_mermaid(src: str) -> tuple[dict, list, list]:

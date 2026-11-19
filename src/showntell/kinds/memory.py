@@ -103,6 +103,8 @@ def _value(text: str) -> dict:
     t = text.strip()
     if t.startswith("->"):
         target = t[2:].strip()
+        if not target:
+            return {"text": "", "empty_ptr": True}
         if target.lower() in NULLS:
             return {"text": target, "null": True}
         m = re.fullmatch(rf"({ID})(?:\.(\w+)|\[\s*(\w+)\s*\])", target)
@@ -134,6 +136,11 @@ def parse_memory(body: str, attrs: dict) -> tuple[dict, list[str]]:
             continue
         if not indented:
             frame = None
+        elif frame is not None and (m := re.match(rf"^({ID})\s*:\s*(.*)$", text)) and _body(m.group(2)):
+            problems.append(
+                f"`{m.group(1)}` is written as an object inside frame `{frame['name']}`; objects go unindented, after the frames, and a frame's variable points at one (`{m.group(1)}_ref -> {m.group(1)}`)"
+            )
+            continue
         if frame is None and (m := re.match(rf"^({ID}(?:\.\w+)*)\s*:\s*(.*)$", text)) and (b := _body(m.group(2))):
             oid = m.group(1)
             if "." in oid:
@@ -155,6 +162,15 @@ def parse_memory(body: str, attrs: dict) -> tuple[dict, list[str]]:
                 f"`{text[:50]}` is not a variable (`size = 3`, `head -> a`), an object (`a: Node {{value: 1, next -> b}}`), an array (`arr: [1, 2, 3]`) or `frame name`"
             )
             continue
+        if name in RESERVED:
+            problems.append(f"`{name}` is a reserved name; call the variable something else")
+            continue
+        if val.get("empty_ptr"):
+            problems.append(f"`{name}` points at nothing; write `{name} -> null` or name the object")
+            continue
+        if len(val["text"]) > MAX_VALUE and not (val.get("ptr") or val.get("cell")):
+            problems.append(f"`{name}` holds {len(val['text'])} characters; a box shows up to {MAX_VALUE}: shorten it")
+            val["text"] = val["text"][: MAX_VALUE - 1] + "…"
         vid = f"{frame['id']}.{name}" if frame else name
         if any(v["id"] == vid for v in variables):
             problems.append(f"`{name}` is set twice{' in frame ' + frame['name'] if frame else ''}; each version shows one value")
@@ -192,6 +208,12 @@ def _object(oid: str, caption: str, bracket: str, inside: str, problems: list[st
                 )
                 continue
             key = name.strip("\"'")
+            if any(x["id"] == f"{oid}.{key}" for x in slots):
+                problems.append(f"`{oid}` has the field `{key}` twice")
+                continue
+            if val.get("empty_ptr"):
+                problems.append(f"`{oid}.{key}` points at nothing; write `{key} -> null` or name the object")
+                val = {"text": ""}
             slots.append({"id": f"{oid}.{key}", "label": name, **val})
         kind = "obj"
     else:
@@ -219,10 +241,17 @@ def _check_refs(variables: list[dict], objects: list[dict], frames: list[dict], 
     for n in sorted(names & set(ids)):
         problems.append(f"`{n}` is both a variable or frame and an object; both would be `#{n}`")
     holders = [(v["id"], v) for v in variables] + [(s["id"], s) for o in objects for s in o["slots"]]
+    cells = {s["id"] for o in objects if o["kind"] == "arr" for s in o["slots"]}
     for where, val in holders:
         if val.get("ptr") and val["ptr"] not in ids:
             problems.append(f"`{where}` points at `{val['ptr']}`, which is not an object here; objects: {', '.join(ids) or 'none'}")
             val.pop("ptr")
+        elif val.get("cell") and val["cell"][0] in ids and (ids[val["cell"][0]]["kind"] != "arr" or ids[val["cell"][0]]["column"]):
+            obj = val["cell"][0]
+            what = "an object's field" if ids[obj]["kind"] == "obj" else "an array drawn as a column"
+            problems.append(f"`{where}` points into {what} (`{obj}.{val['cell'][1]}`); point at the object instead: `-> {obj}`")
+            val["ptr"] = obj
+            val.pop("cell")
         elif val.get("cell"):
             obj, sub = val["cell"]
             if obj not in ids or not any(s["id"] == f"{obj}.{sub}" for s in ids[obj]["slots"]):
@@ -230,8 +259,11 @@ def _check_refs(variables: list[dict], objects: list[dict], frames: list[dict], 
                 problems.append(f"`{where}` points at `{obj}.{sub}`, which is not here" + (f"; `{obj}` has {have}" if have else ""))
                 val.pop("cell")
         elif not (val.get("ptr") or val.get("cell") or val.get("null")) and val["text"] in ids:
-            arrow = f"{where.rsplit('.', 1)[-1]} -> {val['text']}"
-            problems.append(f"`{where}` shows the text `{val['text']}`; a pointer to that object is `{arrow}`")
+            if where in cells:
+                problems.append(f"`{where}` shows the text `{val['text']}`; a cell pointing at that object is written `-> {val['text']}`")
+            else:
+                arrow = f"{where.rsplit('.', 1)[-1]} -> {val['text']}"
+                problems.append(f"`{where}` shows the text `{val['text']}`; a pointer to that object is `{arrow}`")
 
 
 def _ids(v: dict) -> list[str]:
@@ -265,17 +297,20 @@ def _w(text: str) -> float:
     return len(text) * CH
 
 
-def _size(o: dict) -> None:
-    """An object's box and its slots, relative to the box's top left."""
+def _size(o: dict, vw_min: float = 0, lw_min: float = 0) -> None:
+    """An object's box and its slots, relative to the box's top left; columns at least as wide as
+    given, so an object keeps one size across versions."""
     slots = o["slots"]
     vw = max([_w(s["text"]) if not (s.get("ptr") or s.get("cell")) else 2 * CH for s in slots] + [2 * CH]) + 2 * PAD
+    vw = max(vw, vw_min)
+    o["vw"] = vw
     if o["kind"] == "obj":
-        lw = max([_w(s["label"]) for s in slots] + [CH]) + 2 * PAD
+        lw = max([_w(s["label"]) for s in slots] + [CH, lw_min - 2 * PAD]) + 2 * PAD
         for i, s in enumerate(slots):
             s.update(x=lw, y=i * ROW, w=vw, h=ROW, lw=lw)
         o.update(w=lw + vw, h=max(1, len(slots)) * ROW, lw=lw)
     elif o["column"]:
-        lw = max(_w(str(len(slots) - 1)), CH) + 2 * PAD
+        lw = max(_w(str(len(slots) - 1)), CH, lw_min - 2 * PAD) + 2 * PAD
         for i, s in enumerate(slots):
             s.update(x=lw, y=i * ROW, w=vw, h=ROW, lw=lw)
         o.update(w=lw + vw, h=max(1, len(slots)) * ROW, lw=lw)
@@ -308,7 +343,7 @@ def _stack(v: dict, width: float) -> float:
         group = by_frame.get(key, [])
         frame = next((f for f in v["frames"] if f["id"] == key), None)
         if frame:
-            frame.update(x=0, y=y, w=width, h=ROW + max(1, len(group)) * ROW + PAD)
+            frame.update(x=0, y=y, w=width, h=ROW + max(1, len(group)) * (ROW + 8) + PAD)
             y += ROW
         for var in group:
             vw = _var_w(var)
@@ -327,7 +362,7 @@ def _stack_width(v: dict) -> float:
     return max(nw + vw + (2 * PAD if v["frames"] else 0), fw)
 
 
-def _children(o: dict, objs: dict) -> list[str | None]:
+def _children(o: dict, objs: dict, tb: bool = True) -> list[str | None]:
     """Objects an object points at, in field order; a null pointer keeps a slot (None) when the
     object has more than one pointer field, so a lone right child stays right."""
     ptrs = [s for s in o["slots"] if s.get("ptr") or s.get("null")]
@@ -335,7 +370,7 @@ def _children(o: dict, objs: dict) -> list[str | None]:
     for s in ptrs:
         if s.get("ptr") in objs:
             out.append(s["ptr"])
-        elif len(ptrs) > 1:
+        elif len(ptrs) > 1 and tb:
             out.append(None)
     return out
 
@@ -353,14 +388,13 @@ def _place_tree(v: dict, x0: float, placed: dict[str, tuple[float, float]]) -> N
 
     def extent(o: dict) -> tuple[float, float]:
         """(along, across): the box along the depth axis and across it, with caption and indexes."""
-        h = o["h"] + o["top"] + o["bottom"] + _marks(v, o["id"]) * MARK
-        return (h, o["w"]) if tb else (o["w"], h)
+        return (o["fh"], o["fw"]) if tb else (o["fw"], o["fh"])
 
     tree: dict[str, list[str | None]] = {}
 
     def grow(oid: str) -> None:
         kids = []
-        for c in _children(objs[oid], objs):
+        for c in _children(objs[oid], objs, tb):
             if c is None:
                 kids.append(None)
             elif c not in seen:
@@ -431,6 +465,12 @@ def _place_tree(v: dict, x0: float, placed: dict[str, tuple[float, float]]) -> N
         at += span[r] + (GAP_X if tb else GAP_Y)
 
 
+def _listlike(v: dict) -> bool:
+    """Two or more objects, each with at most one pointer field, none an array: a linked list."""
+    objs = v["objects"]
+    return len(objs) > 1 and all(o["kind"] == "obj" and sum(1 for s in o["slots"] if s.get("ptr") or s.get("null")) <= 1 for o in objs)
+
+
 def _marks(v: dict, oid: str) -> int:
     """How many cell markers stack under the busiest cell of an object."""
     per: dict[str, int] = {}
@@ -444,7 +484,7 @@ def _marks(v: dict, oid: str) -> int:
 def _free(placed: dict, objs: dict, oid: str, x: float, y: float, tb: bool) -> tuple[float, float]:
     """Where a new object goes near (x, y), moved along until it overlaps nothing placed."""
     o = objs[oid]
-    w, h = o["w"], o["h"] + o["top"] + o["bottom"]
+    w, h = o["fw"], o["fh"]
 
     def hits(px: float, py: float) -> bool:
         for other, (qx, qy) in placed.items():
@@ -452,10 +492,10 @@ def _free(placed: dict, objs: dict, oid: str, x: float, y: float, tb: bool) -> t
             if q is None:
                 continue
             if (
-                px < qx + q["w"] + 20
+                px < qx + q["fw"] + 20
                 and qx < px + w + 20
-                and py - o["top"] < qy + q["h"] + q["bottom"] + 20
-                and qy - q["top"] < py + h + 20
+                and py - o["top"] < qy - q["top"] + q["fh"] + 20
+                and qy - q["top"] < py - o["top"] + h + 20
             ):
                 return True
         return False
@@ -476,12 +516,35 @@ def _layout(versions: list[dict]) -> None:
     x0 = stack_w + GAP_X + 30
     placed: dict[str, tuple[float, float]] = {}
     sized: dict[str, dict] = {}
-    for k, v in enumerate(versions):
+    # Each object keeps one size across versions (its widest column), and is placed by the room it
+    # takes in its largest version, so a value that grows never runs into a neighbour.
+    widest: dict[str, tuple[float, float]] = {}
+    for v in versions:
         for o in v["objects"]:
             _size(o)
+            a, b = widest.get(o["id"], (0.0, 0.0))
+            widest[o["id"]] = (max(a, o["vw"]), max(b, o.get("lw", 0)))
+    foot: dict[str, tuple[float, float]] = {}
+    for v in versions:
+        for o in v["objects"]:
+            _size(o, *widest[o["id"]])
+            a, b = foot.get(o["id"], (0.0, 0.0))
+            foot[o["id"]] = (max(a, o["w"]), max(b, o["h"] + o["top"] + o["bottom"] + _marks(v, o["id"]) * MARK))
+    for v in versions:
+        for o in v["objects"]:
+            o["fw"], o["fh"] = foot[o["id"]]
+    seen_reach: set[str] = set()
+    for k, v in enumerate(versions):
         objs = {o["id"]: o for o in v["objects"]}
         sized.update(objs)
-        if k == 0:
+        if k == 0 and v["dir"] == "LR" and _listlike(v):
+            # Nodes of a list stay in a row in the order written, whatever points where right now
+            # (halfway through a reversal, variables point into the middle and links run back).
+            x = x0
+            for o in v["objects"]:
+                placed[o["id"]] = (x, CAPTION)
+                x += o["fw"] + GAP_X
+        elif k == 0:
             _place_tree(v, x0, placed)
         else:
             tb = v["dir"] == "TB"
@@ -492,7 +555,7 @@ def _layout(versions: list[dict]) -> None:
                 src = next((h for h in v["objects"] if any(s.get("ptr") == o["id"] for s in h["slots"]) and h["id"] in placed), None)
                 if src:
                     sx, sy = placed[src["id"]]
-                    near = (sx, sy + src["h"] + src["bottom"] + GAP_Y + 30 + o["top"]) if tb else (sx + src["w"] + GAP_X, sy)
+                    near = (sx, sy - src["top"] + src["fh"] + GAP_Y + 30 + o["top"]) if tb else (sx + src["fw"] + GAP_X, sy)
                 else:
                     near = (x0, 0.0 + o["top"])
                 placed[o["id"]] = _free(placed, sized, o["id"], *near, tb)
@@ -508,8 +571,11 @@ def _layout(versions: list[dict]) -> None:
                 continue
             reach.add(oid)
             todo += [s["ptr"] for s in objs[oid]["slots"] if s.get("ptr")] + [s["cell"][0] for s in objs[oid]["slots"] if s.get("cell")]
+        # Dimmed: an object something reached in an earlier version that nothing reaches now
+        # (a node unlinked, a frame's object left behind), not one that was never pointed at.
         for o in v["objects"]:
-            o["dim"] = bool(v["vars"]) and o["id"] not in reach
+            o["dim"] = o["id"] in seen_reach and o["id"] not in reach
+        seen_reach |= reach
     # One drawing size for all versions, so the scale holds still between them.
     right = max([x0] + [o["x"] + o["w"] for v in versions for o in v["objects"]] + [stack_w])
     bottom = max(

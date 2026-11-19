@@ -137,6 +137,7 @@ def test_memory_reads_variables_frames_objects_arrays_and_cell_pointers():
     [
         ("a: {next: b}\nb: {v: 1}", "a pointer to that object is `next -> b`"),
         ("head = a\na: {v: 1}", "`head -> a`"),
+        ("buckets: [_, a]\na: {v: 1}", "a cell pointing at that object is written `-> a`"),
         ("p -> zz\na: {v: 1}", "not an object here"),
         ("p -> a.9\na: [1, 2]", "`a` has 0, 1"),
         ("a: {name: Smith, John}", "quote text that has a comma"),
@@ -165,7 +166,12 @@ def test_memory_versions_keep_objects_still_and_mark_changes(build):
     pa, pc = ({o["id"]: (o["x"], o["y"]) for o in st["objects"]} for st in (a, c))
     assert pa["n1"] == pc["n1"] and pa["n2"] == pc["n2"] and "n3" in pc
     assert set(c["changed"]) == {"head", "n1.next", "n2.next"} and a["box"] == c["box"]
-    assert next(o for o in c["objects"] if o["id"] == "n3")["dim"]
+    assert not next(o for o in c["objects"] if o["id"] == "n3")["dim"]  # never reached, so not left behind
+    three = "head -> n2\nn1: {v: 1, next -> null}\nn2: {v: 2, next -> null}"
+    md3 = md.replace("\n\nIt starts", f"\n```memory step\n{three}\n```\n\nIt starts")
+    w, _ = build(f"# T\n\nOpening.\n\n{md3}")
+    last = w.slides[-1].visual["steps"][-1]
+    assert next(o for o in last["objects"] if o["id"] == "n1")["dim"]  # unlinked: reached before, not now
     assert not [i for i in b.issues if i.severity == "error"], b.issues
 
 
@@ -238,7 +244,9 @@ def test_trace_placement_and_cue_problems(build):
     w, b = build(f"# T\n\nOpening.\n\n## L {{#l}}\n\n{TRACE}\nNothing traced.\n")
     assert any("goes with the code it traces" in i for i in b.issues)
     w, b = build(f"# T\n\nOpening.\n\n## L {{#l .side}}\n\n> point\n\n{CODE}{TRACE}\nSide.\n")
-    assert any("`.side`" in i for i in b.issues)
+    assert any(i.code == "trace_layout" for i in b.issues) and w.slides[-1].visual.get("trace") and "side" not in w.slides[-1].classes
+    w, b = build(f"# T\n\nOpening.\n\n## L {{#l .pair}}\n\n{CODE}{TRACE}\nPair.\n")
+    assert any("`.pair`" in i for i in b.issues)
     w, b = build(f"# T\n\nOpening.\n\n## L {{#l}}\n\n{CODE}{TRACE}\nA [step](#step-2) and [too far](#trace-9).\n")
     assert any("its moments are `#trace-1` to `#trace-7`" in i for i in b.issues)
     assert any("has 7 moments" in i for i in b.issues)
@@ -255,3 +263,99 @@ def test_elk_on_a_flowchart_and_ignored_elsewhere(build):
     assert w.slides[-1].visual["layout"] == "elk" and not b.issues
     w, b = build("# T\n\nOpening.\n\n## S {#s}\n\n```mermaid elk\nsequenceDiagram\n  a->>b: hi\n```\n\nThe [call](#a).\n")
     assert "layout" not in w.slides[-1].visual and any(i.code == "diagram_option" for i in b.issues)
+
+
+def test_a_list_halfway_through_a_reversal_stays_in_a_row():
+    v, _ = parse_memory(
+        "prev -> n1\ncurr -> n2\nnxt -> n3\nn1: {v: 1, next -> null}\nn2: {v: 2, next -> n1}\nn3: {v: 3, next -> null}", {"flags": []}
+    )
+    ys = {o["y"] for o in v["objects"]}
+    xs = [o["x"] for o in v["objects"]]
+    assert len(ys) == 1 and xs == sorted(xs)
+
+
+# -- bounds and geometry (from the implementation review) -------------------------------------------
+
+
+def test_functions_calling_each_other_stay_cheap_or_are_refused():
+    same = ["f0(x) = x"] + [f"f{i}(x) = " + "+".join([f"f{i - 1}(x)"] * 20) for i in range(1, 6)]
+    t = time.monotonic()
+    _, problems = parse_plot("\n".join(same), {"x": "0..1"})
+    assert not problems and time.monotonic() - t < 1  # remembered by argument
+    spread = ["f0(x) = x"] + [f"f{i}(x) = " + "+".join(f"f{i - 1}(x+{k})" for k in range(20)) for i in range(1, 6)]
+    t = time.monotonic()
+    _, problems = parse_plot("\n".join(spread), {"x": "0..1"})
+    assert time.monotonic() - t < 3 and any("call each other too often" in p for p in problems)
+    _, problems = parse_plot("g(x) = " + "+".join(["x"] * 190), {"x": "0..1"})
+    assert any("too long to work out" in p for p in problems)
+
+
+def test_ranges_and_values_a_plot_cannot_show_are_reported():
+    for x in ("0..1e-12", "1e16..10000000000000004"):
+        assert any("too large or too narrow" in p for p in parse_plot("f(x) = x", {"x": x})[1])
+    v, problems = parse_plot("f(x) = 0.0000001 x\nh(x) = ln(x)\nvline 99\nk(x) = 2 3", {"x": "1..3"})
+    assert v["items"][0]["ys"][0] == pytest.approx(1e-7)
+    assert any("`h` has no value" in p for p in problems) is False  # ln is defined on 1..3
+    assert any("outside the x range" in p for p in problems) and any("put `*` between" in p for p in problems)
+    assert any("`h` has no value" in p for p in parse_plot("h(x) = ln(x)", {"x": "-3..-1"})[1])
+
+
+def test_deeply_nested_json_is_read_without_recursing_forever():
+    from showntell.paths import key_lines
+
+    assert len(key_lines("[" * 1200 + "1" + "]" * 1200, "json")) <= 64
+    t = time.monotonic()
+    key_lines("a" + " " * 60000 + "b: 1", "yaml")
+    assert time.monotonic() - t < 0.5
+
+
+def _boxes(v: dict) -> list[tuple[str, float, float, float, float]]:
+    out = [(o["id"], o["x"], o["y"] - o["top"], o["x"] + o["w"], o["y"] + o["h"] + o["bottom"]) for o in v["objects"]]
+    out += [(f["id"], f["x"], f["y"], f["x"] + f["w"], f["y"] + f["h"]) for f in v["frames"]]
+    return out
+
+
+def _overlaps(v: dict) -> list[tuple[str, str]]:
+    bs = _boxes(v)
+    return [(a[0], b[0]) for i, a in enumerate(bs) for b in bs[i + 1 :] if a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "head -> a\na: {v: 1, prev -> null, next -> b}\nb: {v: 2, prev -> a, next -> c}\nc: {v: 3, prev -> b, next -> null}",
+        "root -> r\nr: {v: 5, left -> a, right -> b}\na: {v: 3, left -> null, right -> c}\nb: {v: 8, left -> null, right -> null}\nc: {v: 4, left -> null, right -> null}",
+        'buckets: [-> a, -> null, -> b, -> null]\na: Entry {k: "x", next -> c}\nb: Entry {k: "y", next -> null}\nc: Entry {k: "z", next -> null}',
+        "lo -> arr.0\nmid -> arr.0\nhi -> arr.3\narr: [1, 2, 3, 4]\nother: [5, 6]",
+        "frame outer\n  a = 1\n  b = 2\n  c = 3\n  d = 4\n  e = 5\n  f = 6\nframe inner\n  g = 7\nn: {v: 1}",
+    ],
+)
+def test_memory_pictures_never_overlap(body):
+    for flags in ([], ["TB"]):
+        v, problems = parse_memory(body, {"flags": flags})
+        assert not problems and not _overlaps(v), (flags, _overlaps(v))
+        for f in v["frames"]:  # a frame holds its variables
+            inside = [x for x in v["vars"] if x["frame"] == f["id"]]
+            assert all(f["y"] < x["y"] and x["y"] + x["h"] <= f["y"] + f["h"] for x in inside)
+
+
+def test_memory_versions_that_grow_never_overlap(build):
+    one = "head -> n1\nn1: {v: 1, next -> n2}\nn2: {v: 2, next -> null}"
+    two = 'head -> n1\nn1: {v: "hello, world", next -> n2}\nn2: {v: 2, next -> n3}\nn3: {v: [1, 2, 3], next -> null}'
+    w, _ = build(f"# T\n\nOpening.\n\n## M {{#m}}\n\n```memory step\n{one}\n```\n```memory step\n{two}\n```\n\nA [step](#step-2).\n")
+    for st in w.slides[-1].visual["steps"]:
+        assert not _overlaps(st), _overlaps(st)
+    a, b = w.slides[-1].visual["steps"]
+    assert a["objects"][0]["w"] == b["objects"][0]["w"]  # one size across versions
+
+
+def test_trace_quoted_text_matches_whole_values():
+    moments, problems = parse_trace('L1 t = 0\nL1 t = 30\nL1 t = 3\nL1 msg = "a == b"', 't = 0; msg = ""', 1)
+    from showntell.trace import find_moment
+
+    assert find_moment(moments, "t = 3", 0, str.lower) == 3 and not [p for p in problems if "copies the code" in p]
+
+
+def test_cell_pointers_go_only_into_a_row_of_cells():
+    _, problems = parse_memory("cur -> a.val\na: {key: 7, val: 1}", {"flags": []})
+    assert any("point at the object instead" in p for p in problems)

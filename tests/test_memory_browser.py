@@ -96,3 +96,64 @@ def test_memory_draws_keeps_objects_still_and_points(daemon, browser):  # noqa: 
             page.wait_for_timeout(500)
             page.screenshot(path=os.path.join(os.environ["SHOWNTELL_SHOTS"], f"{name}.png"))
     assert not errors, errors
+
+
+GROW = """# Grow
+
+Appending.
+
+## Append {#app}
+
+```memory step
+head -> n1
+n1: Node {val: 1, next -> null}
+```
+```memory step
+head -> n1
+n1: Node {val: 1, next -> n2}
+n2: Node {val: 2, next -> null}
+```
+
+We [append](#step-2) a node to the end of the list, and then [the new node](#n2) holds the value two, which is where the list now ends.
+
+## Curve {#cv}
+
+```plot x=-3..3
+f(x) = 1/x  "spike"
+```
+
+The [curve](#f) runs off the chart.
+"""
+
+
+def test_a_direct_seek_lands_on_the_picture_playing_through_gives(daemon, browser):  # noqa: F811
+    call = _rpc(daemon)
+    r = call("start", title="grow", frame="landscape", voice="", speed=1.0, project_dir=str(ROOT))
+    a = call("add", handle=r["handle"], markdown=GROW)
+    assert not [i for i in a["issues"] if i["severity"] == "error"], a["issues"]
+    call("playable", handle=r["handle"], timeout=10)
+    url = r["url"].replace("localhost", "127.0.0.1") + "/"
+    page = browser.new_page(viewport={"width": 1280, "height": 720})
+    page.goto(url)
+    page.wait_for_function("window.__showntell !== undefined")
+    t = _at(page, "app", 1, 0.4)
+    look = """() => { const p = document.querySelector('#pointer'), s = document.querySelector('#stage').getBoundingClientRect();
+      return { active: [...document.querySelectorAll('[data-id].active')].map((g) => g.dataset.id),
+               pointer: p.hidden ? null : p.getBoundingClientRect().toJSON(), stage: s.toJSON() }; }"""
+    for how in ("at", "seek"):  # a link to the moment, and a seek under capture
+        if how == "at":
+            page.goto(f"{url}?at={t:.2f}")
+        else:
+            page.goto(url + "?capture=1")
+            page.wait_for_function("window.__showntell?.duration?.() > 0")
+            page.evaluate("(t) => window.__showntell.seek(t)", t)
+        page.wait_for_selector(".memory svg [data-id='n2']")
+        page.wait_for_timeout(500)
+        st = page.evaluate(look)
+        assert st["active"] == ["n2"] and st["pointer"], (how, st)
+    page.goto(f"{url}?at={_at(page, 'cv', 0, 0.6):.2f}")
+    page.wait_for_selector(".plot svg g.entry")
+    page.wait_for_timeout(500)
+    st = page.evaluate(look)
+    p, s = st["pointer"], st["stage"]
+    assert p and p["top"] >= s["top"] - 2 and p["bottom"] <= s["bottom"] + 2, st  # the box stays on the plot

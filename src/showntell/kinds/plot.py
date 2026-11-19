@@ -20,8 +20,8 @@ SHADE_SAMPLES = 81
 MAX_FUNCS = 8
 MAX_MARKS = 16
 NAME = r"[A-Za-z_][A-Za-z_0-9]*'*"
-LABEL = re.compile(r'\s+"([^"]*)"\s*$')
-DASHED = re.compile(r"\s+dashed\s*$")
+MAX_LINE = 600
+MAX_REACH = 160  # how deep a function goes, counting the functions it calls
 FUNC = re.compile(rf"^({NAME})\s*\(\s*([A-Za-z_]\w*)\s*\)\s*=\s*(.+)$")
 CONST = re.compile(rf"^({NAME})\s*=\s*(.+)$")
 POINT = re.compile(rf"^(?:point\b\s*)?(?:({NAME})\s*(?:=|at)?\s*)?\((.*)\)\s*$")
@@ -74,7 +74,20 @@ def _range(text: str | None, consts: dict, axis: str, problems: list[str]) -> li
     if not a < b:
         problems.append(f"the {axis} range `{text}` must run from smaller to larger")
         return None
+    if max(abs(a), abs(b)) > 1e12 or b - a < 1e-9 * max(1.0, abs(a), abs(b)):
+        problems.append(f"the {axis} range `{text}` is too large or too narrow to draw; rescale the units")
+        return None
     return [a, b]
+
+
+def _label(line: str) -> tuple[str, str]:
+    """A line and its trailing `"label"`, found from the end (no pattern that backtracks)."""
+    if not line.endswith('"'):
+        return line, ""
+    at = line.rfind('"', 0, len(line) - 1)
+    if at <= 0 or not line[at - 1].isspace():
+        return line, ""
+    return line[:at].rstrip(), line[at + 1 : -1]
 
 
 def _id(name: str) -> str:
@@ -85,14 +98,17 @@ def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
     problems: list[str] = []
     funcs: dict[str, tuple[str, expr.Node]] = {}
     consts: dict[str, float] = {}
+    reach: dict[str, int] = {}
     items: list[dict] = []
     lines = [ln.strip() for ln in body.split("\n") if ln.strip() and not ln.strip().startswith(("#", "//"))]
     for line in lines:
         label, dashed = "", False
-        if lm := LABEL.search(line):
-            label, line = lm.group(1), line[: lm.start()].rstrip()
-        if dm := DASHED.search(line):
-            dashed, line = True, line[: dm.start()].rstrip()
+        if len(line) > MAX_LINE:
+            problems.append(f"`{line[:40]}...` is {len(line)} characters; a plot line holds up to {MAX_LINE}")
+            continue
+        line, label = _label(line)
+        if line.endswith("dashed") and line[:-6][-1:].isspace():
+            dashed, line = True, line[:-6].rstrip()
         if re.match(r"^(x|y)\s*:\s*\S+\s*\.\.", line):
             problems.append(f"`{line}`: {FORMAT_HINT}")
         elif m := FUNC.match(line):
@@ -100,10 +116,18 @@ def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
             if not _fresh(name, funcs, consts, items, problems):
                 continue
             try:
-                funcs[name] = (param, expr.parse(src, set(funcs), params=(param, *consts)))
+                tree = expr.parse(src, set(funcs), params=(param, *consts))
             except expr.ExprError as e:
-                problems.append(f"`{name}({param}) = {src}`: {e}")
+                problems.append(f"`{name}({param}) = {src[:40]}{'...' if len(src) > 40 else ''}`: {e}")
                 continue
+            reach[name] = expr.depth(tree) + max([reach[c] for c in expr.calls(tree) if c in reach] + [0])
+            if reach[name] > MAX_REACH:
+                problems.append(f"`{name}({param})` calls functions that call others too deeply to work out; write it out more directly")
+                continue
+            if sum(1 for it in items if it["kind"] == "fn") >= MAX_FUNCS:
+                problems.append(f"`{name}({param})`: a plot draws up to {MAX_FUNCS} functions; split the rest onto another slide")
+                continue
+            funcs[name] = (param, tree)
             items.append({"id": _id(name), "kind": "fn", "name": name, "label": label, "src": src, "dashed": dashed})
         elif (m := POINT.match(line)) and (line.startswith("point") or len(_split_args(m.group(2))) == 2):
             parts = _split_args(m.group(2))
@@ -164,15 +188,28 @@ def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
     if xr is None and not attrs.get("x"):
         problems.append(f"it has no x range: {FORMAT_HINT}")
     xr = xr or [-5.0, 5.0]
-    for it in items:
-        if it["kind"] == "fn":
-            param, node = funcs[it["name"]]
-            it["ys"] = [_num(expr.evaluate(node, {**consts, param: x}, funcs)) for x in _xs(xr, SAMPLES)]
-        elif it["kind"] == "shade":
-            param, node = funcs[it.pop("fn")]
-            xs = _xs([it["from"], it["to"]], SHADE_SAMPLES)
-            it["xs"] = [round(x, 6) for x in xs]
-            it["ys"] = [_num(expr.evaluate(node, {**consts, param: x}, funcs)) for x in xs]
+    budget, memo = expr.Budget(), {}
+    try:
+        for it in items:
+            if it["kind"] == "fn":
+                param, node = funcs[it["name"]]
+                it["ys"] = [_num(expr.evaluate(node, {**consts, param: x}, funcs, budget, memo)) for x in _xs(xr, SAMPLES)]
+                if all(y is None for y in it["ys"]):
+                    problems.append(f"`{it['name']}` has no value anywhere from x = {xr[0]:g} to {xr[1]:g}, so nothing is drawn")
+            elif it["kind"] == "shade":
+                param, node = funcs[it.pop("fn")]
+                xs = _xs([it["from"], it["to"]], SHADE_SAMPLES)
+                it["xs"] = [_num(x) for x in xs]
+                it["ys"] = [_num(expr.evaluate(node, {**consts, param: x}, funcs, budget, memo)) for x in xs]
+    except expr.TooCostly:
+        problems.append("its functions call each other too often to work out; write them out more directly")
+        items = [it for it in items if it["kind"] not in ("fn", "shade") or "ys" in it and len(it["ys"]) in (SAMPLES, SHADE_SAMPLES)]
+        for it in items:
+            it.pop("fn", None)
+    for it in items:  # parts the x range leaves out
+        lo, hi = (it.get("x"), it.get("x")) if it["kind"] in ("point", "vline") else (it.get("from"), it.get("to"))
+        if lo is not None and (hi < xr[0] or lo > xr[1]):
+            problems.append(f"`{it['id']}` is outside the x range {xr[0]:g} to {xr[1]:g}, so it is not drawn")
     yr = _range(attrs.get("y"), consts, "y", problems) if attrs.get("y") else None
     if not any(it["kind"] == "fn" for it in items) and not problems:
         problems.append("it has no function to draw: add a line like `f(x) = x^2`")
@@ -185,7 +222,7 @@ def parse_plot(body: str, attrs: dict) -> tuple[dict, list[str]]:
         "xlabel": attrs.get("xlabel", ""),
         "ylabel": attrs.get("ylabel", ""),
         "x": xr,
-        "y": yr or fit_y(items),
+        "y": yr or fit_y([it for it in items if it["kind"] != "point" or xr[0] <= it["x"] <= xr[1]]),
         "fit": yr is None,  # y fitted to the curves: across all versions once there are steps
         "items": items,
         "ids": [it["id"] for it in items],
@@ -221,7 +258,8 @@ def _xs(r: list[float], n: int) -> list[float]:
 
 
 def _num(v: float) -> float | None:
-    return round(v, 6) if math.isfinite(v) and abs(v) < 1e12 else None
+    """Seven significant digits, so small values keep their shape; None for no value."""
+    return float(f"{v:.7g}") if math.isfinite(v) and abs(v) < 1e15 else None
 
 
 def fit_y(items: list[dict]) -> list[float]:

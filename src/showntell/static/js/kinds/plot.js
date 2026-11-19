@@ -39,6 +39,20 @@ export default {
     draw(parts, parts.drawn.v, 1);
   },
 
+  // A part pointed at: its box within the plot's frame, since curves run on beyond it.
+  target(cue, parts) {
+    if (cue.kind !== "item") return undefined;
+    const g = parts.items.get(cue.id), frame = parts.visual?.querySelector("rect.frame");
+    if (!g || !frame) return undefined;
+    g.classList.add("active");
+    g.parentElement?.classList.add("has-active");
+    const a = g.getBoundingClientRect(), f = frame.getBoundingClientRect();
+    const left = Math.max(a.left, f.left), top = Math.max(a.top, f.top);
+    const right = Math.min(a.right, f.right), bottom = Math.min(a.bottom, f.bottom);
+    if (right <= left || bottom <= top) return null;
+    return { rects: [{ left, top, right, bottom, width: right - left, height: bottom - top }] };
+  },
+
   frame(st, slide, parts, t) {
     const v = slide.visual || {};
     let key = "";
@@ -108,12 +122,20 @@ function sampleAt(ys, x0, x1, x) {
   return a + (b - a) * (f - i);
 }
 
-// Ticks at 1, 2 or 5 times a power of ten, about `n` of them across [lo, hi].
-function ticks(lo, hi, n) {
-  const raw = (hi - lo) / n, p = 10 ** Math.floor(Math.log10(raw));
+// Ticks at 1, 2 or 5 times a power of ten, about `n` of them across [lo, hi], counted by index so
+// a range too fine or too far out for floating point still ends (and never with more than 40).
+export function ticks(lo, hi, n) {
+  const raw = (hi - lo) / n;
+  if (!(raw > 0) || !Number.isFinite(raw)) return [];
+  const p = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
+  const first = Math.ceil(lo / step - 1e-9);
   const out = [];
-  for (let t = Math.ceil(lo / step - 1e-9) * step; t <= hi + 1e-9; t += step) out.push(Math.abs(t) < step * 1e-6 ? 0 : t);
+  for (let i = 0; i <= 40; i++) {
+    const t = (first + i) * step;
+    if (t > hi + step * 1e-6) break;
+    out.push(Math.abs(t) < step * 1e-6 ? 0 : t);
+  }
   return out;
 }
 

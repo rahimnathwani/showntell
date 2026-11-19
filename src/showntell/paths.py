@@ -18,6 +18,8 @@ from typing import NamedTuple
 DATA_LANGS = {"json": "json", "jsonc": "json", "json5": "json", "yaml": "yaml", "yml": "yaml", "toml": "toml"}
 
 Path = tuple[str, ...]
+MAX_LINE = 1000
+MAX_NEST = 64  # keys deeper than this are not named (and the reader never recurses further)
 
 
 class Span(NamedTuple):
@@ -46,12 +48,14 @@ def parse_path(target: str) -> Path | None:
     return tuple(p.strip() for p in out) if out else None
 
 
-def find(paths: dict[Path, Span], want: Path) -> Path | None:
-    """The path a cue names: exactly, else the one path ending with those keys. Keys that hold a
-    dot (`socket.io`) match when written with dots too."""
+def find(paths: dict[Path, Span], want: Path, exact: bool = False) -> Path | None:
+    """The path a cue names: exactly, else (unless `exact`) the one path ending with those keys.
+    Keys that hold a dot (`socket.io`) match when written with dots too."""
     for cand in _joins(want, _prefixes(paths)):
         if cand in paths:
             return cand
+    if exact:
+        return None
     tails = {p for cand in _joins(want, None) for p in paths if p[-len(cand) :] == cand}
     return tails.pop() if len(tails) == 1 else None
 
@@ -151,12 +155,26 @@ def _json(code: str, line0: int = 0) -> dict[Path, Span]:
             return tok.text[1:-1] if len(tok.text) > 1 and tok.text[-1] == tok.text[0] else tok.text[1:]
         return tok.text
 
+    def skip() -> _Tok:
+        """Past a container nested too deep to name keys in, to its matching close."""
+        nonlocal i
+        depth = 0
+        while i < len(toks):
+            t = toks[i]
+            i += 1
+            depth += (t.text in ("{", "[")) - (t.text in ("}", "]"))
+            if depth <= 0:
+                return t
+        return toks[-1]
+
     def value(path: Path) -> _Tok:
         """Read the value at toks[i]; return its last token."""
         nonlocal i
         if i >= len(toks):
             return toks[-1]
         tok = toks[i]
+        if tok.text in ("{", "[") and len(path) >= MAX_NEST:
+            return skip()
         if tok.text in ("{", "["):
             close = "}" if tok.text == "{" else "]"
             i += 1
@@ -258,7 +276,7 @@ def _yaml_doc(rows: list[tuple[int, str]]) -> dict[Path, Span]:
             body, parent = rest, it
             if not body:
                 break
-        m = _KEY.match(body)
+        m = _KEY.match(body) if len(body) <= MAX_LINE else None  # a long line is no key (and keeps the match linear)
         if m:
             key = next(g for g in m.groups()[:3] if g is not None).strip()
             path = (*parent, key)

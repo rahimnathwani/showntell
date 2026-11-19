@@ -654,7 +654,7 @@ body.portrait .slide-row:has(> .trace-panel) { flex-direction: column; }
 body.portrait .trace-panel { flex: none; align-self: stretch; }
 .trace-panel .tp-head { font-family: var(--sans); font-size: 17px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .trace-panel .tp-vars { display: flex; flex-direction: column; gap: 6px; }
-.trace-panel .tp-row, .trace-panel .tp-ret { display: flex; gap: 18px; align-items: baseline; padding: 6px 12px; border-radius: 10px;
+.trace-panel .tp-row, .trace-panel .tp-ret { display: flex; gap: 18px; align-items: baseline; padding: 4px 12px; border-radius: 10px;
   transition: background 0.3s, box-shadow 0.3s; }
 .trace-panel .tp-name { color: var(--muted); min-width: 3ch; }
 .trace-panel .tp-val { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }

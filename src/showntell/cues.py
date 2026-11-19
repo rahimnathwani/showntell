@@ -13,7 +13,7 @@ from . import kinds, paths
 from .format import Cue, inline_plain
 from .mermaid import has_edge, sequence_messages
 from .model import Say, Slide
-from .trace import find_moment
+from .trace import find_moment, has_text
 
 # Words too common to take for an identifier when inferring cues from narration.
 STOPWORDS = set(
@@ -164,7 +164,13 @@ class CueResolver:
         seq = re.fullmatch(r"([\w-]+?)\s*(?:<<)?-{1,2}(?:>>|>|x|\))\s*([\w-]+)", t)
         if seq and s.kind == "diagram" and s.visual.get("type") == "sequencediagram":
             # A message in a sequence diagram, named by its sender and receiver: point at its text.
-            msgs = [m for m in sequence_messages(s.visual["source"]) if m[:2] == seq.groups()]
+            # A participant may be named by its alias too (`participant C as Client`: #Client->>Server).
+            nodes = s.visual.get("nodes", {})
+            alias = {}
+            for nid, label in nodes.items():
+                alias.setdefault(label.lower(), nid)
+            ends = tuple(e if e in nodes else alias.get(e.lower(), e) for e in seq.groups())
+            msgs = [m for m in sequence_messages(s.visual["source"]) if m[:2] == ends]
             if c.text:
                 msgs = [m for m in msgs if _norm(c.text) in _norm(m[2])] or msgs
             if msgs:
@@ -350,7 +356,7 @@ class CueResolver:
         if not 1 <= n <= k:
             self._issue("cue_no_target", f"[{c.label}](#{t}): the trace on slide `{s.id}` has {k} moments; {names}.", slide=s.id)
             return None
-        if c.text and _norm(c.text) not in _norm(trace[n - 1]["text"]):
+        if c.text and not has_text(trace[n - 1]["text"], c.text, _norm):
             hit = find_moment(trace, c.text, self._moment, _norm)
             if hit:
                 self._issue(
@@ -370,20 +376,23 @@ class CueResolver:
         return {**base, "kind": "trace", "n": n, "line": trace[n - 1]["line"], "text": ""}
 
     def _own_part(self, s: Slide, c: Cue, t: str, base: dict) -> dict | None:
-        """A part, list item or JSON/YAML key of this slide's visual with exactly that name; None
-        (and no problem reported) when there is none."""
+        """A part, node, list item or JSON/YAML/TOML key of this slide's visual named exactly so;
+        None (and no problem reported) when there is none. Looser matches (a label, a slug, the
+        tail of a path) wait until after the reserved shapes and the slide's own id."""
         if kinds.part_kind(s.kind):
             pid = kinds.get(s.kind).find(s.visual, t)
-            if pid:
+            if pid and (pid == t or pid == re.sub(r"\[\s*(\w+)\s*\]", r".\1", t)):
                 outer = s.visual.get("part_of", {}).get(pid)
                 return {**base, "kind": "item", "id": pid, **({"part": outer} if outer else {})}
+        elif s.kind == "diagram" and t in s.visual.get("nodes", {}):
+            return {**base, "kind": "node", "id": t, "text": c.text or s.visual["nodes"][t]}
         elif s.kind == "list" and t in {it["id"] for it in s.visual.get("items", [])}:
             return {**base, "kind": "item", "id": t}
         elif s.kind == "code" and paths.data_lang(s.visual.get("lang")) and not re.fullmatch(r"[+-]?L\d+(?:-L?\d+)?", t, re.I):
             steps = s.visual.get("steps")
             vis = steps[min(len(steps), max(1, self._step)) - 1] if steps else s.visual
             want = paths.parse_path(t)
-            if want and paths.find(paths.key_lines(vis["code"], s.visual["lang"]), want):
+            if want and paths.find(paths.key_lines(vis["code"], s.visual["lang"]), want, exact=True):
                 return self._resolve_key(s, c, t, steps, base)
         return None
 

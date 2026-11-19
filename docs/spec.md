@@ -137,6 +137,7 @@ Findings from the server, found while parsing, building and voicing:
 | `block_too_big` | warning | a chart, stat or chat block has more parts than the frame shows comfortably |
 | `tree_error` | warning | a file tree's nesting is inconsistent |
 | `trace_error` | error | a trace line could not be read, or the trace is not beside the code it traces |
+| `trace_layout` | warning | a traced slide asked for `.side`, whose place the trace's panel took |
 | `trace_unused` | warning | a traced code slide has no #trace cue, so its panel never moves |
 | `icon_unknown` | warning | an icon name is not in the bundled set and was left out |
 | `svg_removed` | warning | a drawing had elements or attributes the player does not allow, which were removed |

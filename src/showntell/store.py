@@ -96,13 +96,17 @@ class Session:
         if len(self.source) + len(markdown) > MAX_SOURCE_BYTES:
             raise ValueError("this walkthrough is over 1 MB of Markdown; start a new one")
         before = len(self.w.slides)
-        # Hosted limits are checked on the result: keep the state to put back if it goes over.
-        undo = copy.deepcopy({"w": self.w, "b": self.builder, "source": self.source}) if lim else None
+        # Kept to put back if the call fails part way, or (hosted) goes over a limit.
+        undo = copy.deepcopy({"w": self.w, "b": self.builder, "source": self.source})
         self.source += markdown if markdown.endswith("\n") else markdown + "\n"
         b = self.builder
         b.issues, b.new_says, b.changed = [], [], set()
         cited = dict(self.w.cited)
-        b.add(markdown)
+        try:
+            b.add(markdown)
+        except Exception:
+            self.w, self.builder, self.source = undo["w"], undo["b"], undo["source"]
+            raise
         if len(self.w.slides) > MAX_SLIDES:
             b._issue(
                 "too_many_slides",

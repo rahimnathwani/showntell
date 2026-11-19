@@ -405,14 +405,23 @@ class Builder(CueResolver, Checks):
                 line=b.line,
             )
             return
-        if {"side", "pair"} & set(s.classes):
+        if "pair" in s.classes:
             self._issue(
                 "trace_error",
-                f"Line {b.line}: the trace's panel takes the place of `.side` takeaways and a `.pair` visual; slide `{s.id}` has one.",
-                "Drop `.side` or `.pair` from the heading.",
+                f"Line {b.line}: the trace's panel takes the place of a `.pair` visual; slide `{s.id}` has `.pair`.",
+                "Drop `.pair` from the heading, or give the other visual its own slide.",
                 line=b.line,
             )
             return
+        if "side" in s.classes:
+            # The panel takes the side; the takeaways show under the title instead.
+            s.classes = [c for c in s.classes if c != "side"]
+            self._issue(
+                "trace_layout",
+                f"Line {b.line}: slide `{s.id}` has `.side`, whose place the trace's panel takes; its takeaways show under the title.",
+                "Drop `.side` from a traced slide.",
+                line=b.line,
+            )
         moments, problems = parse_trace(b.text, s.visual["code"], s.visual.get("start", 1))
         for i, p in enumerate(problems):
             fmt = catalogue_format("trace")
@@ -477,6 +486,13 @@ class Builder(CueResolver, Checks):
                     self._issue(k.error_code, f"Line {b.line}: {p}.", line=b.line)
                 return self._set(cur, k.name, cur.visual)
             if cur is not None and cur.pair.get("kind") == k.name and cur.pair["visual"].get("steps"):
+                if cur.visual.get("steps") and len(cur.pair["visual"]["steps"]) == 1:
+                    self._issue(
+                        k.error_code,
+                        f"Line {b.line}: both visuals of `.pair` slide `{cur.id}` have `step` versions, and `#step-N` moves only the first.",
+                        "Give one of them its own slide.",
+                        line=b.line,
+                    )
                 # The second visual of a `.pair` changing in steps: code beside a memory picture.
                 pv = cur.pair["visual"]
                 pv["steps"].append(version)

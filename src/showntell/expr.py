@@ -40,6 +40,7 @@ FUNCS: dict[str, Callable[..., float]] = {
 CONSTS = {"pi": math.pi, "π": math.pi, "e": math.e, "tau": math.tau}
 MAX_DEPTH = 60
 MAX_LEN = 400
+MAX_TREE = 64  # nodes deep: a sum of 60 terms is 60 deep
 
 _TOKEN = re.compile(r"\s*(?:(\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)|([A-Za-z_π][A-Za-z_0-9]*'*)|(\*\*|[-+*/^(),·×−]))")
 
@@ -116,6 +117,8 @@ def parse(src: str, known: set[str] | None = None, params: tuple[str, ...] = ("x
                 node = (t[1], node, last)
                 divided = t[1] == "/"
             elif starts_factor(t):  # implicit: 2x, 3(x+1), (x+1)(x-1), 2 sin(x)
+                if t[0] == "num":
+                    raise ExprError(f"a number follows another value (`{t[1]}`): put `*` between them")
                 if divided:
                     raise ExprError("`1/2x` reads two ways: write `1/(2x)` or `(1/2)x`")
                 if last[0] == "^" or (last[0] == "neg" and last[1][0] == "^"):
@@ -185,14 +188,75 @@ def parse(src: str, known: set[str] | None = None, params: tuple[str, ...] = ("x
     node = sum_(0)
     if pos < len(toks):
         raise ExprError(f"unexpected `{toks[pos][1]}`")
+    if depth(node) > MAX_TREE:
+        raise ExprError("the expression is too long to work out: split it into functions defined one per line")
     return node
 
 
-def evaluate(node: Node, env: dict[str, float], funcs: dict[str, tuple[str, Node]] | None = None, depth: int = 0) -> float:
+def depth(node: Node) -> int:
+    """How deep a tree goes, without recursing (a long sum is a deep tree)."""
+    best, todo = 0, [(node, 1)]
+    while todo:
+        n, d = todo.pop()
+        best = max(best, d)
+        if n[0] == "call":
+            todo += [(a, d + 1) for a in n[2]]
+        elif n[0] == "neg":
+            todo.append((n[1], d + 1))
+        elif n[0] not in ("num", "var"):
+            todo += [(n[1], d + 1), (n[2], d + 1)]
+    return best
+
+
+def calls(node: Node) -> set[str]:
+    """Names of the functions a tree calls."""
+    out, todo = set(), [node]
+    while todo:
+        n = todo.pop()
+        if n[0] == "call":
+            out.add(n[1])
+            todo += n[2]
+        elif n[0] == "neg":
+            todo.append(n[1])
+        elif n[0] not in ("num", "var"):
+            todo += [n[1], n[2]]
+    return out
+
+
+class TooCostly(Exception):
+    """Evaluation went past its budget of steps."""
+
+
+class Budget:
+    """Steps left for one block's evaluation; functions calling each other can multiply the work."""
+
+    def __init__(self, steps: int = 1_500_000) -> None:
+        self.left = steps
+
+
+def evaluate(
+    node: Node,
+    env: dict[str, float],
+    funcs: dict[str, tuple[str, Node]] | None = None,
+    budget: Budget | None = None,
+    memo: dict | None = None,
+) -> float:
     """The value of a tree, NaN where it is undefined. `env`: values by name; `funcs`: the plot's
-    own functions as (parameter, tree)."""
+    own functions as (parameter, tree). Calls to them are remembered in `memo` by argument, since
+    they depend on nothing else; `budget` raises TooCostly when the work runs past it."""
+    try:
+        return _eval(node, env, funcs or {}, 0, budget, {} if memo is None else memo)
+    except RecursionError:
+        return math.nan
+
+
+def _eval(node: Node, env: dict[str, float], funcs: dict, depth: int, budget: Budget | None, memo: dict) -> float:
     if depth > 40:
         return math.nan
+    if budget is not None:
+        budget.left -= 1
+        if budget.left < 0:
+            raise TooCostly
     try:
         op = node[0]
         if op == "num":
@@ -200,16 +264,19 @@ def evaluate(node: Node, env: dict[str, float], funcs: dict[str, tuple[str, Node
         if op == "var":
             return env[node[1]]
         if op == "neg":
-            return -evaluate(node[1], env, funcs, depth)
+            return -_eval(node[1], env, funcs, depth, budget, memo)
         if op == "call":
-            args = [evaluate(a, env, funcs, depth) for a in node[2]]
-            if funcs and node[1] in funcs:
-                param, body = funcs[node[1]]
-                return evaluate(body, {**env, param: args[0]}, funcs, depth + 1)
+            args = [_eval(a, env, funcs, depth, budget, memo) for a in node[2]]
+            if node[1] in funcs:
+                key = (node[1], args[0])
+                if key not in memo:
+                    param, body = funcs[node[1]]
+                    memo[key] = _eval(body, {**env, param: args[0]}, funcs, depth + 1, budget, memo)
+                return memo[key]
             v = FUNCS[node[1]](*args)
             return float(v)
-        a = evaluate(node[1], env, funcs, depth)
-        b = evaluate(node[2], env, funcs, depth)
+        a = _eval(node[1], env, funcs, depth, budget, memo)
+        b = _eval(node[2], env, funcs, depth, budget, memo)
         if op == "+":
             return a + b
         if op == "-":

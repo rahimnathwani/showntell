@@ -241,10 +241,22 @@ function arrows(v, geo) {
         path = `M${sx},${sy} C${sx},${sy + 40} ${side},${y1 - 40} ${side},${y1} L${side},${y2} C${side},${y2 + 30} ${tx},${ty - 30} ${tx},${ty}`;
       } else path = `M${sx},${sy} C${sx},${sy + dy} ${tx},${ty - dy} ${tx},${ty}`;
     } else {
-      // Back or sideways: leave upward, come down onto the target's top.
-      const tx = d.x + d.w / 2, ty = d.y - (o.type ? 26 : 2);
-      const lift = Math.max(60, Math.abs(sx - tx) * 0.25);
-      path = `M${sx},${sy} C${sx + 40},${Math.min(sy, ty) - lift} ${tx},${ty - lift} ${tx},${ty}`;
+      // Back or sideways: out of the holder's right edge and around, never through a box.
+      const h = (holder && geo.get(holder)) || s;
+      const x1 = h.x + h.w;
+      const besides = d.x < h.x + h.w && h.x < d.x + d.w; // stacked in one column
+      if (besides || tb) {
+        // A loop on the right, into the target's right side.
+        const ty = d.y + d.h / 2;
+        const lx = Math.max(x1, d.x + d.w) + 36 + 14 * lane++;
+        path = `M${sx},${sy} L${x1},${sy} C${lx},${sy} ${lx},${ty} ${d.x + d.w},${ty}`;
+      } else {
+        // Over the top of everything between, down onto the target's top.
+        const tx = d.x + d.w / 2, tTop = d.y - (o.type ? 26 : 2);
+        const span = boxes.filter((b) => b.w && b.x < x1 + 20 && b.x + b.w > tx - 20);
+        const ytop = Math.min(sy, tTop, ...span.map((b) => b.y - b.top)) - 28 - 14 * lane++;
+        path = `M${sx},${sy} L${x1},${sy} C${x1 + 44},${sy} ${x1 + 44},${ytop} ${x1},${ytop} L${tx + 30},${ytop} C${tx},${ytop} ${tx},${ytop} ${tx},${tTop}`;
+      }
     }
     out.push({ key: `${fromId}->${target}`, from: partOf, to: target, path });
   };

@@ -7,6 +7,7 @@ import { el, fit, highlight, reducedMotion, textRange } from "../draw.js";
 import { esc, splitLines } from "../util.js";
 
 const SKIP_S = 0.3; // a jump forward plays the moments it skips, this long each
+const OUT_LINES = 4; // output lines the panel keeps
 
 // A code panel with real line numbers. marks: {removed:[bool], added:[bool]} for diffs.
 export function codeBox(code, lang, start, title, tag, side, marks) {
@@ -69,6 +70,21 @@ export default {
     return `t${n}`;
   },
 
+  // A trace panel too full to show its last moment whole; the code itself is measured as usual.
+  measure(slide, body, parts, report) {
+    const tr = parts.trace;
+    if (!tr) return false;
+    const was = tr.shown;
+    showMoment(parts, tr.moments.length);
+    const over = tr.panel.scrollHeight > tr.panel.clientHeight + 2;
+    showMoment(parts, was);
+    if (over) {
+      report(`Slide ${slide.id}: the trace's panel cannot show all its variables and output at once; some are cut off.`
+        + " Trace fewer variables, or print less.", "block_too_big", slide.id);
+    }
+    return false;
+  },
+
   // A #trace cue points at the line that just ran.
   target(cue, parts) {
     if (cue.kind !== "trace") return undefined;
@@ -103,12 +119,15 @@ function showMoment(parts, n) {
   const tr = parts.trace;
   if (tr.shown === n) return;
   tr.shown = n;
+  if (n < 0) return;
   const m = n > 0 ? tr.moments[n - 1] : null;
   parts.lines.new.forEach((ln, no) => ln.classList.toggle("run", !!m && m.line === no));
   const changed = new Set(m?.changed || []);
   const rows = (m?.vars || []).map(([name, value]) => `<div class="tp-row${changed.has(name) ? " changed" : ""}"><span class="tp-name">${esc(name)}</span><span class="tp-val">${esc(value)}</span></div>`).join("");
   const ret = m?.ret != null ? `<div class="tp-ret"><span class="tp-name">returns</span><span class="tp-val">${esc(m.ret)}</span></div>` : "";
-  const out = m?.out?.length ? `<div class="tp-head">Output</div><div class="tp-out${m.printed ? " changed" : ""}">${m.out.map((x) => `<div>${esc(x)}</div>`).join("")}</div>` : "";
+  // The last few lines of output, as a terminal shows them.
+  const lines = (m?.out || []).slice(-OUT_LINES);
+  const out = lines.length ? `<div class="tp-head">Output</div><div class="tp-out${m.printed ? " changed" : ""}">${lines.map((x) => `<div>${esc(x)}</div>`).join("")}</div>` : "";
   tr.panel.innerHTML = `<div class="tp-head">Variables</div><div class="tp-vars">${rows || '<div class="tp-none">Not run yet</div>'}</div>${ret}${out}`;
 }
 

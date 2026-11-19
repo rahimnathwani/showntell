@@ -45,9 +45,14 @@ export function render(force) {
   applyVisual(st, slide, force, landed);
   if (cam.changed && !cam.moving && !landed && st.cue && !pointer.hidden) follow(st, slide);
   liveFrame(st, slide, `${entering}${cam.key ? `|c${cam.key}` : ""}`);
-  // A part gliding between versions (a drawing's or plot's step) carries the pointer with it.
+  // A kind that redrew its picture this frame (a drawing's, plot's or memory picture's step) gets
+  // the cue applied again: a part gliding carries the pointer, and a part that only exists in the
+  // version now shown (after a direct seek) is found at all.
   const moving = (S.view?.panes || []).some((p) => p.parts.moving);
-  if ((moving || S.partsMoved) && st.cue && !pointer.hidden && !cam.moving) follow(st, slide);
+  if ((moving || S.partsMoved) && !cam.moving) {
+    S.lastCueKey = "";
+    applyVisual(st, slide, true);
+  }
   S.partsMoved = moving;
   applyCaption(st, slide, force);
   updateTime(st);

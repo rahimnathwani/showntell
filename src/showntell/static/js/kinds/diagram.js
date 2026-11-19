@@ -254,7 +254,7 @@ export function diagramEdges(svg, nodeIds) {
   const labels = [...svg.querySelectorAll("g.edgeLabels > g.edgeLabel, g.edgeLabel")];
   const paths = [...svg.querySelectorAll("path.flowchart-link")];
   paths.forEach((p, i) => {
-    const [from, to] = edgeEnds(p.id || "", ids);
+    const [from, to] = edgeEnds(p.id || "", ids, !!svg.closest?.('[data-layout="elk"]'));
     edges.push({ el: p, from, to, label: labels.length === paths.length ? labels[i] : null });
   });
   return edges;
@@ -262,10 +262,10 @@ export function diagramEdges(svg, nodeIds) {
 
 // The two node ids in an edge path's id, trying one numeric suffix and then two, since node ids
 // may themselves contain underscores and digits.
-export function edgeEnds(id, ids) {
+export function edgeEnds(id, ids, elk = false) {
   const m = /^L_(.+)$/.exec(id);
   if (!m) return [null, null];
-  for (const strip of [/_\d+$/, /_\d+_\d+$/]) {
+  for (const strip of elk ? [/_\d+_\d+$/, /_\d+$/] : [/_\d+$/, /_\d+_\d+$/]) {
     const body = m[1].replace(strip, "");
     if (body === m[1]) continue;
     for (let k = body.indexOf("_"); k > 0; k = body.indexOf("_", k + 1)) {
