@@ -906,7 +906,7 @@ class Store:
         project_theme, tokens, theme_problems = themes.project_theme(root)
         voice = resolve_voice(voice or self.default_voice)
         w = Walkthrough(
-            id=secrets.token_urlsafe(16),
+            id=_new_id(),
             key=secrets.token_urlsafe(16),
             report_key=secrets.token_urlsafe(12),
             title=(title or "Untitled walkthrough").strip()[:120],
@@ -1092,3 +1092,10 @@ class Store:
                 webbrowser.open(s.url)
             except Exception:
                 pass
+
+
+def _new_id() -> str:
+    """A walkthrough id that never starts with `-`, which a command line would read as an option."""
+    while (wid := secrets.token_urlsafe(16)).startswith("-"):
+        pass
+    return wid

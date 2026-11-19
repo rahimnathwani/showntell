@@ -13,6 +13,7 @@
 - **A slide's own parts come first:** a cue naming a node, object or key on the slide reaches it even when the name looks like a line (`#l1`), a step (`#step1`) or equals the slide's id (`## Scripts` over `package.json`, cue `#scripts`), instead of being read as those.
 - **Steps beside code:** on a `.pair` slide either visual may change in `step` versions, so code can sit beside a `memory step` picture; before, only the first could.
 - **The pointer follows what moves:** while a drawing or plot glides between versions, the pointer moves with the part it points at instead of staying where the part was.
+- **Walkthrough ids never start with `-`:** one in 64 did, and `showntell export <id>` (and the GitHub Action, which now passes `--` before the id) read it as an option.
 - **Single-page export:** the second visual of a `.pair` slide now brings its libraries and pictures into the file too (a diagram or code beside another visual drew nothing offline).
 - **PyPI page:** README links and the demo image use full GitHub URLs, so they work on PyPI; `sync_version.py --check` refuses a relative one, and stamps the GitHub Action's version (`uses: rahimnathwani/showntell@vX.Y.Z`) in the README and its docs, which still said v0.1.7.
 - **reladraw line texts:** the catalogue says a line's text sits at its middle, so keep it short or widen the gap; the docs example no longer puts its line text over a box, and a test keeps the examples free of findings.

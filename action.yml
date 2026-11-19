@@ -77,8 +77,8 @@ runs:
         # the page and the video are then made from the same walkthrough, without voicing it again.
         showntell export "$MD" "$out/site"
         id="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$out/site/data.json")"
-        [[ "$FORMAT" != mp4 ]] && showntell export "$id" "$out/walkthrough.html"
-        [[ "$FORMAT" != html ]] && showntell export "$id" "$out/walkthrough.mp4"
+        [[ "$FORMAT" != mp4 ]] && showntell export -- "$id" "$out/walkthrough.html"
+        [[ "$FORMAT" != html ]] && showntell export -- "$id" "$out/walkthrough.mp4"
         python "$SRC/action/summary.py" "$out/site/data.json" > "$out/summary.md"
         rm -rf "$out/site"
         showntell stop || true
